@@ -33,7 +33,22 @@ histori. Status: `payment_status` ∈ PENDING/PAID/FAILED/EXPIRED,
 status liar ditolak DB). `payment_id` (trx YoBasePay) **unique partial** —
 satu transaksi provider hanya untuk satu order. `telegram_notified_at` =
 kunci anti-notifikasi-ganda. Indexes untuk katalog, riwayat per-buyer, antrian
-kerja admin, lookup webhook, dan scan expiry.
+kerja admin, lookup webhook, scan expiry, dan antrian klaim manual.
+
+Kolom **metode pembayaran**: `payment_method` ∈ `YOBASEPAY` / `MANUAL`
+(check constraint). Untuk order `MANUAL`: `charged_amount` = total + kode unik,
+`payment_id` selalu NULL, dan kolom `manual_claim_at`, `manual_claim_note`,
+`manual_claim_reference`, `manual_claim_notified_at` (klaim buyer) serta
+`manual_reviewed_at`, `manual_reviewed_by`, `manual_review_status`
+(`APPROVED`/`REJECTED`), `manual_review_note` (verifikasi penjual) — semuanya
+hanya ditulis server-side. Detail alur: `docs/manual-payment.md`.
+
+### Tabel `manual_payment_settings` (satu baris, `id = 1`)
+Konfigurasi pembayaran manual: `is_enabled`, `label`, `account_name`,
+`instructions`, `expiry_minutes` (10–4320), `qr_image_mime`,
+`qr_image_base64`, `qr_image_size`, `updated_at`. Gambar QR disimpan base64
+(disajikan via `GET /api/manual-qr`) sehingga tidak perlu bucket storage.
+RLS aktif tanpa policy — hanya service role (server) yang bisa baca/tulis.
 
 ### RLS (inti keamanannya)
 ```

@@ -39,6 +39,7 @@ export async function checkoutAction(
   const parsed = checkoutSchema.safeParse({
     productId: formData.get("productId"),
     quantity: formData.get("quantity"),
+    paymentMethod: formData.get("paymentMethod"),
   });
   if (!parsed.success) {
     return { error: "Pilihan produk/jumlah tidak valid. Muat ulang halaman lalu coba lagi." };
@@ -64,6 +65,7 @@ export async function checkoutAction(
       productId: parsed.data.productId,
       quantity: parsed.data.quantity,
       whatsappOverride,
+      paymentMethod: parsed.data.paymentMethod,
     });
     orderCode = order.order_code;
   } catch (err) {

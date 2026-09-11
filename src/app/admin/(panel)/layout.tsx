@@ -22,6 +22,7 @@ export default async function AdminPanelLayout({ children }: { children: React.R
     { href: "/admin", label: "Ringkasan" },
     { href: "/admin/orders", label: "Order" },
     { href: "/admin/products", label: "Produk" },
+    { href: "/admin/settings", label: "Pembayaran" },
   ];
 
   return (

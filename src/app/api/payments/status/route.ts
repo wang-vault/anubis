@@ -49,6 +49,10 @@ export async function GET(request: NextRequest) {
       charged_amount: refreshed.charged_amount ?? null,
       paid_at: refreshed.paid_at,
       payment_expired_at: refreshed.payment_expired_at,
+      payment_method: refreshed.payment_method,
+      manual_claim_at: refreshed.manual_claim_at,
+      manual_review_status: refreshed.manual_review_status,
+      manual_review_note: refreshed.manual_review_note,
       checked_provider: checkedProvider,
       server_time: new Date().toISOString(),
     };

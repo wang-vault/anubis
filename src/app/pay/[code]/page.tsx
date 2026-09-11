@@ -3,8 +3,9 @@ import { notFound, redirect } from "next/navigation";
 import { getAuthContext, isAdmin } from "@/lib/authz";
 import { findOrderByCodeOrId, getOrderByCodeForBuyer } from "@/lib/orders";
 import { getProduct } from "@/lib/products";
+import { getManualPaymentView } from "@/lib/payment-config";
 import { ORDER_CODE_REGEX } from "@/lib/order-code";
-import { PaymentPanel } from "@/components/PaymentPanel";
+import { PaymentPanel, type PaymentPanelProps } from "@/components/PaymentPanel";
 
 export const metadata: Metadata = { title: "Pembayaran" };
 export const dynamic = "force-dynamic";
@@ -33,8 +34,21 @@ export default async function PayPage({ params }: Props) {
 
   const product = await getProduct(order.product_id);
 
+  // Konfigurasi pembayaran manual hanya dimuat bila order memang manual.
+  let manual: PaymentPanelProps["manual"] = null;
+  if (order.payment_method === "MANUAL") {
+    const m = await getManualPaymentView();
+    manual = {
+      label: m.label,
+      accountName: m.accountName,
+      instructions: m.instructions,
+      qrSrc: m.qrSrc,
+    };
+  }
+
   return (
     <PaymentPanel
+      manual={manual}
       order={{
         order_code: order.order_code,
         product_name: order.product_name_snapshot,
@@ -43,9 +57,13 @@ export default async function PayPage({ params }: Props) {
         charged_amount: order.charged_amount ?? null,
         payment_status: order.payment_status,
         order_status: order.order_status,
+        payment_method: order.payment_method,
         payment_url: order.payment_url,
         qr_image_url: order.qr_image_url,
         payment_expired_at: order.payment_expired_at,
+        manual_claim_at: order.manual_claim_at,
+        manual_review_status: order.manual_review_status,
+        manual_review_note: order.manual_review_note,
       }}
       product={product}
     />

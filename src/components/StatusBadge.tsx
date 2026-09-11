@@ -1,4 +1,4 @@
-import type { OrderStatus, PaymentStatus } from "@/lib/types";
+import type { OrderStatus, PaymentMethodId, PaymentStatus } from "@/lib/types";
 
 const ORDER_MAP: Record<OrderStatus, { label: string; cls: string }> = {
   PENDING: { label: "Menunggu Pembayaran", cls: "bg-amber-100 text-amber-800" },
@@ -17,6 +17,17 @@ const PAYMENT_MAP: Record<PaymentStatus, { label: string; cls: string }> = {
 
 export function OrderStatusBadge({ status }: { status: OrderStatus }) {
   const s = ORDER_MAP[status];
+  return <span className={`badge ${s.cls}`}>{s.label}</span>;
+}
+
+const METHOD_MAP: Record<PaymentMethodId, { label: string; cls: string }> = {
+  YOBASEPAY: { label: "QRIS Otomatis", cls: "bg-sky-100 text-sky-800" },
+  MANUAL: { label: "Transfer Manual", cls: "bg-[#f6e6c8] text-amber-900" },
+};
+
+/** Badge metode bayar (memudahkan penjual memisahkan antrian verifikasi). */
+export function PaymentMethodBadge({ method }: { method: PaymentMethodId }) {
+  const s = METHOD_MAP[method] ?? METHOD_MAP.YOBASEPAY;
   return <span className={`badge ${s.cls}`}>{s.label}</span>;
 }
 

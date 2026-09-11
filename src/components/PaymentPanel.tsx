@@ -1,16 +1,29 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useActionState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { claimManualPaymentAction, type ManualClaimState } from "@/app/pay/actions";
 import { formatRupiah } from "@/lib/money";
-import type { OrderStatus, PaymentStatus, ProductRow } from "@/lib/types";
+import type {
+  ManualReviewStatus,
+  OrderStatus,
+  PaymentMethodId,
+  PaymentStatus,
+  ProductRow,
+} from "@/lib/types";
 
 /**
  * Panel halaman pembayaran (/pay/[orderCode]).
  *
- * - Menampilkan QRIS + instruksi + countdown (dari payment_expired_at).
- * - Sinkron status lewat endpoint server yang menjadi sumber kebenaran.
- * - Berhenti polling otomatis saat status final (PAID/DONE/EXPIRED).
+ * Dua tampilan sesuai metode order:
+ *  - QRIS otomatis : QR dinamis dari provider + countdown + polling status.
+ *  - Transfer manual: QRIS statis penjual + nominal persis (total + kode unik)
+ *    + tombol "Saya sudah transfer". Klaim buyer TIDAK mengubah status —
+ *    penjual memverifikasi mutasi, lalu status berubah via polling di sini.
+ *
+ * Sumber kebenaran status SELALU server (endpoint /api/payments/status).
  */
 
 export interface PaymentPanelProps {
@@ -19,14 +32,25 @@ export interface PaymentPanelProps {
     product_name: string;
     quantity: number;
     total_amount: number;
-    /** Nominal final provider (total + kode unik). Fallback ke total_amount. */
+    /** Nominal final (total + kode unik). Fallback ke total_amount. */
     charged_amount: number | null;
     payment_status: PaymentStatus;
     order_status: OrderStatus;
+    payment_method: PaymentMethodId;
     payment_url: string | null;
     qr_image_url: string | null;
     payment_expired_at: string | null;
+    manual_claim_at: string | null;
+    manual_review_status: ManualReviewStatus | null;
+    manual_review_note: string;
   };
+  /** Konfigurasi pembayaran manual (null bila metode manual tidak tersedia). */
+  manual: {
+    label: string;
+    accountName: string;
+    instructions: string;
+    qrSrc: string | null;
+  } | null;
   product: ProductRow | null;
 }
 
@@ -38,6 +62,9 @@ interface StatusResponse {
   payment_expired_at: string | null;
   charged_amount?: number | null;
   total_amount?: number;
+  manual_claim_at?: string | null;
+  manual_review_status?: ManualReviewStatus | null;
+  manual_review_note?: string;
 }
 
 const POLL_MS = 8_000;
@@ -46,7 +73,8 @@ function pad(n: number): string {
   return String(Math.max(0, n)).padStart(2, "0");
 }
 
-export function PaymentPanel({ order, product }: PaymentPanelProps) {
+export function PaymentPanel({ order, manual, product }: PaymentPanelProps) {
+  const router = useRouter();
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>(order.payment_status);
   const [orderStatus, setOrderStatus] = useState<OrderStatus>(order.order_status);
   const [expiredAt, setExpiredAt] = useState<number | null>(
@@ -59,8 +87,15 @@ export function PaymentPanel({ order, product }: PaymentPanelProps) {
   const [chargedAmount, setChargedAmount] = useState<number>(
     order.charged_amount && order.charged_amount > 0 ? order.charged_amount : order.total_amount,
   );
+  // Status klaim pembayaran manual (disinkron dari server saat polling).
+  const [claimedAt, setClaimedAt] = useState<string | null>(order.manual_claim_at);
+  const [reviewStatus, setReviewStatus] = useState<ManualReviewStatus | null>(
+    order.manual_review_status,
+  );
+  const [reviewNote, setReviewNote] = useState<string>(order.manual_review_note ?? "");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const isManual = order.payment_method === "MANUAL";
   const isFinal = paymentStatus === "PAID" || paymentStatus === "FAILED" || paymentStatus === "EXPIRED";
   const displayAmount = chargedAmount;
 
@@ -83,6 +118,9 @@ export function PaymentPanel({ order, product }: PaymentPanelProps) {
       } else if (data.total_amount && data.total_amount > 0) {
         setChargedAmount(data.total_amount);
       }
+      if (data.manual_claim_at !== undefined) setClaimedAt(data.manual_claim_at);
+      if (data.manual_review_status !== undefined) setReviewStatus(data.manual_review_status);
+      if (data.manual_review_note !== undefined) setReviewNote(data.manual_review_note);
       setLastCheckedAt(Date.now());
       setCheckError(null);
     } catch {
@@ -138,9 +176,10 @@ export function PaymentPanel({ order, product }: PaymentPanelProps) {
           <div className="paper-inset mt-5 p-4 text-left text-sm">
             <Row label="Produk" value={`${order.product_name} × ${order.quantity}`} />
             <Row label="Total dibayar" value={formatRupiah(displayAmount)} strong />
+            {isManual && <Row label="Metode" value={manual?.label ?? "Transfer manual"} />}
           </div>
           <p className="mt-4 text-sm leading-6 text-slate-600">
-            Pembayaran telah diterima.
+            {isManual ? "Transfer kamu sudah diverifikasi penjual." : "Pembayaran telah diterima."}
             {orderStatus === "DONE"
               ? " Pesanan kamu sudah selesai. Terima kasih! 🎉"
               : " Pesanan sedang diproses oleh penjual. Silakan tunggu pesan melalui WhatsApp."}
@@ -172,6 +211,13 @@ export function PaymentPanel({ order, product }: PaymentPanelProps) {
             Order <strong>#{order.order_code}</strong> melewati batas waktu bayar atau tidak dapat
             dibuat. Silakan buat order baru.
           </p>
+          {isManual && claimedAt && (
+            <p className="alert-warn mt-3 text-left text-xs leading-5">
+              Kamu sudah melaporkan transfer untuk order ini tetapi belum diverifikasi sampai batas
+              waktu habis. Hubungi penjual lewat WhatsApp dengan menyebut kode order{" "}
+              <strong>{order.order_code}</strong> agar uangmu bisa dicek.
+            </p>
+          )}
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             {product?.is_active && (
               <Link href={`/checkout?product=${product.id}`} className="btn-primary">
@@ -213,6 +259,7 @@ export function PaymentPanel({ order, product }: PaymentPanelProps) {
             {displayAmount !== order.total_amount && (
               <Row label="Harga produk" value={formatRupiah(order.total_amount)} />
             )}
+            {isManual && manual?.accountName && <Row label="Penerima" value={manual.accountName} />}
             <Row
               label="Cek terakhir"
               value={lastCheckedAt ? new Date(lastCheckedAt).toLocaleTimeString("id-ID") : "baru saja"}
@@ -221,49 +268,69 @@ export function PaymentPanel({ order, product }: PaymentPanelProps) {
           {displayAmount !== order.total_amount && (
             <p className="mt-2 text-xs leading-5 text-slate-500">
               Nominal transfer sudah termasuk kode unik pembayaran agar mutasi mudah dicocokkan.
-              Scan QR — angka terisi otomatis.
+              {isManual ? " Ketik nominal PERSIS seperti di atas." : " Scan QR — angka terisi otomatis."}
             </p>
           )}
 
-          <div className="payment-qr-frame mt-4">
-            {order.qr_image_url && /^https:\/\//i.test(order.qr_image_url) ? (
-              <>
-                <img
-                  src={order.qr_image_url}
-                  alt={`QRIS untuk order ${order.order_code}`}
-                  width={280}
-                  height={280}
-                  className="mx-auto w-64 max-w-full border border-slate-300"
-                />
-                <p className="mt-3 text-xs leading-5 text-slate-500">
-                  Scan QR ini dengan aplikasi apa pun yang mendukung QRIS. Nominal sudah terisi
-                  otomatis di QR.
-                </p>
-              </>
-            ) : (
-              <p className="py-6 text-sm text-slate-500">
-                QR tidak tersedia — gunakan tombol “Buka Halaman Pembayaran” di bawah.
-              </p>
-            )}
-            {order.payment_url && (
-              <a
-                href={order.payment_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-secondary mt-3 w-full"
-              >
-                Buka Halaman Pembayaran ↗
-              </a>
-            )}
-          </div>
+          {isManual ? (
+            <ManualPaymentSection
+              orderCode={order.order_code}
+              manual={manual}
+              amount={displayAmount}
+              claimedAt={claimedAt}
+              reviewStatus={reviewStatus}
+              reviewNote={reviewNote}
+              onClaimed={(at) => {
+                setClaimedAt(at);
+                setReviewStatus(null);
+                setReviewNote("");
+                router.refresh();
+              }}
+            />
+          ) : (
+            <>
+              <div className="payment-qr-frame mt-4">
+                {order.qr_image_url && /^https:\/\//i.test(order.qr_image_url) ? (
+                  <>
+                    <img
+                      src={order.qr_image_url}
+                      alt={`QRIS untuk order ${order.order_code}`}
+                      width={280}
+                      height={280}
+                      className="mx-auto w-64 max-w-full border border-slate-300"
+                    />
+                    <p className="mt-3 text-xs leading-5 text-slate-500">
+                      Scan QR ini dengan aplikasi apa pun yang mendukung QRIS. Nominal sudah terisi
+                      otomatis di QR.
+                    </p>
+                  </>
+                ) : (
+                  <p className="py-6 text-sm text-slate-500">
+                    QR tidak tersedia — gunakan tombol “Buka Halaman Pembayaran” di bawah.
+                  </p>
+                )}
+                {order.payment_url && (
+                  <a
+                    href={order.payment_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-secondary mt-3 w-full"
+                  >
+                    Buka Halaman Pembayaran ↗
+                  </a>
+                )}
+              </div>
+            </>
+          )}
 
           {checkError && <p className="alert-error mt-3" role="alert">{checkError}</p>}
           <button type="button" onClick={() => void checkStatus()} disabled={checking} className="btn-primary mt-4 w-full">
             {checking ? "Mengecek status…" : "Cek Status Pembayaran Sekarang"}
           </button>
           <p className="hint mt-2 text-center">
-            Halaman diperbarui otomatis setiap {POLL_MS / 1000} detik — status lunas ditentukan
-            oleh server.
+            {isManual
+              ? `Status berubah setelah penjual memverifikasi mutasi. Halaman ini mengecek tiap ${POLL_MS / 1000} detik.`
+              : `Halaman diperbarui otomatis setiap ${POLL_MS / 1000} detik — status lunas ditentukan oleh server.`}
           </p>
         </div>
 
@@ -271,6 +338,151 @@ export function PaymentPanel({ order, product }: PaymentPanelProps) {
           Lihat detail pesanan →
         </Link>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Bagian pembayaran manual: QR statis + nominal + form konfirmasi buyer.
+ */
+function ManualPaymentSection({
+  orderCode,
+  manual,
+  amount,
+  claimedAt,
+  reviewStatus,
+  reviewNote,
+  onClaimed,
+}: {
+  orderCode: string;
+  manual: PaymentPanelProps["manual"];
+  amount: number;
+  claimedAt: string | null;
+  reviewStatus: ManualReviewStatus | null;
+  reviewNote: string;
+  onClaimed: (claimedAt: string) => void;
+}) {
+  const [state, formAction, pending] = useActionState<ManualClaimState, FormData>(
+    async (prev: ManualClaimState, formData: FormData) => {
+      const res = await claimManualPaymentAction(prev, formData);
+      if (res.ok && res.claimedAt) onClaimed(res.claimedAt);
+      return res;
+    },
+    {},
+  );
+  const [copied, setCopied] = useState(false);
+
+  const amountText = String(amount);
+  const copyAmount = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(amountText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  }, [amountText]);
+
+  if (!manual || !manual.qrSrc) {
+    return (
+      <p className="alert-error mt-4">
+        QR pembayaran manual belum tersedia. Silakan hubungi penjual atau buat order baru dengan
+        metode lain.
+      </p>
+    );
+  }
+
+  const waiting = Boolean(claimedAt);
+  const rejected = reviewStatus === "REJECTED" && !waiting;
+
+  return (
+    <div className="mt-4">
+      <div className="payment-qr-frame">
+        <img
+          src={manual.qrSrc}
+          alt={`QRIS statis penjual untuk order ${orderCode}`}
+          width={280}
+          height={280}
+          className="mx-auto w-64 max-w-full border border-slate-300 bg-white"
+        />
+        <p className="mt-3 text-xs leading-5 text-slate-500">
+          {manual.label} — scan dengan aplikasi bank/e-wallet apa pun yang mendukung QRIS
+          (GoPay, OVO, DANA, ShopeePay, m-banking).
+        </p>
+      </div>
+
+      <div className="alert-info mt-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm">
+          Transfer <strong className="font-mono">{formatRupiah(amount)}</strong> — nominal harus{" "}
+          <strong>persis</strong> sampai digit terakhir.
+        </span>
+        <button type="button" onClick={() => void copyAmount()} className="btn-secondary btn-sm">
+          {copied ? "Tersalin ✓" : "Salin nominal"}
+        </button>
+      </div>
+
+      {manual.instructions && (
+        <p className="hint mt-2 whitespace-pre-line">{manual.instructions}</p>
+      )}
+
+      {waiting ? (
+        <div className="alert-info mt-4">
+          <p className="text-sm font-bold">Konfirmasi kamu sudah kami terima 🙌</p>
+          <p className="mt-1 text-xs leading-5">
+            Penjual sedang mencocokkan mutasi QRIS. Status halaman ini berubah otomatis menjadi
+            “Pembayaran berhasil” setelah diverifikasi — biasanya beberapa menit pada jam kerja.
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            Diklaim pukul{" "}
+            {claimedAt ? new Date(claimedAt).toLocaleTimeString("id-ID") : "-"} · order{" "}
+            <strong>{orderCode}</strong>
+          </p>
+        </div>
+      ) : (
+        <form action={formAction} className="mt-4 space-y-3 border-t border-dotted border-slate-300 pt-4">
+          <input type="hidden" name="orderCode" value={orderCode} />
+          {rejected && (
+            <p className="alert-error" role="alert">
+              Konfirmasi kamu ditolak penjual{reviewNote ? `: ${reviewNote}` : ""}. Periksa lagi
+              nominal & tujuan transfer, lalu konfirmasi ulang di bawah.
+            </p>
+          )}
+          <div>
+            <label className="label" htmlFor="claim-note">
+              Nama pengirim / nama di aplikasi (biar mudah dicocokkan)
+            </label>
+            <input
+              id="claim-note"
+              name="note"
+              className="input"
+              maxLength={200}
+              placeholder="mis. Budi Santoso (GoPay)"
+              disabled={pending}
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="claim-reference">
+              Nomor referensi transaksi <span className="font-normal text-slate-400">(opsional)</span>
+            </label>
+            <input
+              id="claim-reference"
+              name="reference"
+              className="input"
+              maxLength={60}
+              placeholder="mis. 20260912193045123"
+              disabled={pending}
+            />
+          </div>
+          {state.error && <p className="alert-error" role="alert">{state.error}</p>}
+          <button type="submit" className="btn-primary w-full" disabled={pending}>
+            {pending ? "Mengirim konfirmasi…" : `Saya sudah transfer ${formatRupiah(amount)}`}
+          </button>
+          <p className="hint text-center">
+            Tekan tombol ini SETELAH uang benar-benar terkirim. Penjual memverifikasi mutasi
+            sebelum pesanan diproses — konfirmasi palsu membuat order dibatalkan.
+          </p>
+        </form>
+      )}
     </div>
   );
 }

@@ -56,11 +56,16 @@ export default async function MyOrdersPage() {
                 </div>
                 <p className="shrink-0 font-serif text-base font-black text-brand-700">{formatRupiah(o.total_amount)}</p>
               </div>
-              {o.payment_status === "PENDING" && (
-                <p className="alert-warn mt-3 text-xs font-semibold">
-                  Menunggu pembayaran — buka detail untuk bayar QRIS.
-                </p>
-              )}
+              {o.payment_status === "PENDING" &&
+                (o.payment_method === "MANUAL" && o.manual_claim_at ? (
+                  <p className="alert-info mt-3 text-xs font-semibold">
+                    🧾 Konfirmasi transfer terkirim — menunggu verifikasi penjual.
+                  </p>
+                ) : (
+                  <p className="alert-warn mt-3 text-xs font-semibold">
+                    Menunggu pembayaran — buka detail untuk lanjut bayar.
+                  </p>
+                ))}
             </Link>
           ))
         )}

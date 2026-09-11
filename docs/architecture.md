@@ -14,6 +14,9 @@
 4. **Webhook = sumber kebenaran pembayaran; polling = UX.** Halaman bayar
    boleh bertanya tiap 8 detik, tapi status final tetap dari signature-verified
    webhook atau cek status privat ke provider — dua-duanya lewat server.
+   Untuk **pembayaran manual** tidak ada provider: sumber kebenarannya adalah
+   **aksi penjual** di dashboard (konfirmasi/tolak klaim buyer). Klaim buyer
+   tidak pernah mengubah status.
 5. **Sederhana & bisa dikelola pemilik toko**: tanpa keranjang multi-item,
    tanpa fitur sosial; satu order = satu produk (jumlah n×).
 
@@ -29,12 +32,21 @@
         (middleware memaksa login; halaman memaksa email verified)
 5  Submit checkout → server action:
         validasi → ambil produk+harga dari Supabase #2 → total = price×qty (server)
-        → INSERT orders (PENDING/PENDING, order_code ORD-YYYYMMDD-XXXXXX, snapshot)
-        → YoBasePay GET action=createpayment&amount=TOTAL  →  { trx_id, payment_url, qr_image, expired_at }
-        → UPDATE orders (payment_id, payment_url, qr_image_url, payment_expired_at)
+        → tentukan metode (resolvePaymentMethod: env + pengaturan penjual)
+        → INSERT orders (PENDING/PENDING, order_code ORD-YYYYMMDD-XXXXXX, snapshot, payment_method)
+        ├─ YOBASEPAY: GET action=createpayment&amount=TOTAL → { trx_id, payment_url, qr_image, expired_at }
+        │             → UPDATE orders (payment_id, payment_url, qr_image_url, payment_expired_at)
+        └─ MANUAL   : tanpa provider → charged_amount = total + kode unik(order_code)
+                      payment_expired_at = now + expiry_minutes (pengaturan penjual)
         → redirect /pay/[order_code]
 6  Buyer scan QRIS. YoBasePay memantau mutasi.
-7  Saat lunas: YoBasePay POST /api/webhooks/yobasepay
+6b (MANUAL) Buyer scan QR statis penjual → transfer nominal persis → tekan
+        "Saya sudah transfer" → UPDATE manual_claim_at + catatan (+ Telegram
+        "🧾 KLAIM TRANSFER MANUAL"). Status MASIH PENDING.
+        Penjual cek mutasi → [✓ Konfirmasi Lunas] → applyPaid(source="manual")
+        → PAID + Telegram "🔔 PESANAN BARU" ; atau [✕ Tolak Klaim] → buyer
+        boleh konfirmasi ulang. Halaman buyer menangkap perubahan via polling.
+7  Saat lunas (QRIS otomatis): YoBasePay POST /api/webhooks/yobasepay
         verifikasi HMAC (raw body, constant-time) → cari order via payment_id
         → validasi nominal (total ≤ amount ≤ total + toleransi kode unik)
         → UPDATE … WHERE payment_status IN ('PENDING','EXPIRED')   ← idempoten

@@ -4,11 +4,22 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ErrorCodes, HttpError } from "@/lib/api";
 import { accountAdmin, accountServer, storeDb } from "@/lib/supabase/server";
 import { getPaymentProvider } from "@/lib/integrations/payment";
+import { getManualPaymentView, resolvePaymentMethod } from "@/lib/payment-config";
+import {
+  PAYMENT_METHOD_MANUAL,
+  isManualMethod,
+  manualChargedAmount,
+  type PaymentMethod,
+} from "@/lib/payment-methods";
 import {
   PaymentProviderError,
   type PaymentProvider,
 } from "@/lib/integrations/payment/types";
-import { buildPaidOrderInfo, getNotifier } from "@/lib/integrations/telegram";
+import {
+  buildManualClaimInfo,
+  buildPaidOrderInfo,
+  getNotifier,
+} from "@/lib/integrations/telegram";
 import { generateOrderCode } from "@/lib/order-code";
 import { amountWithinTolerance } from "@/lib/money";
 import { log } from "@/lib/logger";
@@ -33,7 +44,7 @@ const PROVIDER_CHECK_THROTTLE_MS = 10_000;
 /** Grasi otomatis-expire setelah batas waktu provider. */
 const EXPIRY_GRACE_MS = 30_000;
 
-export type PaidSource = "webhook" | "polling";
+export type PaidSource = "webhook" | "polling" | "manual";
 
 // ---------------------------------------------------------------------------
 // BUYER — create order + payment
@@ -41,8 +52,10 @@ export type PaidSource = "webhook" | "polling";
 
 export interface CreateOrderResult {
   order: OrderRow;
+  paymentMethod: PaymentMethod;
   payment: {
-    paymentId: string;
+    /** null untuk pembayaran manual (tidak ada transaksi di provider). */
+    paymentId: string | null;
     paymentUrl: string | null;
     qrImageUrl: string | null;
     expiresAt: string | null;
@@ -51,7 +64,12 @@ export interface CreateOrderResult {
 
 export async function createOrderForBuyer(
   ctx: AuthContext,
-  input: { productId: string; quantity: number; whatsappOverride?: string },
+  input: {
+    productId: string;
+    quantity: number;
+    whatsappOverride?: string;
+    paymentMethod?: unknown;
+  },
 ): Promise<CreateOrderResult> {
   const db = await storeDb();
   const profile = ctx.profile!;
@@ -77,6 +95,10 @@ export async function createOrderForBuyer(
   // 2. Hitung total server-side.
   const total = product.price * input.quantity;
 
+  // 2b. Metode bayar: yang menentukan boleh/tidaknya = konfigurasi SERVER
+  //     (env + pengaturan penjual), bukan nilai dari klien.
+  const method = await resolvePaymentMethod(input.paymentMethod);
+
   // 3. Insert order PENDING dengan kode publik unik (retry jika tabrakan).
   let order: OrderRow | null = null;
   for (let attempt = 0; attempt < 5 && !order; attempt++) {
@@ -90,6 +112,7 @@ export async function createOrderForBuyer(
         unit_price_snapshot: product.price,
         quantity: input.quantity,
         total_amount: total,
+        payment_method: method,
         payment_status: "PENDING",
         order_status: "PENDING",
         buyer_name_snapshot: profile.name,
@@ -111,7 +134,64 @@ export async function createOrderForBuyer(
     throw new HttpError(500, ErrorCodes.internal, "Gagal membuat order, coba lagi.");
   }
 
-  // 4. Buat pembayaran di YoBasePay (server-side; API key tak pernah ke browser).
+  // 4a. Pembayaran MANUAL: tidak ada provider. Nominal = total + kode unik
+  //     (deterministik dari order_code) supaya mutasi mudah dicocokkan penjual.
+  //     Batas waktu bayar diambil dari pengaturan penjual (bukan dari provider).
+  if (method === PAYMENT_METHOD_MANUAL) {
+    const manual = await getManualPaymentView();
+    if (!manual.available) {
+      log.error("manual_payment_not_configured", { reason: manual.reason });
+      await db
+        .from("orders")
+        .update({ payment_status: "FAILED", order_status: "EXPIRED" })
+        .eq("id", order.id)
+        .eq("payment_status", "PENDING");
+      throw new HttpError(
+        503,
+        ErrorCodes.paymentUnavailable,
+        "Pembayaran manual belum siap. Silakan hubungi penjual.",
+      );
+    }
+    const manualPatch = {
+      charged_amount: manualChargedAmount(total, order.order_code),
+      payment_expired_at: new Date(Date.now() + manual.expiryMinutes * 60_000).toISOString(),
+    };
+    const { data: manualOrder, error: mErr } = await db
+      .from("orders")
+      .update(manualPatch)
+      .eq("id", order.id)
+      .select("*")
+      .single<OrderRow>();
+    if (mErr || !manualOrder) {
+      log.error("order_manual_setup_failed", {
+        orderCode: order.order_code,
+        message: mErr?.message,
+      });
+      throw new HttpError(
+        500,
+        ErrorCodes.internal,
+        "Gagal menyiapkan pembayaran manual. Silakan coba lagi.",
+      );
+    }
+    log.info("order_created", {
+      orderCode: manualOrder.order_code,
+      method,
+      total,
+      charged: manualOrder.charged_amount,
+    });
+    return {
+      order: manualOrder,
+      paymentMethod: method,
+      payment: {
+        paymentId: null,
+        paymentUrl: null,
+        qrImageUrl: manual.qrSrc,
+        expiresAt: manualOrder.payment_expired_at,
+      },
+    };
+  }
+
+  // 4b. Buat pembayaran di YoBasePay (server-side; API key tak pernah ke browser).
   const provider = getPaymentProvider();
   let created;
   try {
@@ -175,11 +255,13 @@ export async function createOrderForBuyer(
 
   log.info("order_created", {
     orderCode: updated.order_code,
+    method,
     total,
     charged: created.chargedAmount,
   });
   return {
     order: updated,
+    paymentMethod: method,
     payment: {
       paymentId: created.paymentId,
       paymentUrl: created.paymentUrl,
@@ -400,6 +482,23 @@ export async function refreshOrderStatus(order: OrderRow): Promise<RefreshResult
     return { order, checkedProvider: false };
   }
 
+  // Pembayaran MANUAL tidak punya provider untuk ditanya: status hanya bisa
+  // berubah lewat verifikasi penjual (adminConfirmManualPayment). Di sini
+  // cukup tangani kadaluarsa — dan JANGAN expire otomatis bila buyer sudah
+  // mengklaim transfer (keputusan ada di penjual: konfirmasi atau tolak).
+  // checkedProvider selalu false: memang tidak ada provider yang dihubungi.
+  if (isManualMethod(order.payment_method)) {
+    if (order.manual_claim_at) return { order, checkedProvider: false };
+    const deadline = order.payment_expired_at
+      ? Date.parse(order.payment_expired_at) + EXPIRY_GRACE_MS
+      : null;
+    if (deadline !== null && Date.now() > deadline) {
+      await applyExpired(db, order);
+      return { order: (await loadOrderById(db, order.id)) ?? order, checkedProvider: false };
+    }
+    return { order, checkedProvider: false };
+  }
+
   const now = Date.now();
   const last = order.last_payment_checked_at ? Date.parse(order.last_payment_checked_at) : 0;
   if (now - last < PROVIDER_CHECK_THROTTLE_MS) {
@@ -530,6 +629,232 @@ export async function handleWebhookEvent(params: {
 }
 
 // ---------------------------------------------------------------------------
+// PEMBAYARAN MANUAL (QRIS statis penjual) — klaim buyer & verifikasi penjual
+// ---------------------------------------------------------------------------
+/**
+ * Buyer menyatakan "saya sudah transfer".
+ *
+ * PENTING: ini BUKAN bukti pembayaran dan TIDAK mengubah payment_status.
+ * Klaim hanya memindahkan order ke antrian verifikasi penjual (plus notifikasi
+ * Telegram). Status PAID tetap hanya bisa di-set penjual lewat
+ * adminConfirmManualPayment() setelah mencocokkan mutasi.
+ *
+ * Idempotent: klaim kedua tidak menimpa klaim pertama (guard `.is(null)`).
+ */
+export async function claimManualPayment(
+  order: OrderRow,
+  input: { note?: string; reference?: string },
+): Promise<{ order: OrderRow; changed: boolean }> {
+  if (!isManualMethod(order.payment_method)) {
+    throw new HttpError(
+      409,
+      ErrorCodes.conflict,
+      "Order ini memakai QRIS otomatis — statusnya terdeteksi sistem, tidak perlu konfirmasi manual.",
+    );
+  }
+  if (order.payment_status === "PAID") {
+    throw new HttpError(409, ErrorCodes.conflict, "Pembayaran sudah diverifikasi penjual.");
+  }
+  if (order.payment_status !== "PENDING") {
+    throw new HttpError(
+      409,
+      ErrorCodes.conflict,
+      "Pembayaran sudah ditutup (kadaluarsa/gagal). Silakan buat order baru.",
+    );
+  }
+
+  const db = await storeDb();
+  if (order.manual_claim_at) {
+    // Sudah pernah diklaim → tidak apa-apa (tombol dobel / reload).
+    return { order, changed: false };
+  }
+
+  const { data, error } = await db
+    .from("orders")
+    .update({
+      manual_claim_at: new Date().toISOString(),
+      manual_claim_note: input.note ?? "",
+      manual_claim_reference: input.reference ?? "",
+      // Bersihkan jejak penolakan sebelumnya agar UI buyer kembali bersih.
+      manual_review_status: null,
+      manual_reviewed_at: null,
+      manual_reviewed_by: null,
+      manual_review_note: "",
+    })
+    .eq("id", order.id)
+    .eq("payment_status", "PENDING")
+    .is("manual_claim_at", null)
+    .select("*")
+    .maybeSingle<OrderRow>();
+  if (error) {
+    log.error("manual_claim_failed", { orderCode: order.order_code, message: error.message });
+    throw new HttpError(500, ErrorCodes.internal, "Gagal mencatat konfirmasi pembayaran.");
+  }
+  if (!data) {
+    // Balapan: sudah diklaim / status berubah. Ambil ulang, jangan error.
+    return { order: (await loadOrderById(db, order.id)) ?? order, changed: false };
+  }
+
+  // Notifikasi penjual (sekali per klaim) — gagal kirim TIDAK membatalkan klaim.
+  const { telegramConfigured } = await import("@/lib/env");
+  if (telegramConfigured()) {
+    const { data: claimed } = await db
+      .from("orders")
+      .update({ manual_claim_notified_at: new Date().toISOString() })
+      .eq("id", order.id)
+      .is("manual_claim_notified_at", null)
+      .select("id")
+      .maybeSingle<{ id: string }>();
+    if (claimed) scheduleManualClaimNotify(data);
+  }
+
+  log.info("manual_claim_received", { orderCode: order.order_code });
+  return { order: data, changed: true };
+}
+
+function scheduleManualClaimNotify(order: OrderRow): void {
+  const run = async () => {
+    const res = await getNotifier().notifyManualPaymentClaim(buildManualClaimInfo(order));
+    if (!res.ok) {
+      log.warn("telegram_notify_failed", {
+        orderCode: order.order_code,
+        kind: "manual_claim",
+        error: res.error,
+      });
+    }
+  };
+  try {
+    after(run);
+  } catch {
+    void run();
+  }
+}
+
+/**
+ * Penjual mengonfirmasi uang sudah masuk (dilihat dari mutasi/QRIS merchant).
+ * Satu-satunya jalan order manual menjadi PAID.
+ */
+export async function adminConfirmManualPayment(
+  orderId: string,
+  actor: AuthContext,
+  input: { receivedAmount?: number | null; note?: string } = {},
+): Promise<OrderRow> {
+  const db = await storeDb();
+  const order = await getAdminOrder(orderId);
+  if (!order) throw new HttpError(404, ErrorCodes.notFound, "Order tidak ditemukan.");
+  if (!isManualMethod(order.payment_method)) {
+    throw new HttpError(
+      409,
+      ErrorCodes.conflict,
+      "Order ini bukan pembayaran manual — statusnya diverifikasi otomatis oleh provider.",
+    );
+  }
+  if (order.payment_status === "PAID") {
+    throw new HttpError(409, ErrorCodes.conflict, "Pembayaran sudah diverifikasi sebelumnya.");
+  }
+
+  const expected = order.charged_amount ?? order.total_amount;
+  const received =
+    input.receivedAmount === null || input.receivedAmount === undefined
+      ? null
+      : Math.trunc(input.receivedAmount);
+  if (received !== null) {
+    if (!Number.isFinite(received) || received <= 0) {
+      throw new HttpError(400, ErrorCodes.validation, "Nominal masuk tidak valid.");
+    }
+    if (received < order.total_amount) {
+      throw new HttpError(
+        409,
+        ErrorCodes.conflict,
+        "Nominal masuk lebih kecil dari total order. Jangan konfirmasi bila uang belum penuh.",
+      );
+    }
+    if (received > expected) {
+      log.warn("manual_overpayment", {
+        orderCode: order.order_code,
+        expected,
+        received,
+        by: actor.user.id,
+      });
+    }
+  }
+
+  const nowIso = new Date().toISOString();
+  const reviewPatch: Record<string, unknown> = {
+    manual_review_status: "APPROVED",
+    manual_reviewed_at: nowIso,
+    manual_reviewed_by: actor.user.id,
+    manual_review_note: input.note ?? "",
+  };
+  if (received !== null) reviewPatch.charged_amount = received;
+
+  const { error } = await db.from("orders").update(reviewPatch).eq("id", orderId);
+  if (error) {
+    log.error("manual_review_failed", { orderCode: order.order_code, message: error.message });
+    throw new HttpError(500, ErrorCodes.internal, "Gagal menyimpan verifikasi pembayaran.");
+  }
+
+  // Status PAID lewat jalur yang sama dengan webhook (idempotent + Telegram).
+  await applyPaid(db, order, { source: "manual", chargedAmount: received ?? expected });
+  log.info("manual_payment_confirmed", {
+    orderCode: order.order_code,
+    by: actor.user.id,
+    received,
+  });
+  const fresh = await loadOrderById(db, orderId);
+  return fresh ?? order;
+}
+
+/**
+ * Penjual menolak klaim buyer (mutasi tidak ditemukan). Klaim dibersihkan agar
+ * buyer bisa konfirmasi ulang; order tetap PENDING sampai batas waktu habis.
+ */
+export async function adminRejectManualClaim(
+  orderId: string,
+  actor: AuthContext,
+  input: { note?: string } = {},
+): Promise<OrderRow> {
+  const db = await storeDb();
+  const order = await getAdminOrder(orderId);
+  if (!order) throw new HttpError(404, ErrorCodes.notFound, "Order tidak ditemukan.");
+  if (!isManualMethod(order.payment_method)) {
+    throw new HttpError(409, ErrorCodes.conflict, "Order ini bukan pembayaran manual.");
+  }
+  if (!order.manual_claim_at) {
+    throw new HttpError(409, ErrorCodes.conflict, "Belum ada konfirmasi pembayaran dari buyer.");
+  }
+  if (order.payment_status === "PAID") {
+    throw new HttpError(409, ErrorCodes.conflict, "Pembayaran sudah diverifikasi — tidak bisa ditolak.");
+  }
+
+  const { data, error } = await db
+    .from("orders")
+    .update({
+      manual_claim_at: null,
+      manual_claim_note: "",
+      manual_claim_reference: "",
+      manual_claim_notified_at: null,
+      manual_review_status: "REJECTED",
+      manual_reviewed_at: new Date().toISOString(),
+      manual_reviewed_by: actor.user.id,
+      manual_review_note: input.note ?? "",
+    })
+    .eq("id", orderId)
+    .is("payment_status", "PENDING")
+    .select("*")
+    .maybeSingle<OrderRow>();
+  if (error || !data) {
+    throw new HttpError(
+      409,
+      ErrorCodes.conflict,
+      "Status order baru saja berubah. Muat ulang halaman.",
+    );
+  }
+  log.info("manual_claim_rejected", { orderCode: order.order_code, by: actor.user.id });
+  return data;
+}
+
+// ---------------------------------------------------------------------------
 // ADMIN — list, detail, transisi status manual (state machine)
 // ---------------------------------------------------------------------------
 
@@ -544,10 +869,19 @@ const ADMIN_ALLOWED_TRANSITIONS: Record<"process" | "complete" | "expire", Order
 export async function listAdminOrders(filter: {
   status?: OrderStatus;
   q?: string;
+  /** true = hanya order pembayaran manual yang menunggu verifikasi penjual. */
+  manualClaim?: boolean;
 }): Promise<AdminOrderView[]> {
   const db = await storeDb();
   let query = db.from("orders").select("*").order("created_at", { ascending: false }).limit(200);
   if (filter.status) query = query.eq("order_status", filter.status);
+  if (filter.manualClaim) {
+    query = query
+      .eq("payment_method", PAYMENT_METHOD_MANUAL)
+      .eq("payment_status", "PENDING")
+      .not("manual_claim_at", "is", null)
+      .order("manual_claim_at", { ascending: true });
+  }
   if (filter.q) {
     const { sanitizeAdminSearchQuery } = await import("@/lib/validation");
     const cleaned = sanitizeAdminSearchQuery(filter.q);
@@ -638,6 +972,8 @@ export interface AdminStats {
   needProcessing: number; // PAID, menunggu disiapkan
   processing: number;
   pendingPayment: number;
+  /** Pembayaran manual yang sudah diklaim buyer, menunggu cek mutasi. */
+  needVerification: number;
   doneToday: number;
   revenueMonth: number; // rupiah, dari order PAID+
 }
@@ -648,15 +984,21 @@ export async function getAdminStats(): Promise<AdminStats> {
   const dayStart = jakartaDayStartISO();
   const monthStart = jakartaMonthStartISO();
 
-  const [a, b, c, d, e, f] = await Promise.all([
+  const [a, b, c, d, e, f, g] = await Promise.all([
     db.from("orders").select("id", { count: "exact", head: true }).gte("created_at", dayStart),
     db.from("orders").select("id", { count: "exact", head: true }).eq("order_status", "PAID"),
     db.from("orders").select("id", { count: "exact", head: true }).eq("order_status", "PROCESSING"),
     db.from("orders").select("id", { count: "exact", head: true }).eq("order_status", "PENDING"),
     db.from("orders").select("id", { count: "exact", head: true }).eq("order_status", "DONE").gte("updated_at", dayStart),
     db.from("orders").select("total_amount").in("payment_status", ["PAID"]).gte("paid_at", monthStart),
+    db
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("payment_method", PAYMENT_METHOD_MANUAL)
+      .eq("payment_status", "PENDING")
+      .not("manual_claim_at", "is", null),
   ]);
-  for (const r of [a, b, c, d, e, f]) {
+  for (const r of [a, b, c, d, e, f, g]) {
     if (r.error) log.error("admin_stats_failed", { message: r.error.message });
   }
   const revenue = ((f.data ?? []) as { total_amount: number }[]).reduce(
@@ -668,6 +1010,7 @@ export async function getAdminStats(): Promise<AdminStats> {
     needProcessing: b.count ?? 0,
     processing: c.count ?? 0,
     pendingPayment: d.count ?? 0,
+    needVerification: g.count ?? 0,
     doneToday: e.count ?? 0,
     revenueMonth: revenue,
   };

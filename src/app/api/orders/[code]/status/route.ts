@@ -31,6 +31,10 @@ export async function GET(
       charged_amount: order.charged_amount ?? null,
       paid_at: order.paid_at,
       payment_expired_at: order.payment_expired_at,
+      payment_method: order.payment_method,
+      manual_claim_at: order.manual_claim_at,
+      manual_review_status: order.manual_review_status,
+      manual_review_note: order.manual_review_note,
       server_time: new Date().toISOString(),
     };
   }, (data) => ok(data));

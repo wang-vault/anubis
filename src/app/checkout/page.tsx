@@ -3,6 +3,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthContext } from "@/lib/authz";
 import { getProduct } from "@/lib/products";
+import { getAvailablePaymentMethods } from "@/lib/payment-config";
+import { serverEnv } from "@/lib/env";
 import { CheckoutForm } from "@/app/checkout/CheckoutForm";
 import { EmptyState } from "@/components/UiBits";
 
@@ -45,6 +47,7 @@ export default async function CheckoutPage({ searchParams }: Props) {
   }
 
   const product = await getProduct(productId);
+  const methods = await getAvailablePaymentMethods();
   if (!product || !product.is_active) {
     return (
       <div className="container-x mx-auto max-w-lg">
@@ -62,6 +65,31 @@ export default async function CheckoutPage({ searchParams }: Props) {
     );
   }
 
+  // Tidak ada metode bayar yang siap (mis. QR penjual belum di-upload & QRIS
+  // otomatis belum aktif) → jangan tampilkan form yang pasti gagal.
+  if (methods.length === 0) {
+    return (
+      <div className="container-x mx-auto max-w-lg">
+        <EmptyState
+          icon="!"
+          title="Pembayaran belum tersedia"
+          desc="Metode pembayaran toko sedang disiapkan penjual. Silakan coba lagi sebentar atau hubungi penjual lewat WhatsApp."
+          action={
+            <Link href="/products" className="btn-primary">
+              Kembali ke Katalog →
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
+
+  const env = serverEnv();
+  const firstMethod = methods[0]?.id ?? "MANUAL";
+  const defaultMethod = methods.some((m) => m.id === env.DEFAULT_PAYMENT_METHOD)
+    ? env.DEFAULT_PAYMENT_METHOD
+    : firstMethod;
+
   return (
     <div className="container-x mx-auto max-w-lg">
       <div className="paper-heading">
@@ -77,6 +105,8 @@ export default async function CheckoutPage({ searchParams }: Props) {
           productName={product.name}
           unitPrice={product.price}
           whatsapp={ctx.profile.whatsapp}
+          methods={methods}
+          defaultMethod={defaultMethod}
         />
       </div>
     </div>

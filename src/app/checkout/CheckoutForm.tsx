@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { checkoutAction, type ActionState } from "@/app/checkout/actions";
 import { useActionState } from "react";
 import { formatRupiah } from "@/lib/money";
+import type { AvailablePaymentMethod } from "@/lib/payment-methods";
 
 /**
  * Form checkout (komponen klien kecil — hanya untuk qty + preview total).
@@ -16,14 +17,22 @@ export function CheckoutForm({
   unitPrice,
   maxQuantity = 20,
   whatsapp,
+  methods,
+  defaultMethod,
 }: {
   productId: string;
   productName: string;
   unitPrice: number;
   maxQuantity?: number;
   whatsapp: string;
+  /** Metode yang benar-benar tersedia (sudah disaring server). */
+  methods: AvailablePaymentMethod[];
+  defaultMethod: string;
 }) {
   const [qty, setQty] = useState(1);
+  const [method, setMethod] = useState<string>(
+    methods.some((m) => m.id === defaultMethod) ? defaultMethod : (methods[0]?.id ?? ""),
+  );
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
     checkoutAction,
     {},
@@ -33,6 +42,8 @@ export function CheckoutForm({
     () => formatRupiah(unitPrice * safeQuantity),
     [unitPrice, safeQuantity],
   );
+
+  const selected = methods.find((m) => m.id === method) ?? methods[0];
 
   return (
     <form action={formAction} className="space-y-4">
@@ -91,6 +102,46 @@ export function CheckoutForm({
         <p className="hint">Nominal final dihitung & divalidasi server sesuai harga produk di database.</p>
       </div>
 
+      <fieldset className="card p-4 sm:p-5">
+        <legend className="section-kicker">Cara bayar</legend>
+        <div className="mt-3 space-y-2">
+          {methods.map((m) => {
+            const checked = (selected?.id ?? "") === m.id;
+            return (
+              <label
+                key={m.id}
+                className={`flex cursor-pointer items-start gap-3 border p-3 transition-colors ${
+                  checked
+                    ? "border-slate-900 bg-amber-50"
+                    : "border-dotted border-slate-300 bg-white hover:bg-slate-50"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value={m.id}
+                  checked={checked}
+                  onChange={() => setMethod(m.id)}
+                  disabled={pending}
+                  className="mt-1 size-4 shrink-0 accent-brand-700"
+                />
+                <span>
+                  <span className="block text-sm font-bold text-slate-800">{m.label}</span>
+                  <span className="mt-0.5 block text-xs leading-5 text-slate-500">{m.note}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        {selected?.id === "MANUAL" && (
+          <p className="hint mt-3">
+            Kamu akan melihat QR penjual, transfer sendiri dengan nominal persis (termasuk kode
+            unik), lalu menekan tombol konfirmasi. Penjual memverifikasi mutasi sebelum pesanan
+            diproses.
+          </p>
+        )}
+      </fieldset>
+
       <div className="card p-4 sm:p-5">
         <p className="section-kicker">Alamat kabar</p>
         <label className="label mt-3" htmlFor="whatsapp">
@@ -113,8 +164,8 @@ export function CheckoutForm({
 
       {state.error && <p role="alert" className="alert-error">{state.error}</p>}
 
-      <button type="submit" className="btn-primary w-full" disabled={pending}>
-        {pending ? "Menyusun pesanan…" : "Buat Pesanan & Bayar QRIS →"}
+      <button type="submit" className="btn-primary w-full" disabled={pending || !selected}>
+        {pending ? "Menyusun pesanan…" : "Buat Pesanan & Lanjut Bayar →"}
       </button>
       <p className="hint text-center">
         Dengan membayar, kamu menyetujui pesanan diproses manual oleh penjual via WhatsApp.

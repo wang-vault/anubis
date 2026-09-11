@@ -7,7 +7,7 @@ import { ORDER_CODE_REGEX } from "@/lib/order-code";
 import { formatRupiah } from "@/lib/money";
 import { formatDateTimeId } from "@/lib/dates";
 import { OrderTimeline } from "@/components/OrderTimeline";
-import { PaymentStatusBadge } from "@/components/StatusBadge";
+import { PaymentMethodBadge, PaymentStatusBadge } from "@/components/StatusBadge";
 
 export const metadata: Metadata = { title: "Detail Pesanan" };
 export const dynamic = "force-dynamic";
@@ -39,7 +39,10 @@ export default async function OrderDetailPage({ params }: Props) {
             <p className="section-kicker">Arsip pesanan</p>
             <h1 className="mt-1 font-mono text-sm font-bold text-slate-500">#{order.order_code}</h1>
           </div>
-          <PaymentStatusBadge status={order.payment_status} />
+          <div className="flex flex-wrap gap-2">
+            <PaymentMethodBadge method={order.payment_method} />
+            <PaymentStatusBadge status={order.payment_status} />
+          </div>
         </div>
         <div className="paper-inset mt-4 p-4 text-sm">
           <DetailRow label="Produk" value={`${order.product_name_snapshot} × ${order.quantity}`} />
@@ -54,14 +57,30 @@ export default async function OrderDetailPage({ params }: Props) {
           {order.paid_at && <DetailRow label="Lunas pukul" value={formatDateTimeId(order.paid_at)} />}
         </div>
 
-        {order.payment_status === "PENDING" && (
-          <div className="alert-warn mt-3 flex items-center justify-between gap-2">
-            <span>Belum ada pembayaran terverifikasi.</span>
-            <Link href={`/pay/${order.order_code}`} className="btn-primary btn-sm shrink-0">
-              Bayar QRIS →
-            </Link>
-          </div>
-        )}
+        {order.payment_status === "PENDING" &&
+          (order.payment_method === "MANUAL" && order.manual_claim_at ? (
+            <div className="alert-info mt-3">
+              <span className="font-bold">🧾 Menunggu verifikasi penjual.</span>{" "}
+              Kamu sudah melaporkan transfer. Penjual sedang mencocokkan mutasi
+              QRIS — status halaman ini berubah otomatis setelah diverifikasi.
+            </div>
+          ) : (
+            <div className="alert-warn mt-3 flex items-center justify-between gap-2">
+              <span>Belum ada pembayaran terverifikasi.</span>
+              <Link href={`/pay/${order.order_code}`} className="btn-primary btn-sm shrink-0">
+                {order.payment_method === "MANUAL" ? "Lanjut Bayar →" : "Bayar QRIS →"}
+              </Link>
+            </div>
+          ))}
+        {order.payment_method === "MANUAL" &&
+          order.manual_review_status === "REJECTED" &&
+          order.payment_status === "PENDING" && (
+            <p className="alert-error mt-3">
+              Konfirmasi transfermu ditolak penjual
+              {order.manual_review_note ? `: ${order.manual_review_note}` : ""}. Periksa nominal &
+              tujuan transfer, lalu konfirmasi ulang di halaman pembayaran.
+            </p>
+          )}
         {order.payment_status === "EXPIRED" && (
           <p className="alert-error mt-3">Pembayaran kadaluarsa. Buat order ulang bila masih berminat.</p>
         )}

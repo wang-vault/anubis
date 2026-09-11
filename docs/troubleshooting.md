@@ -136,3 +136,30 @@ dicantumkan di bawah).
 ## 14. Data Supabase penuh kuota / rest rate limit
 - Cek: Settings → Infrastructure usage. Solusi: upgrade paket, aktifkan
   `unstable_cache` (sudah on), pertimbangkan read replica — di luar MVP.
+
+## 15. Metode "Transfer Manual" tidak muncul di checkout
+- Penyebab: gambar QR belum diunggah, saklar mati, atau `MANUAL_PAYMENT_ENABLED=false`.
+- Cek: `/admin/settings` → bagian **Status saat ini** menjelaskan alasan persisnya
+  (`no_qr` = belum ada gambar, `disabled` = saklar mati).
+- Solusi: unggah gambar QR (PNG/JPG/WebP ≤ 900 KB) → Simpan → buka `/checkout`
+  lagi. Tidak perlu deploy ulang.
+- Bila `MANUAL_PAYMENT_QR_IMAGE_URL` diisi, URL itu yang dipakai — pastikan
+  https dan bisa dibuka di tab privat.
+
+## 16. Gambar QR buyer rusak / tidak tampil
+- Cek langsung: buka `https://tokoanda.com/api/manual-qr` di tab baru.
+  404 = belum ada gambar di DB; gambar pecah = file asli rusak/format aneh.
+- Solusi: unggah ulang PNG hasil unduhan aplikasi merchant (hindari hasil
+  screenshot yang sudah dikompres berat); bila memakai URL eksternal, pastikan
+  server gambarnya tidak memblokir hotlink.
+
+## 17. Buyer sudah konfirmasi transfer tapi order belum PAID
+- Ini **normal** untuk pembayaran manual: klaim buyer hanya memindahkan order ke
+  antrian verifikasi (`manual_claim_at` terisi, `payment_status` tetap PENDING).
+- Cek: `/admin` → kartu **Perlu verifikasi**, atau `/admin/orders?status=CLAIM`.
+- Uang ada di mutasi → **✓ Konfirmasi Lunas**; tidak ada → **✕ Tolak Klaim**
+  + alasan (buyer boleh konfirmasi ulang selama belum kadaluarsa).
+- Telegram tidak mengirim "🧾 KLAIM TRANSFER MANUAL"? lihat kasus 8 (token/chat
+  ID) — kegagalan kirim TIDAK membatalkan klaim, antrian di dashboard tetap ada.
+- Order manual yang sudah diklaim sengaja **tidak** di-expire otomatis; yang
+  belum diklaim tetap kadaluarsa lewat `payment_expired_at`.
