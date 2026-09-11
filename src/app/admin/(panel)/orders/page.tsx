@@ -3,7 +3,7 @@ import Link from "next/link";
 import { listAdminOrders } from "@/lib/orders";
 import { formatRupiah } from "@/lib/money";
 import { formatDateTimeId } from "@/lib/dates";
-import { OrderStatusBadge, PaymentStatusBadge } from "@/components/StatusBadge";
+import { OrderStatusBadge, PaymentMethodBadge, PaymentStatusBadge } from "@/components/StatusBadge";
 import { OrderActions } from "@/components/admin/OrderActions";
 import type { OrderStatus } from "@/lib/types";
 
@@ -11,6 +11,7 @@ export const metadata: Metadata = { title: "Order — Admin" };
 
 const TABS: { key: string; label: string }[] = [
   { key: "", label: "Semua" },
+  { key: "CLAIM", label: "Verifikasi Manual" },
   { key: "PENDING", label: "Belum Bayar" },
   { key: "PAID", label: "Perlu Diproses" },
   { key: "PROCESSING", label: "Diproses" },
@@ -25,9 +26,12 @@ interface Props {
 export default async function AdminOrdersPage({ searchParams }: Props) {
   const sp = await searchParams;
   const status = TABS.some((t) => t.key === sp.status) ? sp.status : "";
+  // "CLAIM" = antrian pembayaran manual yang menunggu verifikasi penjual.
+  const manualClaim = status === "CLAIM";
   const orders = await listAdminOrders({
-    status: (status || undefined) as OrderStatus | undefined,
+    status: manualClaim ? undefined : ((status || undefined) as OrderStatus | undefined),
     q: sp.q,
+    manualClaim,
   });
   const backParams = new URLSearchParams();
   if (status) backParams.set("status", status);
@@ -94,6 +98,7 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
                   {o.order_code}
                 </Link>
                 <div className="flex flex-wrap gap-2">
+                  <PaymentMethodBadge method={o.payment_method} />
                   <PaymentStatusBadge status={o.payment_status} />
                   <OrderStatusBadge status={o.order_status} />
                 </div>
@@ -108,6 +113,11 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
                   <span className="text-slate-400">(+{o.buyer_whatsapp_snapshot || "-"})</span>
                 </p>
                 <p className="text-xs text-slate-400 sm:col-span-2">
+                  {o.payment_method === "MANUAL" && o.manual_claim_at && (
+                    <span className="font-bold text-amber-700">
+                      🧾 klaim transfer {formatDateTimeId(o.manual_claim_at)} ·{" "}
+                    </span>
+                  )}
                   {formatDateTimeId(o.created_at)}
                   {o.paid_at && <> · lunas {formatDateTimeId(o.paid_at)}</>}
                   {o.telegram_notified_at && <> · 🔔 dinotifikasi {formatDateTimeId(o.telegram_notified_at)}</>}

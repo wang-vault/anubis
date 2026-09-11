@@ -3,6 +3,10 @@
 export type PaymentStatus = "PENDING" | "PAID" | "FAILED" | "EXPIRED";
 export type OrderStatus = "PENDING" | "PAID" | "PROCESSING" | "DONE" | "EXPIRED";
 export type ProfileRole = "buyer" | "admin";
+/** Metode bayar order — lihat lib/payment-methods.ts. */
+export type PaymentMethodId = "YOBASEPAY" | "MANUAL";
+/** Hasil verifikasi penjual atas klaim transfer manual. */
+export type ManualReviewStatus = "APPROVED" | "REJECTED";
 
 export interface ProfileRow {
   id: string;
@@ -42,6 +46,8 @@ export interface OrderRow {
   charged_amount: number | null;
   payment_status: PaymentStatus;
   order_status: OrderStatus;
+  /** YOBASEPAY (QRIS otomatis) atau MANUAL (QRIS statis penjual). */
+  payment_method: PaymentMethodId;
   payment_id: string | null;
   payment_url: string | null;
   qr_image_url: string | null;
@@ -52,6 +58,19 @@ export interface OrderRow {
   buyer_name_snapshot: string;
   buyer_whatsapp_snapshot: string;
   buyer_email_snapshot: string;
+
+  // --- Pembayaran MANUAL (QRIS statis penjual) ---
+  /** Buyer menekan "Saya sudah transfer" (null bila belum). */
+  manual_claim_at: string | null;
+  manual_claim_note: string;
+  manual_claim_reference: string;
+  manual_claim_notified_at: string | null;
+  /** Penjual memverifikasi (APPROVED) atau menolak (REJECTED) klaim buyer. */
+  manual_reviewed_at: string | null;
+  manual_reviewed_by: string | null;
+  manual_review_status: ManualReviewStatus | null;
+  manual_review_note: string;
+
   created_at: string;
   updated_at: string;
 }
@@ -68,6 +87,10 @@ export type BuyerOrderPublic = Pick<
   | "charged_amount"
   | "payment_status"
   | "order_status"
+  | "payment_method"
+  | "manual_claim_at"
+  | "manual_review_status"
+  | "manual_review_note"
   | "payment_url"
   | "qr_image_url"
   | "payment_expired_at"
@@ -89,6 +112,10 @@ export function toBuyerOrderPublic(o: OrderRow): BuyerOrderPublic {
     charged_amount: o.charged_amount ?? null,
     payment_status: o.payment_status,
     order_status: o.order_status,
+    payment_method: o.payment_method,
+    manual_claim_at: o.manual_claim_at,
+    manual_review_status: o.manual_review_status,
+    manual_review_note: o.manual_review_note,
     payment_url: o.payment_url,
     qr_image_url: o.qr_image_url,
     payment_expired_at: o.payment_expired_at,

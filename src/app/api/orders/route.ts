@@ -58,6 +58,8 @@ export async function GET() {
         charged_amount: o.charged_amount ?? null,
         payment_status: o.payment_status,
         order_status: o.order_status,
+        payment_method: o.payment_method,
+        manual_claim_at: o.manual_claim_at,
         created_at: o.created_at,
       })),
     };

@@ -14,17 +14,25 @@ cookie (browser mengirim otomatis; dari curl pakai `-b "sb-<ref>-auth-token=…"
 ## Orders & Payment (buyer)
 
 ### POST /api/orders
-Buat order + payment YoBasePay.
+Buat order + pembayaran.
 ```jsonc
 // request
-{ "productId": "uuid", "quantity": 1 }        // 1..20
-// 201 response
+{ "productId": "uuid", "quantity": 1,        // 1..20
+  "paymentMethod": "MANUAL" }                // opsional: MANUAL | YOBASEPAY
+// 201 response (QRIS otomatis)
 { "ok": true,
   "order":   { "order_code":"ORD-20260911-AB7K2M","total_amount":25000,
                "order_status":"PENDING","payment_status":"PENDING" },
   "payment": { "paymentId":"YO-ABC123","paymentUrl":"https://…","qrImageUrl":"https://…png","expiresAt":"2026-09-11T05:30:00.000Z" } }
+// 201 response (transfer manual) — tidak ada transaksi provider
+{ "ok": true,
+  "order":   { "order_code":"ORD-20260912-MANU4L","total_amount":50000, … },
+  "payment": { "paymentId":null,"paymentUrl":null,
+               "qrImageUrl":"/api/manual-qr?v=…","expiresAt":"2026-09-12T14:30:00.000Z" } }
 ```
 Syarat: login + email verified. Harga dari DB, BUKAN dari request.
+`paymentMethod` yang tidak tersedia (mis. QRIS otomatis belum aktif) → 409;
+tidak diisi → memakai `DEFAULT_PAYMENT_METHOD` / satu-satunya metode aktif.
 Gagal provider → 503 (order ditandai FAILED/EXPIRED agar tidak menggantung).
 
 ### GET /api/orders
@@ -35,7 +43,21 @@ Detail order milik sendiri. 404 bila bukan milikmu (tidak membocorkan keberadaan
 
 ### GET /api/orders/{order_code}/status
 Polling ringan (hanya DB):
-`{ok, order_code, payment_status, order_status, total_amount, paid_at, payment_expired_at, server_time}`
+`{ok, order_code, payment_status, order_status, total_amount, paid_at, payment_expired_at,
+payment_method, manual_claim_at, manual_review_status, manual_review_note, server_time}`
+
+### GET /api/manual-qr
+Gambar QRIS statis penjual (PNG/JPG/WebP) yang di-upload dari `/admin/settings`.
+Publik + `Cache-Control: public, max-age=300` (QRIS statis memang untuk
+dipindai siapa pun). 404 bila belum diunggah; 302 ke `MANUAL_PAYMENT_QR_IMAGE_URL`
+bila env itu diisi.
+
+### Klaim pembayaran manual (server action, bukan REST)
+`claimManualPaymentAction` (`src/app/pay/actions.ts`) — dipanggil tombol
+"Saya sudah transfer" di `/pay/[code]`. Input: `orderCode`, `note`, `reference`.
+Mencatat `manual_claim_at` + notifikasi Telegram ke penjual.
+**Tidak pernah** mengubah `payment_status`; idempoten (klaim kedua = no-op);
+rate limit 10/10 menit/user; 409 bila order bukan manual / sudah lunas / sudah ditutup.
 
 ### GET /api/payments/status?order=ORD-...
 Sinkronisasi + polling endpoint untuk halaman bayar:
@@ -87,6 +109,17 @@ Subset field yang sama (parsial). Nonaktifkan produk: `{"is_active":false}`.
 idempoten + cek `payment_status=PAID`). Salah kondisi → 409 CONFLICT.
 (Endpoint internal UI juga mendukung `expire` utk admin membatalkan PENDING:
 `src/app/admin/actions.ts`.)
+
+### Verifikasi pembayaran manual (server action admin)
+`src/app/admin/actions.ts`:
+| Action | Input | Efek |
+|---|---|---|
+| `confirmManualPaymentAction` | `orderId`, `receivedAmount?`, `note?` | order manual → `PAID` (`applyPaid`, sumber `manual`) + Telegram "LUNAS" |
+| `rejectManualClaimAction` | `orderId`, `note?` | klaim dibersihkan → buyer boleh konfirmasi ulang; `manual_review_status=REJECTED` |
+| `saveManualPaymentSettingsAction` | `label`, `account_name`, `instructions`, `expiry_minutes`, `is_enabled`, `qr_image` (File) | simpan konfigurasi + gambar QR (maks 900 KB) |
+
+`GET /api/admin/orders?status=CLAIM` → antrian order manual yang menunggu
+verifikasi (klaim tertua dulu).
 
 ## Auth
 Register/login/logout/reset tidak lewat API custom — klien memanggil **Supabase

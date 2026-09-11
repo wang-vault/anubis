@@ -9,6 +9,20 @@ import { z } from "zod";
  *
  * Nilai tidak pernah dicetak ke output user; error hanya menyebut NAMA variabel.
  */
+/**
+ * Boolean dari env: menerima "1"/"true"/"yes"/"on" (case-insensitive) sebagai
+ * true; string kosong TIDAK diartikan true (berbeda dari Boolean("false")).
+ */
+const looseBool = z.preprocess((v) => {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(s)) return true;
+    if (["", "0", "false", "no", "off"].includes(s)) return false;
+  }
+  return v;
+}, z.boolean());
+
 const schema = z.object({
   // --- Aplikasi ---
   NEXT_PUBLIC_SITE_URL: z
@@ -30,8 +44,11 @@ const schema = z.object({
   SUPABASE_STORE_SERVICE_ROLE_KEY: z.string().min(10),
 
   // --- YoBasePay (Payment Engine QRIS) ---
-  YOBASEPAY_API_KEY: z.string().min(1),
-  YOBASEPAY_WEBHOOK_SECRET: z.string().min(1),
+  // OPSIONAL: kosongkan bila QRIS otomatis belum aktif di akun YoBasePay.
+  // Bila salah satu kosong → metode YOBASEPAY otomatis disembunyikan & webhook
+  // ditolak (lihat yobasepayConfigured()). Pembayaran manual tetap jalan.
+  YOBASEPAY_API_KEY: z.string().default(""),
+  YOBASEPAY_WEBHOOK_SECRET: z.string().default(""),
   // Sesuai dokumentasi resmi: https://yobasepay.net/index.php?page=docs_public
   YOBASEPAY_BASE_URL: z.string().url().default("https://yobasepay.net/api"),
   // YoBasePay menambah "kode unik" (1–99 / 100–999) ke nominal agar mutasi
@@ -39,6 +56,24 @@ const schema = z.object({
   YOBASEPAY_AMOUNT_TOLERANCE: z.coerce.number().int().min(0).max(999).default(999),
   // expired_at dari YoBasePay berupa datetime tanpa zona waktu; diasumsikan WIB.
   YOBASEPAY_EXPIRY_TZ_OFFSET: z.string().default("+07:00"),
+
+  // --- Pembayaran MANUAL (QRIS statis milik penjual, mis. QR GoPay Merchant) ---
+  // Metode ini tidak butuh provider: buyer scan QR statis, transfer, lalu
+  // menekan "Saya sudah transfer"; penjual memverifikasi mutasi di dashboard.
+  MANUAL_PAYMENT_ENABLED: looseBool.default(true),
+  // Metode default yang dipilih di halaman checkout.
+  DEFAULT_PAYMENT_METHOD: z.enum(["YOBASEPAY", "MANUAL"]).default("MANUAL"),
+  // Opsional: bila kamu sudah meng-host gambar QR sendiri (https), URL ini
+  // mengalahkan gambar yang di-upload dari /admin/settings.
+  MANUAL_PAYMENT_QR_IMAGE_URL: z.preprocess(
+    (v) => (typeof v === "string" ? (v.trim().length === 0 ? null : v.trim()) : (v ?? null)),
+    z
+      .union([
+        z.null(),
+        z.string().url("URL gambar QR tidak valid").startsWith("https://", "Gambar QR harus https").max(500),
+      ])
+      .default(null),
+  ),
 
   // --- Telegram (NOTIFIKASI PENJUAL SAJA) ---
   // Opsional: bila kosong, notifikasi dilewati dengan log (pembayaran tetap diproses).
@@ -65,6 +100,15 @@ export function serverEnv(): Env {
   }
   cached = parsed.data;
   return cached;
+}
+
+/**
+ * Helper: apakah QRIS otomatis (YoBasePay) bisa dipakai?
+ * Butuh API key DAN webhook secret — tanpa secret, signature tidak bisa
+ * diverifikasi sehingga webhook tidak boleh dipercaya sama sekali.
+ */
+export function yobasepayConfigured(env: Env = serverEnv()): boolean {
+  return env.YOBASEPAY_API_KEY.length > 0 && env.YOBASEPAY_WEBHOOK_SECRET.length > 0;
 }
 
 /** Helper: apakah kredensial Telegram terisi? */

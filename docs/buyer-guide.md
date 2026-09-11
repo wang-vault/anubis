@@ -24,13 +24,17 @@ Menu **Produk** atau beranda. Produk dengan label **● Tersedia** bisa dibeli.
 ## 5–6. Membeli & checkout
 1. Buka produk → **Beli Sekarang**.
 2. Pilih jumlah (maks 20/order).
-3. Pastikan **nomor WhatsApp** yang tertera benar — boleh langsung diperbaiki
+3. Pilih **Cara bayar** (yang tampil tergantung metode yang diaktifkan penjual):
+   - **QRIS Otomatis** — QR dibuat sistem, nominal terkunci, status lunas otomatis.
+   - **Transfer Manual** — QR statis milik penjual (mis. QRIS GoPay Merchant);
+     kamu transfer sendiri lalu konfirmasi di halaman bayar.
+4. Pastikan **nomor WhatsApp** yang tertera benar — boleh langsung diperbaiki
    di form checkout.
-4. **Buat Pesanan & Bayar QRIS** — total dihitung otomatis oleh sistem sesuai
+5. **Buat Pesanan & Lanjut Bayar** — total dihitung otomatis oleh sistem sesuai
    harga di katalog.
 
-## 7. Bayar QRIS
-Klik **Bayar QRIS** → halaman pembayaran menampilkan QR:
+## 7a. Bayar dengan QRIS Otomatis
+Halaman pembayaran menampilkan QR:
 1. Buka e-wallet/mobile banking apa pun yang mendukung **QRIS** (m-BCA,
    Livin, BRImo, DANA, OVO, GoPay, ShopeePay…).
 2. Pilih **Scan/Pay QRIS** → arahkan ke QR di layar (atau tombol
@@ -41,12 +45,33 @@ Klik **Bayar QRIS** → halaman pembayaran menampilkan QR:
 
 > Jangan tutup halaman sampai muncul ✅. Link QR juga bisa discan dari HP lain.
 
+## 7b. Bayar dengan Transfer Manual
+1. Scan QR penjual dengan aplikasi QRIS mana pun (GoPay, OVO, DANA,
+   ShopeePay, m-banking).
+2. **Ketik nominal PERSIS** seperti yang tertulis (mis. `Rp50.417`) — pakai
+   tombol **Salin nominal** agar tidak salah ketik. Tiga digit terakhir adalah
+   kode unik order, bukan biaya tambahan: tanpanya transfermu sulit dicocokkan.
+3. Kirim ke nama penerima yang tertera di halaman.
+4. Setelah uang benar-benar terkirim, isi **nama pengirim** (+ nomor referensi
+   bila ada) lalu tekan **Saya sudah transfer Rp…**.
+5. Muncul "Konfirmasi kamu sudah kami terima" → penjual mencocokkan mutasi
+   QRIS-nya. Begitu diverifikasi, halaman berubah sendiri menjadi
+   ✅ **Pembayaran berhasil** (dicek otomatis tiap ±8 detik).
+
+⚠️ Jangan menekan tombol konfirmasi sebelum transfer berhasil — klaim palsu
+membuat order ditolak. Bila penjual menolak klaimmu (mis. nominal tidak
+ditemukan), alasannya tampil di halaman itu dan kamu boleh konfirmasi ulang
+selama waktu bayar belum habis.
+
 ## 8. Status
 Halaman pembayaran **memperbarui otomatis tiap ±8 detik**:
 - ⏳ MENUNGGU PEMBAYARAN — kamu sudah bayar? tunggu sebentar; atau tekan
   **Cek Status Pembayaran Sekarang**.
-- ✅ PEMBAYARAN BERHASIL — lunas tercatat; status ini dibuat oleh sistem dari
-  bank data penjual, jadi bukti transfer tidak perlu dikirim kecuali diminta.
+- ✅ PEMBAYARAN BERHASIL — lunas tercatat; status ini dibuat sistem (QRIS
+  otomatis) atau oleh penjual setelah cek mutasi (transfer manual), jadi bukti
+  transfer tidak perlu dikirim kecuali diminta.
+- 🧾 MENUNGGU VERIFIKASI (transfer manual) — kamu sudah konfirmasi, penjual
+  sedang mencocokkan mutasi. Jangan transfer ulang.
 - ❌ KADALUARSA — jangan transfer manual; buat order baru saja.
 
 ## 9–10. Pesanan diproses → dikirim via WhatsApp
@@ -65,7 +90,8 @@ Semua data order (harga, tanggal, kode) tersimpan permanen di riwayat kamu.
 | Tanya | Jawab |
 |---|---|
 | Email verifikasi tidak masuk | Cek spam; kirim ulang dari halaman verifikasi; pastikan email benar. Tetap tidak masuk → kabari penjual |
-| Sudah transfer tapi belum ✅ | Tunggu 1–2 menit; refresh; tekan tombol cek status. Jangan transfer ulang! Transfer manual di luar QR = tidak tercatat otomatis |
+| Sudah transfer tapi belum ✅ (QRIS otomatis) | Tunggu 1–2 menit; refresh; tekan tombol cek status. Jangan transfer ulang! Transfer di luar QR = tidak tercatat otomatis |
+| Sudah transfer manual tapi belum ✅ | Pastikan nominal persis (termasuk kode unik) & tombol konfirmasi sudah ditekan. Tunggu penjual memverifikasi mutasi; jangan transfer kedua kalinya |
 | Salah nomor WhatsApp | Perbaiki di checkout berikutnya; untuk order berjalan kabari penjual lewat chat |
 | QR kadaluarsa saat mau scan | Buat order baru (tidak ada biaya untuk order expired) |
 | Mau refund? | Hubungi penjual via chat; penjual mengatur pengembalian sesuai kebijakannya (sistem tidak punya refund otomatis) |

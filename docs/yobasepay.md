@@ -13,6 +13,14 @@ dashboard akun Anda (menu Docs) dan sesuaikan HANYA file
 > (+1..99 untuk <500rb, +100..999 untuk ≥500rb) supaya cocok otomatis dari
 > mutasi. Aplikasi ini sudah memvalidasi rentang itu (`YOBASEPAY_AMOUNT_TOLERANCE`).
 
+> **Integrasi ini OPSIONAL.** Toko punya metode kedua — **Transfer Manual**
+> (QRIS statis milikmu, mis. QR GoPay Merchant) yang tidak butuh provider sama
+> sekali: lihat `docs/manual-payment.md`. Bila akun YoBasePay belum aktif,
+> kosongkan `YOBASEPAY_API_KEY` & `YOBASEPAY_WEBHOOK_SECRET` → metode QRIS
+> otomatis disembunyikan dari checkout dan webhook ditolak 403, sementara toko
+> tetap berjualan lewat pembayaran manual. Setelah aktif, isi kembali kedua
+> variabel itu — metodenya muncul lagi tanpa perubahan kode.
+
 ## 1. Buat akun & project
 
 1. Buka https://yobasepay.net → **Daftar** (email) → verifikasi.

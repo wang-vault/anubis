@@ -19,13 +19,22 @@ Klasifikasi:
 | `NEXT_PUBLIC_SUPABASE_STORE_URL` | 🌐 | ✔ | Supabase #2 → Settings → API → Project URL | `https://mnopqrstuvwx.supabase.co` |
 | `SUPABASE_STORE_SERVICE_ROLE_KEY` | 🔒🖥 | ✔ | Supabase #2 → API → `service_role` | JWT panjang |
 | `NEXT_PUBLIC_SUPABASE_STORE_ANON_KEY` | 🌐 | — (opsional) | Supabase #2 → `anon`. MVP tidak membacanya dari browser (semua akses toko via server) — kosongkan kecuali nanti ingin query katalog langsung dari client | sama formatnya |
-| `YOBASEPAY_API_KEY` | 🔒🖥 | ✔ (untuk checkout) | Dashboard YoBasePay → project/API key (dipakai sebagai `apikey`) | sesuai dashboard |
-| `YOBASEPAY_WEBHOOK_SECRET` | 🔒🖥 | ✔ | Dashboard YoBasePay → Webhook secret (untuk HMAC `X-YoBasePay-Signature`) | string |
+| `DEFAULT_PAYMENT_METHOD` | 🖥 | — (default `MANUAL`) | Metode terpilih default di checkout: `MANUAL` / `YOBASEPAY` | `MANUAL` |
+| `MANUAL_PAYMENT_ENABLED` | 🖥 | — (default `true`) | Saklar global metode transfer manual (saklar kedua ada di `/admin/settings`) | `true` / `false` |
+| `MANUAL_PAYMENT_QR_IMAGE_URL` | 🖥 | — (opsional) | URL https gambar QR statis bila kamu host sendiri; mengalahkan gambar yang di-upload dari dashboard | `https://cdn.anda/qris.png` |
+| `YOBASEPAY_API_KEY` | 🔒🖥 | — (kosong = QRIS otomatis nonaktif) | Dashboard YoBasePay → project/API key (dipakai sebagai `apikey`) | sesuai dashboard |
+| `YOBASEPAY_WEBHOOK_SECRET` | 🔒🖥 | — (kosong = webhook ditolak 403) | Dashboard YoBasePay → Webhook secret (untuk HMAC `X-YoBasePay-Signature`) | string |
 | `YOBASEPAY_BASE_URL` | 🖥 | — (default `https://yobasepay.net/api`) | Dokumentasi API di dashboard akun Anda — bila versi V3/V4 memakai path berbeda | `https://yobasepay.net/api` |
 | `YOBASEPAY_AMOUNT_TOLERANCE` | 🖥 | — (default `999`) | Toleransi kode unik nominal. V1/V2 (+1..999): `999`. V3 no-unique-code: `0` | `999` |
 | `YOBASEPAY_EXPIRY_TZ_OFFSET` | 🖥 | — (default `+07:00`) | Offset zona waktu field `expired_at` provider (dokumentasi tidak menyebut zona) | `+07:00` |
 | `TELEGRAM_BOT_TOKEN` | 🔒🖥 | — (kosong = notifikasi skip) | Dari @BotFather (`/newbot`) | `123456789:AAExampleTokenFormatNotReal123` |
 | `TELEGRAM_CHAT_ID` | 🖥 | — (berpasangan dengan token) | Chat ID penjual (lihat `docs/telegram.md`) | `987654321` atau `-1001234567890` (grup) |
+
+> **Kombinasi metode pembayaran.** Toko butuh minimal SATU metode aktif:
+> pembayaran manual (gambar QR diunggah via `/admin/settings` +
+> `MANUAL_PAYMENT_ENABLED=true`) atau QRIS otomatis (kedua var YoBasePay terisi).
+> Bila dua-duanya mati, `/checkout` menampilkan "Pembayaran belum tersedia"
+> (bukan error). Detail: `docs/manual-payment.md`.
 
 ## Aturan yang ditegakkan proyek
 

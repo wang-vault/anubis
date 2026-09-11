@@ -1,6 +1,6 @@
 import "server-only";
 import crypto from "node:crypto";
-import { serverEnv } from "@/lib/env";
+import { serverEnv, yobasepayConfigured } from "@/lib/env";
 import { log } from "@/lib/logger";
 import {
   PaymentProviderError,
@@ -119,11 +119,26 @@ export function createYoBasePayProvider(): PaymentProvider {
   const env = serverEnv();
   const base = env.YOBASEPAY_BASE_URL.replace(/\/+$/, "");
   const origin = new URL(env.NEXT_PUBLIC_SITE_URL).origin;
+  // API key / webhook secret boleh kosong: artinya QRIS otomatis belum aktif
+  // (mis. akun YoBasePay masih menunggu aktivasi). Semua panggilan ditolak
+  // dengan error yang jelas, dan toko tetap jalan via pembayaran manual.
+  const configured = yobasepayConfigured(env);
 
   return {
     name: PROVIDER_NAME,
 
+    /** true bila kredensial YoBasePay terisi (dipakai UI utk menyembunyikan metode). */
+    get isConfigured(): boolean {
+      return configured;
+    },
+
     async createPayment({ amount }): Promise<CreatedPayment> {
+      if (!configured) {
+        throw new PaymentProviderError(
+          "provider_disabled",
+          "YOBASEPAY_API_KEY / YOBASEPAY_WEBHOOK_SECRET belum diisi",
+        );
+      }
       // Dokumentasi: parameter hanya apikey + amount. Reference order TIDAK
       // dikirim ke API publik → pencocokan webhook lewat trx_id (payment_id
       // yang kita simpan di order). [VERIFIKASI] apakah API versi akun Anda
@@ -157,6 +172,9 @@ export function createYoBasePayProvider(): PaymentProvider {
     },
 
     async checkStatus(paymentId): Promise<PaymentStatusResult> {
+      if (!configured) {
+        throw new PaymentProviderError("provider_disabled", "YoBasePay belum dikonfigurasi");
+      }
       const url = new URL(base);
       url.searchParams.set("action", "checkstatus");
       url.searchParams.set("apikey", env.YOBASEPAY_API_KEY);

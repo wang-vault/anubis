@@ -1,5 +1,10 @@
 import Link from "next/link";
-import { orderTransitionAction, refreshOrderPaymentAction } from "@/app/admin/actions";
+import {
+  confirmManualPaymentAction,
+  orderTransitionAction,
+  refreshOrderPaymentAction,
+  rejectManualClaimAction,
+} from "@/app/admin/actions";
 import { sellerWaMessage, waMeUrl } from "@/lib/phone";
 import type { OrderRow } from "@/lib/types";
 import { ActionButton } from "@/components/ActionButton";
@@ -18,11 +23,16 @@ export function OrderActions({
   back: string;
   compact?: boolean;
 }) {
+  const isManual = order.payment_method === "MANUAL";
   const canProcess = order.order_status === "PAID" && order.payment_status === "PAID";
   const canComplete =
     order.payment_status === "PAID" && ["PAID", "PROCESSING"].includes(order.order_status);
   const canExpire = order.order_status === "PENDING";
-  const canRefresh = order.payment_status === "PENDING";
+  // Cek ke provider hanya relevan untuk QRIS otomatis.
+  const canRefresh = order.payment_status === "PENDING" && !isManual;
+  // Pembayaran manual: klaim buyer menunggu penjual mencocokkan mutasi.
+  const needsManualVerification =
+    isManual && order.payment_status === "PENDING" && Boolean(order.manual_claim_at);
   const waHref = order.buyer_whatsapp_snapshot
     ? waMeUrl(
         order.buyer_whatsapp_snapshot,
@@ -64,6 +74,34 @@ export function OrderActions({
             ✓ Tandai Selesai
           </ActionButton>
         </form>
+      )}
+      {needsManualVerification && (
+        <>
+          <form action={confirmManualPaymentAction} className="inline">
+            <input type="hidden" name="orderId" value={order.id} />
+            <input type="hidden" name="back" value={back} />
+            <ActionButton
+              className="btn-primary btn-sm"
+              type="submit"
+              pendingText="Mengonfirmasi…"
+              title="Uang sudah masuk di mutasi QRIS? Tandai order ini lunas."
+            >
+              ✓ Konfirmasi Lunas
+            </ActionButton>
+          </form>
+          <form action={rejectManualClaimAction} className="inline">
+            <input type="hidden" name="orderId" value={order.id} />
+            <input type="hidden" name="back" value={back} />
+            <ActionButton
+              className="btn-danger btn-sm"
+              type="submit"
+              pendingText="Menolak…"
+              title="Mutasi tidak ditemukan — buyer boleh konfirmasi ulang."
+            >
+              ✕ Tolak Klaim
+            </ActionButton>
+          </form>
+        </>
       )}
       {canRefresh && (
         <form action={refreshOrderPaymentAction} className="inline">

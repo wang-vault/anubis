@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  checkoutSchema,
   looseBooleanSchema,
+  manualClaimSchema,
+  manualSettingsSchema,
   optionalHttpsUrlSchema,
   productInputSchema,
   sanitizeAdminSearchQuery,
@@ -62,5 +65,56 @@ describe("sanitizeAdminSearchQuery", () => {
   });
   it("mempertahankan kata kunci aman", () => {
     expect(sanitizeAdminSearchQuery("ORD-20260911")).toBe("ORD-20260911");
+  });
+});
+
+describe("checkoutSchema.paymentMethod", () => {
+  const base = { productId: "11111111-1111-4111-8111-111111111111", quantity: 2 };
+
+  it("opsional — tidak diisi tetap valid (server yang memilih default)", () => {
+    const r = checkoutSchema.parse(base);
+    expect(r.paymentMethod).toBeUndefined();
+  });
+  it("meneruskan nilai mentah apa adanya untuk diputuskan server", () => {
+    expect(checkoutSchema.parse({ ...base, paymentMethod: "MANUAL" }).paymentMethod).toBe("MANUAL");
+    // Nilai ngawur dari klien TIDAK ditolak di sini — ditolak resolvePaymentMethod.
+    expect(checkoutSchema.parse({ ...base, paymentMethod: "GOPAY" }).paymentMethod).toBe("GOPAY");
+  });
+});
+
+describe("manualClaimSchema", () => {
+  it("menerima klaim lengkap dan menormalkan spasi", () => {
+    const r = manualClaimSchema.parse({
+      orderCode: "ORD-20260912-AB7K2M",
+      note: "  Budi Santoso  ",
+      reference: " 12345 ",
+    });
+    expect(r.note).toBe("Budi Santoso");
+    expect(r.reference).toBe("12345");
+  });
+  it("catatan & referensi opsional (default kosong)", () => {
+    const r = manualClaimSchema.parse({ orderCode: "ORD-20260912-AB7K2M" });
+    expect(r.note).toBe("");
+    expect(r.reference).toBe("");
+  });
+  it("menolak kode order tak valid & catatan terlalu panjang", () => {
+    expect(manualClaimSchema.safeParse({ orderCode: "ORD-123" }).success).toBe(false);
+    expect(manualClaimSchema.safeParse({ orderCode: "ORD-20260912-AB7K2M", note: "x".repeat(201) }).success).toBe(false);
+  });
+});
+
+describe("manualSettingsSchema", () => {
+  it("default masuk akal bila field kosong", () => {
+    const r = manualSettingsSchema.parse({});
+    expect(r.is_enabled).toBe(true);
+    expect(r.label).toBe("Transfer Manual (QRIS)");
+    expect(r.expiry_minutes).toBe(120);
+  });
+  it("is_enabled string false berarti mati (bukan truthy)", () => {
+    expect(manualSettingsSchema.parse({ is_enabled: "false" }).is_enabled).toBe(false);
+  });
+  it("menolak batas waktu di luar rentang", () => {
+    expect(manualSettingsSchema.safeParse({ expiry_minutes: 5 }).success).toBe(false);
+    expect(manualSettingsSchema.safeParse({ expiry_minutes: 99999 }).success).toBe(false);
   });
 });

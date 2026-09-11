@@ -61,6 +61,23 @@ create table if not exists public.orders (
   order_status          text not null default 'PENDING'
     check (order_status in ('PENDING', 'PAID', 'PROCESSING', 'DONE', 'EXPIRED')),
 
+  -- Metode bayar: 'YOBASEPAY' = QRIS dinamis otomatis, 'MANUAL' = QRIS statis
+  -- milik penjual yang diverifikasi manual dari mutasi (lihat bagian 6).
+  payment_method        text not null default 'YOBASEPAY'
+    check (payment_method in ('YOBASEPAY', 'MANUAL')),
+
+  -- Pembayaran MANUAL: klaim buyer ("saya sudah transfer") + hasil verifikasi
+  -- penjual. Semua kolom ini HANYA ditulis server-side.
+  manual_claim_at          timestamptz,                -- buyer menekan "Saya sudah transfer"
+  manual_claim_note        text not null default '',   -- catatan buyer (nama pengirim, dll.)
+  manual_claim_reference   text not null default '',   -- no. referensi / ID transaksi buyer
+  manual_claim_notified_at timestamptz,                -- klaim sudah dinotifikasi ke Telegram (anti ganda)
+  manual_reviewed_at       timestamptz,                -- penjual memverifikasi/menolak klaim
+  manual_reviewed_by       uuid,                       -- auth.users.id admin (Supabase #1)
+  manual_review_status     text check (manual_review_status is null
+    or manual_review_status in ('APPROVED', 'REJECTED')),
+  manual_review_note       text not null default '',
+
   -- Informasi pembayaran (diisi server-side dari YoBasePay)
   payment_id            text,                          -- trx_id dari YoBasePay, mis. YO-ABC12345
   payment_url           text,                          -- halaman/URL QRIS dari provider
@@ -94,10 +111,46 @@ create index if not exists orders_to_process_idx on public.orders (order_status,
 -- Pembersihan order kadaluarsa
 create index if not exists orders_pending_expiry_idx on public.orders (payment_expired_at)
   where payment_status = 'PENDING';
+-- Antrian verifikasi pembayaran manual (klaim buyer yang belum diverifikasi)
+create index if not exists orders_manual_claim_idx on public.orders (manual_claim_at asc)
+  where manual_claim_at is not null and payment_status = 'PENDING';
 
 -- unique payment_id (satu transaksi provider = satu order), boleh null
 create unique index if not exists orders_payment_id_unique
   on public.orders (payment_id) where payment_id is not null;
+
+-- ---------------------------------------------------------------------------
+-- 2b. TABEL manual_payment_settings (SATU baris, id = 1)
+--     Konfigurasi metode "Transfer Manual" — QRIS statis milik penjual
+--     (mis. QR dari aplikasi GoPay Merchant) yang di-upload dari /admin/settings.
+--
+--     Gambar QR disimpan sebagai base64 agar tidak perlu bucket storage &
+--     tidak perlu hosting eksternal. Dibatasi di aplikasi (maks ~900 KB).
+--     Gambar disajikan ke buyer lewat GET /api/manual-qr (bukan data URI di
+--     HTML, supaya halaman bayar tetap ringan & gambar bisa di-cache).
+-- ---------------------------------------------------------------------------
+create table if not exists public.manual_payment_settings (
+  id              int primary key default 1 check (id = 1),
+  is_enabled      boolean not null default true,
+  label           text not null default 'Transfer Manual (QRIS)',
+  account_name    text not null default '',   -- a.n. rekening/merchant, mis. "Toko Saya"
+  instructions    text not null default '',   -- catatan tambahan utk buyer (opsional)
+  expiry_minutes  int not null default 120 check (expiry_minutes between 10 and 4320),
+  qr_image_mime   text not null default 'image/png',
+  qr_image_base64 text,                       -- isi gambar (base64, tanpa prefix data:)
+  qr_image_size   int not null default 0,     -- ukuran byte gambar asli (untk info admin)
+  updated_at      timestamptz not null default now()
+);
+
+comment on table public.manual_payment_settings is
+  'Konfigurasi pembayaran manual (QRIS statis penjual). Satu baris saja (id=1). Hanya service_role.';
+comment on column public.manual_payment_settings.qr_image_base64 is
+  'Gambar QR statis dalam base64. Di-upload dari /admin/settings; disajikan via /api/manual-qr.';
+
+-- Baris default (idempotent) — tanpa baris ini metode manual dianggap belum dikonfigurasi.
+insert into public.manual_payment_settings (id)
+values (1)
+on conflict (id) do nothing;
 
 -- ---------------------------------------------------------------------------
 -- 3. updated_at otomatis (fungsi dibuat mandiri di project ini, agar
@@ -123,11 +176,17 @@ create trigger orders_set_updated_at
   before update on public.orders
   for each row execute function public.set_updated_at();
 
+drop trigger if exists manual_payment_settings_set_updated_at on public.manual_payment_settings;
+create trigger manual_payment_settings_set_updated_at
+  before update on public.manual_payment_settings
+  for each row execute function public.set_updated_at();
+
 -- ---------------------------------------------------------------------------
 -- 4. ROW LEVEL SECURITY
 -- ---------------------------------------------------------------------------
 alter table public.products enable row level security;
 alter table public.orders   enable row level security;
+alter table public.manual_payment_settings enable row level security;
 
 -- Produk: boleh DIBACA publik (anon & terautentikasi) bila aktif.
 -- Menulis produk HANYA lewat server (service role, bypass RLS) yang sudah
@@ -145,12 +204,18 @@ create policy "products_read_active"
 -- melalui API server-side yang memeriksa session + kepemilikan + role.
 -- (service_role sengaja bypass RLS — key ini tidak pernah dikirim ke browser.)
 
+-- manual_payment_settings: sama seperti orders — RLS tanpa policy. Gambar QR
+-- dibaca server-side lalu disajikan lewat /api/manual-qr, jadi browser tidak
+-- pernah menyentuh tabel ini langsung.
+
 -- ============================================================================
 -- SELESAI. Verifikasi cepat (SQL Editor):
 --   select relname, relrowsecurity from pg_class
---   where relname in ('products','orders');                -- true, true
+--   where relname in ('products','orders','manual_payment_settings');
+--   -- true, true, true
 --   select policyname from pg_policies where schemaname='public';
 --   -- hanya "products_read_active"
+--   select id, is_enabled, label from public.manual_payment_settings;  -- 1 baris
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -162,3 +227,65 @@ alter table public.orders
 
 comment on column public.orders.charged_amount is
   'Nominal final provider (total + kode unik). Sumber tampilan "Total transfer" di halaman bayar.';
+
+-- ---------------------------------------------------------------------------
+-- 6. MIGRASI RINGAN (aman dijalankan ulang) — pembayaran MANUAL
+--    Untuk project yang sudah menjalankan schema versi sebelumnya:
+--    tambah kolom metode/klaim manual + tabel konfigurasi QR statis.
+--    Jalankan blok ini bila bagian 1–4 di atas sudah pernah dijalankan.
+-- ---------------------------------------------------------------------------
+alter table public.orders
+  add column if not exists payment_method text not null default 'YOBASEPAY';
+
+alter table public.orders
+  add column if not exists manual_claim_at timestamptz;
+
+alter table public.orders
+  add column if not exists manual_claim_note text not null default '';
+
+alter table public.orders
+  add column if not exists manual_claim_reference text not null default '';
+
+alter table public.orders
+  add column if not exists manual_claim_notified_at timestamptz;
+
+alter table public.orders
+  add column if not exists manual_reviewed_at timestamptz;
+
+alter table public.orders
+  add column if not exists manual_reviewed_by uuid;
+
+alter table public.orders
+  add column if not exists manual_review_status text;
+
+alter table public.orders
+  add column if not exists manual_review_note text not null default '';
+
+comment on column public.orders.payment_method is
+  'YOBASEPAY = QRIS dinamis otomatis. MANUAL = QRIS statis penjual, diverifikasi manual dari mutasi.';
+
+-- Constraint hanya ditambah bila belum ada (DO block agar idempotent).
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'orders_payment_method_check' and conrelid = 'public.orders'::regclass
+  ) then
+    alter table public.orders
+      add constraint orders_payment_method_check
+      check (payment_method in ('YOBASEPAY', 'MANUAL'));
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'orders_manual_review_status_check' and conrelid = 'public.orders'::regclass
+  ) then
+    alter table public.orders
+      add constraint orders_manual_review_status_check
+      check (manual_review_status is null or manual_review_status in ('APPROVED', 'REJECTED'));
+  end if;
+end
+$$;
+
+create index if not exists orders_manual_claim_idx on public.orders (manual_claim_at asc)
+  where manual_claim_at is not null and payment_status = 'PENDING';

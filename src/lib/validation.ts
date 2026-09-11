@@ -52,6 +52,22 @@ export const checkoutSchema = z.object({
     .int("Jumlah harus bilangan bulat")
     .min(1)
     .max(20, "Maksimal 20 pcs per order"),
+  /**
+   * Metode bayar pilihan buyer. Sengaja `unknown`: daftar metode yang benar-benar
+   * tersedia ditentukan server (env + pengaturan penjual), bukan oleh klien.
+   * Lihat lib/payment-config.resolvePaymentMethod().
+   */
+  paymentMethod: z.unknown().optional(),
+});
+
+/**
+ * Klaim pembayaran manual: buyer menyatakan "sudah transfer" lalu mengisi
+ * nama pengirim / nomor referensi agar penjual mudah mencocokkan mutasi.
+ */
+export const manualClaimSchema = z.object({
+  orderCode: z.string().regex(/^ORD-\d{8}-[A-Z0-9]{6}$/, "Kode order tidak valid"),
+  note: z.string().trim().max(200, "Catatan maksimal 200 karakter").default(""),
+  reference: z.string().trim().max(60, "Nomor referensi maksimal 60 karakter").default(""),
 });
 
 export const orderCodeParamSchema = z.string().regex(
@@ -75,6 +91,25 @@ export const looseBooleanSchema = z.preprocess((val) => {
   }
   return val;
 }, z.boolean());
+
+/** Pengaturan pembayaran manual (form /admin/settings). */
+export const manualSettingsSchema = z.object({
+  is_enabled: looseBooleanSchema.default(true),
+  label: z
+    .string()
+    .trim()
+    .min(3, "Label minimal 3 karakter")
+    .max(60, "Label maksimal 60 karakter")
+    .default("Transfer Manual (QRIS)"),
+  account_name: z.string().trim().max(80, "Nama penerima maksimal 80 karakter").default(""),
+  instructions: z.string().trim().max(600, "Instruksi maksimal 600 karakter").default(""),
+  expiry_minutes: z.coerce
+    .number()
+    .int("Batas waktu harus bilangan bulat menit")
+    .min(10, "Minimal 10 menit")
+    .max(4320, "Maksimal 4320 menit (3 hari)")
+    .default(120),
+});
 
 /** URL gambar opsional: kosong / spasi → null; selain itu wajib https. */
 export const optionalHttpsUrlSchema = z.preprocess(

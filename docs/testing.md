@@ -45,6 +45,30 @@ Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 - [ ] [MANUAL] Tombol admin "Cek Pembayaran" (tanpa webhook) → PAID via checkstatus provider
 - [ ] [AUTO] `amountWithinTolerance` (pas, +kodeunik, di bawah, di atas, tolerance=0, NaN)
 
+## 4b. PEMBAYARAN MANUAL (QRIS statis penjual)
+- [ ] [MANUAL] `/admin/settings` → unggah QR (PNG) → Simpan → pratinjau muncul; file > 900 KB / tipe salah → ditolak dengan pesan jelas
+- [ ] [MANUAL] `GET /api/manual-qr` → 200 `image/png`; sebelum upload → 404 teks
+- [ ] [MANUAL] Checkout menampilkan metode yang aktif saja; QRIS otomatis hilang saat `YOBASEPAY_*` kosong; dua-duanya mati → "Pembayaran belum tersedia" (bukan error)
+- [ ] [MANUAL] Order manual: `payment_method=MANUAL`, `charged_amount = total + kode unik (1..999)`, `payment_expired_at` sesuai `expiry_minutes`, `payment_id` NULL
+- [ ] [MANUAL] Halaman `/pay/[code]`: QR tampil, nominal = `charged_amount`, tombol **Salin nominal** bekerja, countdown jalan
+- [ ] [AUTO] **Klaim buyer tidak bisa melunaskan order** (`claimManualPayment`): klaim dicatat, `payment_status` tetap PENDING, klaim kedua no-op, notifikasi sekali
+- [ ] [AUTO] **Hanya penjual yang bisa melunaskan** (`adminConfirmManualPayment`): → PAID + `APPROVED`; konfirmasi 2× ditolak; nominal masuk < total ditolak 409
+- [ ] [AUTO] `adminRejectManualClaim` membersihkan klaim + buyer boleh klaim ulang; `refreshOrderStatus` tidak meng-expire order manual yang sudah diklaim
+- [ ] [MANUAL] **Klaim buyer**: tombol "Saya sudah transfer" → `manual_claim_at` terisi; tekan 2× → klaim kedua no-op; order TETAP `PENDING`
+- [ ] [MANUAL] Klaim order QRIS otomatis / order sudah lunas → 409 (pesan jelas), status tidak berubah
+- [ ] [MANUAL] Telegram: **🧾 KLAIM TRANSFER MANUAL** sekali per klaim (`manual_claim_notified_at`)
+- [ ] [MANUAL] **Konfirmasi penjual** → `PAID` + `manual_review_status=APPROVED` + Telegram **🔔 PESANAN BARU**; halaman buyer ✅ dalam ≤8 dtk
+- [ ] [MANUAL] Konfirmasi dengan nominal masuk < total → ditolak (409), order tetap PENDING
+- [ ] [MANUAL] **Tolak klaim** → `manual_review_status=REJECTED`, klaim dibersihkan, alasan tampil ke buyer, buyer bisa klaim ulang
+- [ ] [MANUAL] Order manual yang sudah diklaim TIDAK di-expire otomatis lewat batas waktu; yang belum diklaim → EXPIRED
+- [ ] [MANUAL] Webhook YoBasePay tidak bisa menyentuh order manual (tidak ada `payment_id` yang cocok)
+- [ ] [AUTO] `manualUniqueCode` (rentang 1..999, deterministik, beda order beda nominal) + `manualChargedAmount`
+- [ ] [AUTO] `formatManualClaimMessage` memuat order, nominal tagihan, referensi, catatan, jam WIB
+- [ ] [AUTO] `resolvePaymentMethod` / `getAvailablePaymentMethods` / `getManualPaymentView` (metode tak tersedia → 409/503, QR belum ada → `no_qr`)
+
+> Test otomatis alur manual ada di `test/manual-payment-flow.test.ts` (domain
+> logic asli dijalankan terhadap fake Supabase — lihat `test/helpers/fake-store.ts`).
+
 ## 5. TELEGRAM
 - [ ] [MANUAL] Notifikasi masuk saat order PAID — format sesuai spec (kode, buyer, WA, produk, jumlah, total, LUNAS ✅)
 - [ ] [MANUAL] Token sengaja salah → order TETAP PAID, `telegram_send_*` di log, user tidak melihat error

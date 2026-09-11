@@ -48,6 +48,8 @@ export interface NormalizedWebhook {
 
 export interface PaymentProvider {
   readonly name: string;
+  /** false bila kredensial provider belum diisi (metode disembunyikan dari buyer). */
+  readonly isConfigured?: boolean;
   createPayment(input: CreatePaymentInput): Promise<CreatedPayment>;
   checkStatus(paymentId: string): Promise<PaymentStatusResult>;
   /** Verifikasi signature webhook dari raw body + header signature. */

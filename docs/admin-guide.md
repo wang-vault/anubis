@@ -33,22 +33,27 @@ hilang dari katalog, tidak bisa di-checkout, order/produk tetap aman.
 sengaja, agar histori FK tidak rusak.)
 
 ## E. Melihat order
-Menu **Order**. Tab filter (Semua/Belum Bayar/Perlu Diproses/Diproses/
-Selesai/Expired) + pencarian (kode order, nama buyer, produk — min 3 huruf).
+Menu **Order**. Tab filter (Semua/**Verifikasi Manual**/Belum Bayar/Perlu
+Diproses/Diproses/Selesai/Expired) + pencarian (kode order, nama buyer, produk
+— min 3 huruf). Tab **Verifikasi Manual** = antrian order transfer manual yang
+sudah diklaim buyer dan menunggu kamu cek mutasi (`/admin/orders?status=CLAIM`).
 Tiap kartu menampilkan: kode, badge pembayaran+status, produk×jumlah, total,
 buyer + WA, waktu, status notifikasi Telegram, tombol aksi.
 
 ## F. Status PENDING
 = order dibuat, **belum ada pembayaran terverifikasi**.
 - Bukan berarti buyer tidak bayar — webhook bisa telat beberapa menit.
-- Anda bisa tekan **⟳ Cek Pembayaran** (menanyakan status langsung ke
-  YoBasePay; maks 1x/10 detik). Bila ternyata lunas → otomatis PAID.
+- Order **QRIS otomatis**: tekan **⟳ Cek Pembayaran** (menanyakan status
+  langsung ke YoBasePay; maks 1x/10 detik). Bila ternyata lunas → otomatis PAID.
+- Order **transfer manual**: tombol cek provider tidak ada (memang tidak ada
+  provider). Order baru berubah setelah kamu memverifikasi mutasi — lihat §P.
 - Order tak terbayar kedaluwarsa sendiri pada `payment_expired_at` → menjadi
   **EXPIRED**; atau tekan **✕ Expire** untuk membatalkan order mati lebih awal.
 
 ## G. Status PAID
-= uang terverifikasi (webhook/polling). Jangan pernah menandai lunas manual —
-tidak ada tombolnya, dan memang begitu seharusnya. Order PAID masuk antrian
+= uang terverifikasi: webhook/polling untuk QRIS otomatis, atau **konfirmasi
+kamu** untuk pembayaran manual (§P). Di luar dua jalur itu tidak ada tombol
+"tandai lunas" — memang begitu seharusnya. Order PAID masuk antrian
 **🔔 Perlu diproses** di Ringkasan.
 
 ## H. Memproses order
@@ -80,7 +85,7 @@ disediakan; kalau salah tekan, catat di pesan buyer. Dashboard ringkasan:
 Buyer belum bayar sampai batas. Penjelasan ke buyer: silakan order ulang.
 Order expired dibiarkan sebagai histori (bisa dicari). Tidak ada biaya.
 
-## M. Pembayaran bermasalah
+## M. Pembayaran bermasalah (QRIS otomatis)
 | Gejala | Langkah |
 |---|---|
 | Buyer yakin sudah bayar, order masih PENDING | Tekan **⟳ Cek Pembayaran**. Kalau tetap PENDING: cek mutasi/saldo YoBasePay (dashboard) — apakah dana masuk? Nomor trx buyer → cocok dengan `payment_id` order di detail? |
@@ -102,8 +107,36 @@ Tiap order PAID → pesan `🔔 PESANAN BARU …` (buyer, WA, produk, jumlah, to
   (satu kali per order — tidak dobel).
 - Chat ID diganti (mis. pindah grup) → ubah env + redeploy; selesai.
 
+## P. Pembayaran manual (QRIS statis milikmu)
+Metode kedua selain QRIS otomatis — dipakai saat QRIS provider belum aktif atau
+kamu ingin dana masuk langsung ke QRIS merchant sendiri (mis. GoPay Merchant).
+Panduan lengkap: **`docs/manual-payment.md`**.
+
+**Setup sekali**: menu **Pembayaran** (`/admin/settings`) → aktifkan metode →
+unggah gambar QRIS statis (PNG/JPG/WebP, maks 900 KB) → isi nama penerima &
+batas waktu bayar → **Simpan**. Gambar disimpan di database toko (bukan bucket),
+diganti kapan pun tanpa deploy ulang.
+
+**Harian (verifikasi)**:
+1. Telegram mengirim **🧾 KLAIM TRANSFER MANUAL** (order, nominal ditagihkan,
+   nama pengirim, no. referensi).
+2. Buka mutasi QRIS-mu → cari nominal itu (perhatikan **3 digit kode unik**,
+   mis. Rp50.417, dan nama pengirim).
+3. Uang ada → **✓ Konfirmasi Lunas** (di kartu order atau tab *Verifikasi
+   Manual*). Detail order menyediakan kolom **nominal masuk** + catatan
+   verifikasi; nominal kurang dari total order akan ditolak sistem.
+4. Uang tidak ada → **✕ Tolak Klaim** + alasan (buyer melihat alasan itu dan
+   boleh konfirmasi ulang sampai batas waktu habis).
+5. Order jadi PAID → Telegram **🔔 PESANAN BARU** → proses seperti §H.
+
+**Yang perlu diingat**: klaim buyer **bukan** bukti pembayaran — tidak ada
+rekonsiliasi otomatis di metode ini. Selama buyer sudah mengklaim, order tidak
+di-expire otomatis (keputusan ada di kamu). Kartu **Perlu verifikasi** di
+Ringkasan menampilkan jumlah antrian.
+
 ## Harian Mingguan Bulanan
-- Harian: buka Ringkasan → kerjakan antrian "Perlu diproses"; balas chat buyer.
+- Harian: buka Ringkasan → kerjakan antrian "Perlu verifikasi" (transfer
+  manual) lalu "Perlu diproses"; balas chat buyer.
 - Mingguan: cek stok vs produk (nonaktifkan yang habis), cek revenue bulan ini.
 - Bulanan: rekap Supabase (Table Editor → export orders), pastikan backup,
   rotasi API key bila perlu (YoBasePay/Supabase/Telegram — update env, redeploy),

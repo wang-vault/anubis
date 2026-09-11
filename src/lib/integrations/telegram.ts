@@ -3,6 +3,7 @@ import { serverEnv, telegramConfigured } from "@/lib/env";
 import { log } from "@/lib/logger";
 import { formatRupiah } from "@/lib/money";
 import type { OrderRow } from "@/lib/types";
+import { PAYMENT_METHOD_LABELS } from "@/lib/payment-methods";
 
 /**
  * Notifikasi Telegram — HANYA ke penjual (owner), bukan ke buyer, tanpa OTP.
@@ -23,10 +24,28 @@ export interface PaidOrderInfo {
   productName: string;
   quantity: number;
   totalAmount: number;
+  /** Metode bayar (untuk menandai order hasil verifikasi manual). */
+  paymentMethod?: string | null;
+}
+
+/** Klaim transfer manual dari buyer → penjual harus cek mutasi lalu konfirmasi. */
+export interface ManualClaimInfo {
+  orderCode: string;
+  buyerName: string;
+  buyerWhatsapp: string;
+  productName: string;
+  quantity: number;
+  /** Nominal yang diminta (total + kode unik). */
+  expectedAmount: number;
+  note: string;
+  reference: string;
+  claimedAt: string;
 }
 
 export interface Notifier {
   notifyOrderPaid(order: PaidOrderInfo): Promise<{ ok: boolean; error?: string }>;
+  /** Buyer mengklaim sudah transfer (pembayaran manual). */
+  notifyManualPaymentClaim(claim: ManualClaimInfo): Promise<{ ok: boolean; error?: string }>;
 }
 
 export function buildPaidOrderInfo(o: OrderRow): PaidOrderInfo {
@@ -37,6 +56,21 @@ export function buildPaidOrderInfo(o: OrderRow): PaidOrderInfo {
     productName: o.product_name_snapshot,
     quantity: o.quantity,
     totalAmount: o.total_amount,
+    paymentMethod: o.payment_method,
+  };
+}
+
+export function buildManualClaimInfo(o: OrderRow): ManualClaimInfo {
+  return {
+    orderCode: o.order_code,
+    buyerName: o.buyer_name_snapshot,
+    buyerWhatsapp: o.buyer_whatsapp_snapshot,
+    productName: o.product_name_snapshot,
+    quantity: o.quantity,
+    expectedAmount: o.charged_amount ?? o.total_amount,
+    note: o.manual_claim_note,
+    reference: o.manual_claim_reference,
+    claimedAt: o.manual_claim_at ?? new Date().toISOString(),
   };
 }
 
@@ -50,10 +84,42 @@ export function formatPaidMessage(order: PaidOrderInfo): string {
     `Produk: ${order.productName}`,
     `Jumlah: ${order.quantity}`,
     `Total: ${formatRupiah(order.totalAmount)}`,
+    order.paymentMethod === "MANUAL"
+      ? "Metode: Transfer manual (sudah kamu verifikasi) 🧾"
+      : `Metode: ${PAYMENT_METHOD_LABELS.YOBASEPAY}`,
     "Status: LUNAS ✅",
     "",
     "Silakan proses pesanan.",
   ].join("\n");
+}
+
+/**
+ * Pesan "buyer mengklaim sudah transfer" — penjual harus cek mutasi QRIS/
+ * rekening lalu menekan "Konfirmasi Pembayaran" di dashboard.
+ */
+export function formatManualClaimMessage(claim: ManualClaimInfo): string {
+  const claimedAt = new Intl.DateTimeFormat("id-ID", {
+    timeZone: "Asia/Jakarta",
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(claim.claimedAt));
+  return [
+    "🧾 KLAIM TRANSFER MANUAL",
+    "",
+    `Order: #${claim.orderCode}`,
+    `Buyer: ${claim.buyerName || "-"}`,
+    `WhatsApp: ${claim.buyerWhatsapp || "-"}`,
+    `Produk: ${claim.productName} × ${claim.quantity}`,
+    `Ditagihkan: ${formatRupiah(claim.expectedAmount)}`,
+    claim.reference ? `No. referensi: ${claim.reference}` : null,
+    claim.note ? `Catatan buyer: ${claim.note}` : null,
+    `Diklaim: ${claimedAt} WIB`,
+    "",
+    "Cek mutasi QRIS-mu. Kalau uangnya masuk, buka dashboard → order ini →",
+    "tekan \"Konfirmasi Pembayaran\".",
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
 }
 
 class TelegramNotifier implements Notifier {
@@ -63,7 +129,14 @@ class TelegramNotifier implements Notifier {
   ) {}
 
   async notifyOrderPaid(order: PaidOrderInfo): Promise<{ ok: boolean; error?: string }> {
-    const text = formatPaidMessage(order);
+    return this.send(formatPaidMessage(order));
+  }
+
+  async notifyManualPaymentClaim(claim: ManualClaimInfo): Promise<{ ok: boolean; error?: string }> {
+    return this.send(formatManualClaimMessage(claim));
+  }
+
+  private async send(text: string): Promise<{ ok: boolean; error?: string }> {
     try {
       const res = await fetch(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
         method: "POST",
@@ -95,6 +168,14 @@ class TelegramNotifier implements Notifier {
 class DisabledNotifier implements Notifier {
   async notifyOrderPaid(order: PaidOrderInfo): Promise<{ ok: boolean; error?: string }> {
     log.warn("telegram_disabled_skip_notify", { orderCode: order.orderCode });
+    return { ok: false, error: "telegram_not_configured" };
+  }
+
+  async notifyManualPaymentClaim(claim: ManualClaimInfo): Promise<{ ok: boolean; error?: string }> {
+    log.warn("telegram_disabled_skip_notify", {
+      orderCode: claim.orderCode,
+      kind: "manual_claim",
+    });
     return { ok: false, error: "telegram_not_configured" };
   }
 }

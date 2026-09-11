@@ -7,17 +7,21 @@ import { formatDateTimeId } from "@/lib/dates";
 import { OrderStatusBadge, PaymentStatusBadge } from "@/components/StatusBadge";
 import { OrderActions } from "@/components/admin/OrderActions";
 import { OrderTimeline } from "@/components/OrderTimeline";
+import { ManualVerificationForm } from "@/components/admin/ManualVerificationForm";
 
 export const metadata: Metadata = { title: "Detail Order — Admin" };
 
 interface Props {
   params: Promise<{ codeOrId: string }>;
+  searchParams: Promise<{ error?: string }>;
 }
 
-export default async function AdminOrderDetailPage({ params }: Props) {
+export default async function AdminOrderDetailPage({ params, searchParams }: Props) {
   const { codeOrId } = await params;
+  const sp = await searchParams;
   const order = await findOrderByCodeOrId(decodeURIComponent(codeOrId));
   if (!order) notFound();
+  const isManual = order.payment_method === "MANUAL";
 
   const profile = await getProfileForAdmin(order.account_id);
 
@@ -49,10 +53,35 @@ export default async function AdminOrderDetailPage({ params }: Props) {
             <KV k="ID internal" v={<span className="break-all font-mono text-xs">{order.id}</span>} />
           </section>
 
+          {sp.error && <p className="alert-error md:col-span-2">{String(sp.error).slice(0, 200)}</p>}
+
           <section className="paper-inset p-4 text-sm">
             <h2 className="paper-heading-kicker mb-2">Pembayaran</h2>
-            <KV k="Provider" v="YoBasePay · QRIS" />
-            <KV k="Trx ID" v={<span className="break-all font-mono text-xs">{order.payment_id ?? "-"}</span>} />
+            <KV
+              k="Metode"
+              v={isManual ? "Transfer manual · QRIS penjual" : "QRIS otomatis · YoBasePay"}
+            />
+            {isManual ? (
+              <>
+                <KV k="Ditagihkan" v={formatRupiah(order.charged_amount ?? order.total_amount)} strong />
+                <KV k="Klaim buyer" v={order.manual_claim_at ? formatDateTimeId(order.manual_claim_at) : "belum"} />
+                {order.manual_claim_note && <KV k="Nama pengirim" v={order.manual_claim_note} />}
+                {order.manual_claim_reference && <KV k="No. referensi" v={order.manual_claim_reference} />}
+                <KV
+                  k="Verifikasi penjual"
+                  v={
+                    order.manual_review_status
+                      ? `${order.manual_review_status === "APPROVED" ? "✓ disetujui" : "✕ ditolak"} ${formatDateTimeId(order.manual_reviewed_at)}`
+                      : "belum"
+                  }
+                />
+              </>
+            ) : (
+              <KV k="Provider" v="YoBasePay · QRIS" />
+            )}
+            {!isManual && (
+              <KV k="Trx ID" v={<span className="break-all font-mono text-xs">{order.payment_id ?? "-"}</span>} />
+            )}
             <KV k="Batas bayar" v={formatDateTimeId(order.payment_expired_at)} />
             <KV k="Lunas pukul" v={formatDateTimeId(order.paid_at)} />
             <KV k="Cek terakhir" v={formatDateTimeId(order.last_payment_checked_at)} />
@@ -66,6 +95,10 @@ export default async function AdminOrderDetailPage({ params }: Props) {
               </a>
             )}
           </section>
+
+          {isManual && (
+            <ManualVerificationForm order={order} back={`/admin/orders/${order.order_code}`} />
+          )}
 
           <section className="paper-inset p-4 text-sm md:col-span-2">
             <h2 className="paper-heading-kicker mb-2">Buyer</h2>

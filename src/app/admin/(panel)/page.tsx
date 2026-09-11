@@ -11,9 +11,10 @@ import type { OrderRow } from "@/lib/types";
 export const metadata: Metadata = { title: "Dashboard Penjual" };
 
 export default async function AdminDashboardPage() {
-  const [stats, toProcess] = await Promise.all([
+  const [stats, toProcess, toVerify] = await Promise.all([
     getAdminStats(),
     listAdminOrders({ status: "PAID" }),
+    listAdminOrders({ manualClaim: true }),
   ]);
 
   return (
@@ -24,14 +25,45 @@ export default async function AdminDashboardPage() {
         <p className="mt-2 text-sm text-slate-500">Pantau berita pembayaran dan siapkan pesanan yang sudah lunas.</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
         <StatCard label="Order hari ini" value={stats.ordersToday} />
         <StatCard label="Perlu diproses" value={stats.needProcessing} accent="text-emerald-700" />
         <StatCard label="Sedang diproses" value={stats.processing} accent="text-sky-700" />
         <StatCard label="Belum lunas" value={stats.pendingPayment} accent="text-amber-700" />
+        <StatCard
+          label="Perlu verifikasi"
+          value={stats.needVerification}
+          accent={stats.needVerification > 0 ? "text-brand-700" : "text-slate-900"}
+        />
         <StatCard label="Selesai hari ini" value={stats.doneToday} />
         <StatCard label="Revenue bulan ini" value={formatRupiah(stats.revenueMonth)} accent="text-brand-700" />
       </div>
+
+      <section>
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <p className="section-kicker">Antrian pembayaran</p>
+            <h2 className="admin-section-title">Klaim transfer manual ({toVerify.length})</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Cocokkan dengan mutasi QRIS kamu, lalu konfirmasi. Klaim buyer bukan bukti bayar.
+            </p>
+          </div>
+          <Link href="/admin/orders?status=CLAIM" className="section-link">
+            Lihat semua →
+          </Link>
+        </div>
+        {toVerify.length === 0 ? (
+          <div className="paper-empty p-8 text-center text-sm text-slate-500">
+            Tidak ada klaim transfer menunggu verifikasi.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {toVerify.slice(0, 8).map((o) => (
+              <QueueRow key={o.id} order={o} highlight="🧾 Menunggu verifikasi mutasi" />
+            ))}
+          </div>
+        )}
+      </section>
 
       <section>
         <div className="mb-3 flex items-end justify-between gap-3">
@@ -59,7 +91,7 @@ export default async function AdminDashboardPage() {
   );
 }
 
-function QueueRow({ order }: { order: OrderRow }) {
+function QueueRow({ order, highlight }: { order: OrderRow; highlight?: string }) {
   return (
     <div className="card p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-dotted border-slate-300 pb-2">
@@ -82,7 +114,11 @@ function QueueRow({ order }: { order: OrderRow }) {
           <span className="text-slate-400">(+{order.buyer_whatsapp_snapshot})</span>
         </p>
         <p className="font-serif font-black text-brand-700">{formatRupiah(order.total_amount)}</p>
-        <p className="text-xs text-slate-400">{formatDateTimeId(order.created_at)}</p>
+        <p className="text-xs text-slate-400 sm:col-span-2">
+          {highlight && <span className="font-bold text-amber-700">{highlight} · </span>}
+          {formatDateTimeId(order.created_at)}
+          {order.manual_claim_note && <> · pengirim: {order.manual_claim_note}</>}
+        </p>
       </div>
       <div className="mt-3 border-t border-dotted border-slate-300 pt-3">
         <OrderActions order={order} back="/admin" />
