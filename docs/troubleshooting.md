@@ -1,0 +1,138 @@
+# Troubleshooting
+
+Format tiap kasus: **Penyebab mungkin → Cara mengecek → Solusi.**
+Log aplikasi = Vercel → Project → **Observability/Logs** (kata kunci JSON-nya
+dicantumkan di bawah).
+
+## 1. "Email verifikasi tidak masuk"
+- Penyebab: folder spam; SMTP bawaan Supabase kena rate limit (±2/jam);
+  redirect/templat dirusak; user salah ketik email.
+- Cek: Supabase #1 → Authentication → **Users** → status user (Unconfirmed?);
+  Logs (Auth → Logs) apakah percobaan kirim tercatat; cek spam.
+- Solusi: klik **Kirim ulang** di `/auth/verify`; pasang SMTP sendiri
+  (Authentication → SMTP, lihat deployment.md §D4); periksa template
+  `token_hash` (harus `/auth/callback?...`); email salah → hapus user → daftar ulang.
+
+## 2. "Buyer tidak bisa login"
+- Penyebab: email belum diverifikasi (login = "Invalid login credentials"
+  bisa termasuk ini); password lupa; rate-limit 8×/5mnt aktif; Supabase
+  project salah URL di env.
+- Cek: ada user tsb di Auth Users? `email_confirmed_at` terisi? Network tab:
+  pesan error apa dari Supabase? env `NEXT_PUBLIC_SUPABASE_ACCOUNT_URL` milik
+  project #1 (bukan #2)?
+- Solusi: alihkan ke `/auth/verify` (otomatis bila error "Email not confirmed");
+  reset password; tunggu limiter; koreksi env → redeploy.
+
+## 3. "Produk tidak muncul"
+- Penyebab: `is_active=false`; SQL schema #2 belum dijalankan; env STORE_*
+  salah project; cache 60 dtk belum lewat (setelah admin ubah — harusnya
+  otomatis via revalidateTag).
+- Cek: Supabase #2 → Table Editor → Products; curl
+  `https://<ref2>.supabase.co/rest/v1/products?select=name,is_active`
+  dengan anon #2 → data keluar? Vercel log `products_list_failed`.
+- Solusi: aktifkan produk; jalankan schema; betulkan env pair; hard-refresh
+  1–2 menit.
+
+## 4. "QRIS tidak muncul / halaman pembayaran kosong"
+- Penyebab: createpayment gagal (saldo API/provider down/key salah/domain-lock
+  menolak karena Origin tidak terdaftar); `qr_image` null dari provider.
+- Cek: log `payment_create_failed` (detail pesan provider ada di log);
+  curl manual createpayment (yobasepay.md §5); Order di DB: `payment_id` null?
+- Solusi: perbaiki API key/domain lock → redeploy; bila provider mengembalikan
+  payment_url saja tanpa gambar → tombol "Buka Halaman Pembayaran" tetap jalan;
+  order gagal create → buyer order ulang.
+
+## 5. "Pembayaran sudah dilakukan tapi order masih PENDING"
+- Penyebab umum: webhook telat/belum dikonfigurasi; nominal tidak cocok
+  (buyer mengetik sendiri jumlah tanpa kode unik!); order lookup gagal karena
+  `payment_id` tak tersimpan; DB error saat proses webhook.
+- Cek (berurutan):
+  1. Supabase #2 → orders baris tsb: `payment_id` terisi? status? `last_payment_checked_at`?
+  2. Vercel logs: `webhook_received` ada? → `webhook_amount_invalid` / `order_not_found`?
+  3. Dashboard YoBasePay: transaksi SUCCESS di sisi mereka?
+- Solusi cepat untuk penjual: tombol **⟳ Cek Pembayaran** (pakai API privat —
+  tidak butuh webhook) → harusnya jadi PAID. Bila webhook mati total: cocokkan
+  manual + perbaiki webhook URL/secret; jangan tandai PAID dari DB manual kecuali
+  keadaan darurat (tidak ada notifikasi). Edukasi buyer: scan QR saja, jangan
+  ketik nominal.
+
+## 6. "Webhook tidak masuk" (log tidak mencatat sama sekali)
+- Penyebab: URL webhook salah/berubah setelah pindah domain; provider menahan
+  kirim (URL tidak terjangkau — port/firewall?); Vercel Deployment Protection
+  memblokir bot (HTTP 401 dari `vercel` header!).
+- Cek: curl dari internet → `curl -X POST https://domain/api/webhooks/yobasepay -d '{}'`
+  harus **400/403** (sampai app), bukan 401/405. Di Vercel: Settings →
+  **Deployment Protection** → matikan untuk Production ATAU (lebih aman) aktifkan
+  "Vercel Authentication" *only for Preview*.
+- Solusi: daftarkan ulang URL final di YoBasePay; pastikan pakai https domain
+  produksi; kirim test lagi.
+
+## 7. "Webhook signature invalid" (403 tercatat di log)
+- Penyebab: `YOBASEPAY_WEBHOOK_SECRET` tidak sama dengan di dashboard (sering
+  lupa redeploy setelah ganti!); provider mengirim header berbeda nama;
+  proxy mengubah body (mis. re-write JSON).
+- Cek: log `webhook_signature_invalid`; env value di Vercel vs dashboard YoBasePay;
+  `curl` test signature dari laptop (yobasepay.md §6) → kalau curl lolos berarti
+  masalah di sisi kirim provider/proxy.
+- Solusi: samakan secret → Redeploy; verifikasi provider mengirim HMAC ke
+  raw body — bila provider memakai format lain (mis. `sha256=hex…`) parser kita
+  sudah menerima prefix itu; header custom lain → sesuaikan nama di
+  `route.ts` satu baris.
+
+## 8. "Telegram tidak menerima notifikasi"
+- Penyebab: token/chat ID kosong/salah; bot di-kick; chat ID grup berubah;
+  user lupa `/start` ke bot pribadi; deploy belum ulang setelah env berubah;
+  order `telegram_notified_at` sudah terisi (sengaja, tidak dobel).
+- Cek: `curl` sendMessage manual (telegram.md §4); Supabase: kolom notifikasi.
+- Solusi: betulkan env → Redeploy; `/start`; kembalikan bot ke grup; bila order
+  sudah PAID tanpa notif: kirim manual dari info order (atau reset kolom +
+  trigger ulang status via tombol cek pembayaran — order sudah PAID jadi
+  percobaan notif tidak terulang; gunakan data order di dashboard).
+
+## 9. "Admin tidak bisa melihat order"
+- Penyebab: akun tidak benar-benar `role=admin`; login pakai akun buyer di
+  tab lain (cookie); SQL #1 belum dijalankan (profiles kosong → role null).
+- Cek: SQL #1: `select role from profiles where email='…'`; DevTools→Cookies
+  ada `sb-<ref1>-auth-token`?
+- Solusi: set role via SQL; logout-total lalu login ulang; jalankan schema #1.
+
+## 10. "Buyer bisa melihat order orang lain" ⚠ (seharusnya mustahil)
+- Penyebab yang *mungkin*: schema store #2 belum dijalankan (RLS off!),
+  atau endpoint custom dibuat sendiri, atau service key bocor ke klien.
+- Cek: `select relrowsecurity from pg_class where relname='orders'` → **harus
+  true**; coba `curl '…/rest/v1/orders?select=*' -H "apikey:<STORE_ANON>"` →
+  401/[]; audit `.next/static` apakah service_role ter-bundle (harus tidak).
+- Solusi: jalankan ulang 001_schema.sql #2 (idempoten); kalau service key pernah
+  masuk repo: **rotasi semua key**, ganti webhook secret, tambah admin baru,
+  review riwayat order untuk mutasi asing.
+
+## 11. "Vercel deployment error"
+- Build gagal `Konfigurasi environment tidak valid` → var wajib belum ada di
+  scope Production (atau salah eja) — isi → Deploy ulang.
+- `error:0308010C digital envelope` / npm errors → cache: redeploy dengan
+  "Clear build cache".
+- Runtime 500 semua halaman → env Production vs Preview beda; cek
+  `Settings → Environment Variables` (harus Production scope).
+- Middleware 500 → `NEXT_PUBLIC_SUPABASE_ACCOUNT_URL` kosong saat runtime
+  (middleware pakai var publik tsb).
+
+## 12. "Environment variable tidak terbaca"
+- Penyebab: dibuat tanpa scope Production; ditambahkan tapi tidak redeploy;
+  prefix NEXT_PUBLIC_ lupa dihapus/ditambah salah arah; ada spasi/kutip
+  tersembunyi saat paste.
+- Cek: Vercel → Settings → Environment Variables → kolom **Environment** harus
+  Production (+Preview); Build log → "Environments Variables" tidak menampilkan
+  nilai (normal) tapi build sukses berarti terbaca.
+- Solusi: hapus → tulis ulang (tanpa spasi) → **Redeploy**.
+
+## 13. Status order macet / tombol tidak muncul
+- `PAID` tanpa tombol Proses? seharusnya selalu ada; cek `payment_status` —
+  tombol butuh PAID di keduanya. `PROCESSING` tanpa Selesai = normal (ada).
+- Transisi 409: dua orang admin membuka halaman sama — refresh.
+- Order `PENDING` permanen: expiry hanya jalan saat dicek (halaman bayar/
+  tombol admin) — tidak ada cron; tekan Cek Pembayaran untuk membersihkan,
+  atau biarkan (tidak mengganggu apa pun).
+
+## 14. Data Supabase penuh kuota / rest rate limit
+- Cek: Settings → Infrastructure usage. Solusi: upgrade paket, aktifkan
+  `unstable_cache` (sudah on), pertimbangkan read replica — di luar MVP.
