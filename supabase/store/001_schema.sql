@@ -52,6 +52,9 @@ create table if not exists public.orders (
   unit_price_snapshot   bigint not null,               -- Rupiah, disalin saat order dibuat
   quantity              int not null check (quantity between 1 and 999),
   total_amount          bigint not null check (total_amount > 0),
+  -- Nominal final dari provider (total + kode unik YoBasePay, bila ada).
+  -- Diisi saat createpayment / webhook / polling. Nullable untuk kompatibilitas.
+  charged_amount        bigint check (charged_amount is null or charged_amount > 0),
 
   payment_status        text not null default 'PENDING'
     check (payment_status in ('PENDING', 'PAID', 'FAILED', 'EXPIRED')),
@@ -149,3 +152,13 @@ create policy "products_read_active"
 --   select policyname from pg_policies where schemaname='public';
 --   -- hanya "products_read_active"
 -- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 5. MIGRASI RINGAN (aman dijalankan ulang) — kolom charged_amount
+--    Untuk project yang sudah menjalankan schema versi sebelumnya.
+-- ---------------------------------------------------------------------------
+alter table public.orders
+  add column if not exists charged_amount bigint;
+
+comment on column public.orders.charged_amount is
+  'Nominal final provider (total + kode unik). Sumber tampilan "Total transfer" di halaman bayar.';

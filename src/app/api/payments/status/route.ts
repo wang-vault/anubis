@@ -46,6 +46,7 @@ export async function GET(request: NextRequest) {
       payment_status: refreshed.payment_status,
       order_status: refreshed.order_status,
       total_amount: refreshed.total_amount,
+      charged_amount: refreshed.charged_amount ?? null,
       paid_at: refreshed.paid_at,
       payment_expired_at: refreshed.payment_expired_at,
       checked_provider: checkedProvider,

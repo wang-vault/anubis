@@ -53,9 +53,18 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Area auth yang sudah login → lempar ke halaman berikutnya.
+  // Area auth yang sudah login → lempar ke halaman berikutnya / home.
+  // Admin login page khusus: user yang sudah login diarahkan ke /admin
+  // (role dicek ulang di layout panel).
   if (user && (pathname === "/auth/login" || pathname === "/auth/register")) {
-    return NextResponse.redirect(new URL(isAdminArea ? "/admin" : "/", request.url));
+    const next = request.nextUrl.searchParams.get("next");
+    if (next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\")) {
+      return NextResponse.redirect(new URL(next, request.url));
+    }
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+  if (user && pathname === "/admin/login") {
+    return NextResponse.redirect(new URL("/admin", request.url));
   }
 
   return response;

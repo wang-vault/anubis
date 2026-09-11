@@ -3,6 +3,7 @@ import { ErrorCodes, handleApi, HttpError, ok } from "@/lib/api";
 import { requireUser } from "@/lib/authz";
 import { getOrderByCodeForBuyer } from "@/lib/orders";
 import { orderCodeParamSchema } from "@/lib/validation";
+import { toBuyerOrderPublic } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ export const dynamic = "force-dynamic";
  * GET /api/orders/[code] — detail order milik buyer.
  * Kepemilikan ditegakkan di query (order_code + account_id sekaligus),
  * order milik orang lain → 404 (tidak membocorkan keberadaan order).
+ * Field internal (payment_id, telegram_notified_at, account_id, …) disaring.
  */
 export async function GET(
   _request: NextRequest,
@@ -23,6 +25,6 @@ export async function GET(
     if (!order) {
       throw new HttpError(404, ErrorCodes.notFound, "Order tidak ditemukan.");
     }
-    return { order };
+    return { order: toBuyerOrderPublic(order) };
   }, (data) => ok(data));
 }

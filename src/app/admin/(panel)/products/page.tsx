@@ -39,7 +39,7 @@ export default async function AdminProductsPage({ searchParams }: Props) {
             <div key={p.id} className="card flex flex-wrap items-center gap-3 p-3">
               <div className="size-14 shrink-0 overflow-hidden rounded-xl bg-slate-100">
                 {p.image_url && /^https:\/\//i.test(p.image_url) ? (
-                  // eslint-disable-next-line @next/next/no-img-element
+                  
                   <img src={p.image_url} alt="" loading="lazy" className="h-full w-full object-cover" />
                 ) : (
                   <div className="grid h-full w-full place-items-center text-lg">📦</div>

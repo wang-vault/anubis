@@ -21,6 +21,8 @@ export interface PaymentPanelProps {
     product_name: string;
     quantity: number;
     total_amount: number;
+    /** Nominal final provider (total + kode unik). Fallback ke total_amount. */
+    charged_amount: number | null;
     payment_status: PaymentStatus;
     order_status: OrderStatus;
     payment_url: string | null;
@@ -36,6 +38,8 @@ interface StatusResponse {
   server_time: string;
   paid_at: string | null;
   payment_expired_at: string | null;
+  charged_amount?: number | null;
+  total_amount?: number;
 }
 
 const POLL_MS = 8_000;
@@ -53,9 +57,13 @@ export function PaymentPanel({ order, product }: PaymentPanelProps) {
   const [remaining, setRemaining] = useState<number | null>(null);
   const [checking, setChecking] = useState(false);
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
+  const [chargedAmount, setChargedAmount] = useState<number>(
+    order.charged_amount && order.charged_amount > 0 ? order.charged_amount : order.total_amount,
+  );
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isFinal = paymentStatus === "PAID" || paymentStatus === "FAILED" || paymentStatus === "EXPIRED";
+  const displayAmount = chargedAmount;
 
   const checkStatus = useCallback(async () => {
     setChecking(true);
@@ -68,6 +76,11 @@ export function PaymentPanel({ order, product }: PaymentPanelProps) {
         setPaymentStatus(data.payment_status);
         setOrderStatus(data.order_status);
         if (data.payment_expired_at) setExpiredAt(Date.parse(data.payment_expired_at));
+        if (data.charged_amount && data.charged_amount > 0) {
+          setChargedAmount(data.charged_amount);
+        } else if (data.total_amount && data.total_amount > 0) {
+          setChargedAmount(data.total_amount);
+        }
         setLastCheckedAt(Date.now());
       }
     } catch {
@@ -103,7 +116,7 @@ export function PaymentPanel({ order, product }: PaymentPanelProps) {
     if (remaining === 0 && paymentStatus === "PENDING") {
       void checkStatus();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    
   }, [remaining]);
 
   const secondsLeft = remaining !== null ? Math.floor(remaining / 1000) : null;
@@ -121,7 +134,7 @@ export function PaymentPanel({ order, product }: PaymentPanelProps) {
         </p>
         <div className="mt-4 rounded-xl bg-slate-50 p-4 text-left text-sm">
           <Row label="Produk" value={`${order.product_name} × ${order.quantity}`} />
-          <Row label="Total dibayar" value={formatRupiah(order.total_amount)} strong />
+          <Row label="Total dibayar" value={formatRupiah(displayAmount)} strong />
         </div>
         <p className="mt-4 text-sm leading-6 text-slate-600">
           Pembayaran telah diterima.
@@ -188,17 +201,26 @@ export function PaymentPanel({ order, product }: PaymentPanelProps) {
 
         <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm">
           <Row label="Produk" value={`${order.product_name} × ${order.quantity}`} />
-          <Row label="Total transfer" value={formatRupiah(order.total_amount)} strong />
+          <Row label="Total transfer" value={formatRupiah(displayAmount)} strong />
+          {displayAmount !== order.total_amount && (
+            <Row label="Harga produk" value={formatRupiah(order.total_amount)} />
+          )}
           <Row
             label="Cek terakhir"
             value={lastCheckedAt ? new Date(lastCheckedAt).toLocaleTimeString("id-ID") : "baru saja"}
           />
         </div>
+        {displayAmount !== order.total_amount && (
+          <p className="mt-2 text-xs text-slate-500">
+            Nominal transfer sudah termasuk kode unik pembayaran agar mutasi mudah dicocokkan.
+            Scan QR — angka terisi otomatis.
+          </p>
+        )}
 
         <div className="mt-4 rounded-2xl border-2 border-dashed border-slate-300 bg-white p-4 text-center">
           {order.qr_image_url && /^https:\/\//i.test(order.qr_image_url) ? (
             <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              
               <img
                 src={order.qr_image_url}
                 alt={`QRIS untuk order ${order.order_code}`}

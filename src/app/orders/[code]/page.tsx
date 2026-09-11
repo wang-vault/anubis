@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { requireUser } from "@/lib/authz";
+import { notFound, redirect } from "next/navigation";
+import { getAuthContext } from "@/lib/authz";
 import { getOrderByCodeForBuyer } from "@/lib/orders";
 import { ORDER_CODE_REGEX } from "@/lib/order-code";
 import { formatRupiah } from "@/lib/money";
@@ -21,7 +21,9 @@ export default async function OrderDetailPage({ params }: Props) {
   const orderCode = decodeURIComponent(code).toUpperCase();
   if (!ORDER_CODE_REGEX.test(orderCode)) notFound();
 
-  const ctx = await requireUser();
+  const ctx = await getAuthContext();
+  if (!ctx) redirect(`/auth/login?next=${encodeURIComponent(`/orders/${orderCode}`)}`);
+
   const order = await getOrderByCodeForBuyer(orderCode, ctx.user.id);
   if (!order) notFound();
 
@@ -39,7 +41,11 @@ export default async function OrderDetailPage({ params }: Props) {
         <div className="mt-3 rounded-xl bg-slate-50 p-4 text-sm">
           <DetailRow label="Produk" value={`${order.product_name_snapshot} × ${order.quantity}`} />
           <DetailRow label="Harga satuan" value={formatRupiah(order.unit_price_snapshot)} />
-          <DetailRow label="Total" value={formatRupiah(order.total_amount)} strong />
+          <DetailRow
+            label="Total"
+            value={formatRupiah(order.charged_amount && order.charged_amount > 0 ? order.charged_amount : order.total_amount)}
+            strong
+          />
           <DetailRow label="Dibuat" value={formatDateTimeId(order.created_at)} />
           <DetailRow label="WhatsApp tujuan" value={`+${order.buyer_whatsapp_snapshot}`} />
           {order.paid_at && <DetailRow label="Lunas pukul" value={formatDateTimeId(order.paid_at)} />}

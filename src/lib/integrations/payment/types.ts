@@ -21,6 +21,11 @@ export interface CreatedPayment {
   qrImageUrl: string | null;
   /** ISO string, boleh null bila provider tidak memberi. */
   expiresAt: string | null;
+  /**
+   * Nominal yang diminta provider (bisa total + kode unik YoBasePay).
+   * null bila provider tidak mengembalikan amount di createpayment.
+   */
+  chargedAmount: number | null;
 }
 
 export type ProviderPaymentState = "paid" | "pending" | "expired" | "failed";
