@@ -11,16 +11,22 @@ export default async function ProductsPage() {
 
   return (
     <div className="container-x">
-      <h1 className="text-xl font-bold">Semua Produk</h1>
-      <p className="mt-1 text-sm text-slate-500">
-        Harga sudah termasuk pajak toko. Bayar dengan QRIS setelah checkout.
-      </p>
-      <div className="mt-5">
+      <div className="catalog-intro">
+        <div>
+          <p className="section-kicker">Lembar katalog · Belanja pilihan</p>
+          <h1 className="catalog-title">Semua produk</h1>
+        </div>
+        <p className="catalog-deck">
+          Harga sudah termasuk pajak toko. Temukan barang yang sedang jadi berita utama, lalu bayar
+          langsung dengan QRIS setelah checkout.
+        </p>
+      </div>
+      <div className="mt-6">
         {products.length === 0 ? (
           <EmptyState
-            icon="🛒"
+            icon="AN"
             title="Produk belum tersedia"
-            desc="Cek kembali nanti — penjual sedang menyiapkan katalog."
+            desc="Cek kembali nanti — penjual sedang menyiapkan katalog baru."
           />
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 sm:gap-4">

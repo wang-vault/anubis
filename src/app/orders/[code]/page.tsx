@@ -29,16 +29,19 @@ export default async function OrderDetailPage({ params }: Props) {
 
   return (
     <div className="container-x mx-auto max-w-2xl space-y-4">
-      <Link href="/orders" className="text-sm text-slate-500 hover:underline">
+      <Link href="/orders" className="paper-link text-sm font-semibold">
         ← Semua pesanan
       </Link>
 
-      <div className="card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="font-mono text-sm text-slate-500">#{order.order_code}</h1>
+      <div className="card p-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-dotted border-slate-300 pb-3">
+          <div>
+            <p className="section-kicker">Arsip pesanan</p>
+            <h1 className="mt-1 font-mono text-sm font-bold text-slate-500">#{order.order_code}</h1>
+          </div>
           <PaymentStatusBadge status={order.payment_status} />
         </div>
-        <div className="mt-3 rounded-xl bg-slate-50 p-4 text-sm">
+        <div className="paper-inset mt-4 p-4 text-sm">
           <DetailRow label="Produk" value={`${order.product_name_snapshot} × ${order.quantity}`} />
           <DetailRow label="Harga satuan" value={formatRupiah(order.unit_price_snapshot)} />
           <DetailRow
@@ -55,14 +58,12 @@ export default async function OrderDetailPage({ params }: Props) {
           <div className="alert-warn mt-3 flex items-center justify-between gap-2">
             <span>Belum ada pembayaran terverifikasi.</span>
             <Link href={`/pay/${order.order_code}`} className="btn-primary btn-sm shrink-0">
-              Bayar QRIS
+              Bayar QRIS →
             </Link>
           </div>
         )}
         {order.payment_status === "EXPIRED" && (
-          <p className="alert-error mt-3">
-            Pembayaran kadaluarsa. Buat order ulang bila masih berminat.
-          </p>
+          <p className="alert-error mt-3">Pembayaran kadaluarsa. Buat order ulang bila masih berminat.</p>
         )}
         {order.order_status === "PROCESSING" && (
           <p className="alert-info mt-3">
@@ -82,9 +83,9 @@ export default async function OrderDetailPage({ params }: Props) {
 
 function DetailRow({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-1.5 last:border-0">
+    <div className="flex items-center justify-between gap-3 border-b border-dotted border-slate-300 py-2 last:border-0">
       <span className="text-slate-500">{label}</span>
-      <span className={strong ? "font-bold" : "font-medium"}>{value}</span>
+      <span className={strong ? "font-serif font-black text-brand-700" : "font-medium text-slate-800"}>{value}</span>
     </div>
   );
 }

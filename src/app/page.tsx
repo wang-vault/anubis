@@ -3,9 +3,9 @@ import { listActiveProducts } from "@/lib/products";
 import { ProductCard } from "@/components/ProductCard";
 
 const HOW_IT_WORKS = [
-  { n: "1", t: "Pilih produk", d: "Buka katalog dan klik Beli Sekarang." },
-  { n: "2", t: "Bayar QRIS", d: "Scan QR — pembayaran terverifikasi otomatis, tanpa perlu kirim bukti transfer." },
-  { n: "3", t: "Pesanan dikirim", d: "Penjual memproses pesanan dan menghubungimu lewat WhatsApp." },
+  { n: "01", t: "Pilih berita utama", d: "Buka katalog, baca detailnya, lalu pilih produk yang paling cocok." },
+  { n: "02", t: "Bayar lewat QRIS", d: "Scan QR — pembayaran terverifikasi otomatis tanpa kirim bukti transfer." },
+  { n: "03", t: "Pesanan diberitakan", d: "Penjual memproses pesanan dan mengabarkan kabar baik lewat WhatsApp." },
 ] as const;
 
 export default async function HomePage() {
@@ -13,61 +13,119 @@ export default async function HomePage() {
 
   return (
     <div className="container-x space-y-10">
-      {/* Hero */}
-      <section className="card overflow-hidden bg-gradient-to-br from-brand-600 to-emerald-700 p-8 text-white sm:p-12">
-        <h1 className="max-w-xl text-2xl font-extrabold leading-tight sm:text-4xl">
-          Belanja gampang: bayar QRIS, pesanan diantar lewat WhatsApp.
-        </h1>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-emerald-50 sm:text-base">
-          Pembayaran terverifikasi otomatis dalam hitungan detik. Kamu cukup scan QR — sisanya
-          biar penjual yang urus.
-        </p>
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Link href="/products" className="btn bg-white text-brand-700 hover:bg-emerald-50">
-            Lihat Produk →
-          </Link>
-          <Link href="/auth/register" className="btn border border-white/40 text-white hover:bg-white/10">
-            Daftar Akun
-          </Link>
+      <section className="front-page-hero" aria-labelledby="front-page-title">
+        <div className="front-page-copy">
+          <p className="eyebrow">Berita utama · Edisi hari ini</p>
+          <h1 id="front-page-title" className="front-page-title">
+            Belanja gampang, <em>kabar</em> pembayaran datang cepat.
+          </h1>
+          <p className="front-page-deck">
+            Pilih barang favoritmu, scan QRIS, dan biarkan kami mengurus kabar berikutnya. Semua
+            proses dibuat singkat, jelas, dan terasa seperti halaman depan yang menyenangkan.
+          </p>
+          <div className="hero-actions">
+            <Link href="/products" className="btn-primary">
+              Baca Katalog →
+            </Link>
+            <Link href="/auth/register" className="btn-secondary">
+              Buka Akun Gratis
+            </Link>
+          </div>
+          <div className="hero-facts" aria-label="Keunggulan toko">
+            <div className="hero-fact">
+              <strong>QRIS</strong>
+              <span>Bayar praktis</span>
+            </div>
+            <div className="hero-fact">
+              <strong>Otomatis</strong>
+              <span>Status terpantau</span>
+            </div>
+            <div className="hero-fact">
+              <strong>WhatsApp</strong>
+              <span>Kabar pesanan</span>
+            </div>
+          </div>
         </div>
+        <aside className="hero-brief" aria-label="Ringkasan layanan">
+          <p className="hero-brief-label">Headline layanan</p>
+          <div>
+            <p className="hero-brief-title">Scan.<br />Bayar.<br />Selesai.</p>
+            <p className="hero-brief-copy">
+              Tak perlu menunggu konfirmasi manual. Status pembayaran dicek oleh server dengan
+              aman.
+            </p>
+          </div>
+        </aside>
       </section>
 
-      {/* Cara kerja */}
-      <section aria-label="Cara bekerja toko">
-        <div className="grid gap-3 sm:grid-cols-3">
+      <section aria-labelledby="how-it-works-title">
+        <div className="section-heading">
+          <div>
+            <p className="section-kicker">Cara kerja</p>
+            <h2 id="how-it-works-title" className="section-title">
+              Tiga langkah, satu pengalaman ringan.
+            </h2>
+          </div>
+          <span className="hidden text-xs font-bold uppercase tracking-widest text-slate-400 sm:inline">
+            Panduan pembaca
+          </span>
+        </div>
+        <div className="steps-grid mt-4">
           {HOW_IT_WORKS.map((s) => (
-            <div key={s.n} className="card flex gap-3 p-4">
-              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand-100 text-sm font-bold text-brand-700">
+            <article key={s.n} className="step-card">
+              <span className="step-number" aria-hidden>
                 {s.n}
               </span>
               <div>
-                <h2 className="text-sm font-semibold">{s.t}</h2>
-                <p className="mt-0.5 text-xs leading-5 text-slate-500">{s.d}</p>
+                <h3 className="step-title">{s.t}</h3>
+                <p className="step-copy">{s.d}</p>
               </div>
-            </div>
+            </article>
           ))}
         </div>
       </section>
 
-      {/* Produk terbaru */}
-      <section aria-label="Produk terbaru">
-        <div className="mb-4 flex items-end justify-between">
-          <h2 className="text-lg font-bold">Produk Terbaru</h2>
-          <Link href="/products" className="text-sm font-medium text-brand-700 hover:underline">
+      <section aria-labelledby="latest-products-title">
+        <div className="section-heading">
+          <div>
+            <p className="section-kicker">Katalog pilihan</p>
+            <h2 id="latest-products-title" className="section-title">
+              Produk terbaru
+            </h2>
+          </div>
+          <Link href="/products" className="section-link">
             Semua produk →
           </Link>
         </div>
-        {products.length === 0 ? (
-          <div className="card p-10 text-center text-sm text-slate-500">
-            Belum ada produk. Pemilik toko dapat menambahkannya lewat dashboard admin.
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 sm:gap-4">
-            {products.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
-          </div>
-        )}
+        <div className="mt-4">
+          {products.length === 0 ? (
+            <div className="paper-empty p-10 text-center text-sm text-slate-500">
+              Belum ada produk. Pemilik toko dapat menambahkannya lewat dashboard penjual.
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 sm:gap-4">
+              {products.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="paper-inset grid gap-3 p-4 sm:grid-cols-[auto_1fr_auto] sm:items-center sm:p-5">
+        <span className="grid size-11 place-items-center border border-slate-900 bg-[#d3942b] font-serif text-xl font-black text-slate-900">
+          !
+        </span>
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-brand-700">Catatan redaksi</p>
+          <p className="mt-1 font-serif text-sm leading-6 text-slate-700">
+            Email perlu diverifikasi sebelum belanja agar setiap kabar pesanan sampai ke orang yang
+            tepat.
+          </p>
+        </div>
+        <Link href="/auth/register" className="btn-secondary btn-sm justify-self-start sm:justify-self-end">
+          Daftar sekarang
+        </Link>
       </section>
     </div>
   );

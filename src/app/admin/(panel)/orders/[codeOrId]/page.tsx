@@ -23,22 +23,25 @@ export default async function AdminOrderDetailPage({ params }: Props) {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <Link href="/admin/orders" className="text-sm text-slate-500 hover:underline">
+      <Link href="/admin/orders" className="paper-link text-sm font-semibold">
         ← Daftar order
       </Link>
 
-      <div className="card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="font-mono text-base font-bold">{order.order_code}</h1>
-          <div className="flex gap-2">
+      <div className="card p-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-dotted border-slate-300 pb-3">
+          <div>
+            <p className="section-kicker">Kantor redaksi · Detail order</p>
+            <h1 className="mt-1 font-mono text-base font-bold">{order.order_code}</h1>
+          </div>
+          <div className="flex flex-wrap gap-2">
             <PaymentStatusBadge status={order.payment_status} />
             <OrderStatusBadge status={order.order_status} />
           </div>
         </div>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <section className="rounded-xl bg-slate-50 p-4 text-sm">
-            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Pesanan</h2>
+          <section className="paper-inset p-4 text-sm">
+            <h2 className="paper-heading-kicker mb-2">Pesanan</h2>
             <KV k="Produk (snapshot)" v={`${order.product_name_snapshot} × ${order.quantity}`} />
             <KV k="Harga satuan" v={formatRupiah(order.unit_price_snapshot)} />
             <KV k="Total" v={formatRupiah(order.total_amount)} strong />
@@ -46,8 +49,8 @@ export default async function AdminOrderDetailPage({ params }: Props) {
             <KV k="ID internal" v={<span className="break-all font-mono text-xs">{order.id}</span>} />
           </section>
 
-          <section className="rounded-xl bg-slate-50 p-4 text-sm">
-            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Pembayaran</h2>
+          <section className="paper-inset p-4 text-sm">
+            <h2 className="paper-heading-kicker mb-2">Pembayaran</h2>
             <KV k="Provider" v="YoBasePay · QRIS" />
             <KV k="Trx ID" v={<span className="break-all font-mono text-xs">{order.payment_id ?? "-"}</span>} />
             <KV k="Batas bayar" v={formatDateTimeId(order.payment_expired_at)} />
@@ -58,14 +61,14 @@ export default async function AdminOrderDetailPage({ params }: Props) {
               v={order.telegram_notified_at ? `✓ terkirim/dicoba ${formatDateTimeId(order.telegram_notified_at)}` : "belum"}
             />
             {order.payment_url && (
-              <a href={order.payment_url} target="_blank" rel="noopener noreferrer" className="text-brand-700 hover:underline">
+              <a href={order.payment_url} target="_blank" rel="noopener noreferrer" className="paper-link mt-2 inline-block text-sm font-semibold">
                 Buka halaman pembayaran ↗
               </a>
             )}
           </section>
 
-          <section className="rounded-xl bg-slate-50 p-4 text-sm md:col-span-2">
-            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Buyer</h2>
+          <section className="paper-inset p-4 text-sm md:col-span-2">
+            <h2 className="paper-heading-kicker mb-2">Buyer</h2>
             <KV k="Nama (snapshot)" v={order.buyer_name_snapshot || "-"} />
             <KV k="WhatsApp (snapshot)" v={`+${order.buyer_whatsapp_snapshot || "-"}`} />
             <KV k="Email (snapshot)" v={order.buyer_email_snapshot || "-"} />
@@ -82,7 +85,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           </section>
         </div>
 
-        <div className="mt-4 border-t border-slate-100 pt-4">
+        <div className="mt-4 border-t border-dotted border-slate-300 pt-4">
           <OrderActions order={order} back={`/admin/orders/${order.order_code}`} />
         </div>
       </div>
@@ -94,7 +97,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
 
 function KV({ k, v, strong }: { k: string; v: React.ReactNode; strong?: boolean }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-1.5 last:border-0">
+    <div className="flex items-start justify-between gap-3 border-b border-dotted border-slate-300 py-1.5 last:border-0">
       <span className="shrink-0 text-slate-500">{k}</span>
       <span className={`text-right ${strong ? "font-bold text-brand-700" : "font-medium"}`}>{v}</span>
     </div>

@@ -44,7 +44,7 @@ export function LoginForm({
         <input id="login-password" className="input" name="password" type="password" required autoComplete="current-password" />
       </div>
       <FormError state={state} />
-      <button className="btn-primary w-full" disabled={pending}>
+      <button type="submit" className="btn-primary w-full" disabled={pending}>
         {pending ? "Memproses…" : "Masuk"}
       </button>
       <div className="flex items-center justify-between text-sm">
@@ -90,7 +90,7 @@ export function RegisterForm() {
         tanggung jawab pembeli.
       </div>
       <FormError state={state} />
-      <button className="btn-primary w-full" disabled={pending}>
+      <button type="submit" className="btn-primary w-full" disabled={pending}>
         {pending ? "Memproses…" : "Daftar Sekarang"}
       </button>
       <p className="text-center text-sm text-slate-500">
@@ -111,7 +111,7 @@ export function ResendForm() {
         <input id="resend-email" className="input" name="email" type="email" required placeholder="kamu@email.com" />
       </div>
       <FormError state={state} />
-      <button className="btn-secondary w-full" disabled={pending}>
+      <button type="submit" className="btn-secondary w-full" disabled={pending}>
         {pending ? "Mengirim…" : "Kirim Ulang Email Verifikasi"}
       </button>
     </form>
@@ -128,7 +128,7 @@ export function ForgotForm() {
         <input id="forgot-email" className="input" name="email" type="email" required autoComplete="email" />
       </div>
       <FormError state={state} />
-      <button className="btn-primary w-full" disabled={pending}>
+      <button type="submit" className="btn-primary w-full" disabled={pending}>
         {pending ? "Mengirim…" : "Kirim Link Reset Password"}
       </button>
       <p className="text-center text-sm">
@@ -152,7 +152,7 @@ export function ResetForm() {
         <input id="reset-confirm" className="input" name="confirm" type="password" required autoComplete="new-password" />
       </div>
       <FormError state={state} />
-      <button className="btn-primary w-full" disabled={pending}>
+      <button type="submit" className="btn-primary w-full" disabled={pending}>
         {pending ? "Menyimpan…" : "Simpan Password Baru"}
       </button>
     </form>

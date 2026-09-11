@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthContext } from "@/lib/authz";
 import { signOutAction } from "@/app/auth/actions";
+import { ActionButton } from "@/components/ActionButton";
 
 export const dynamic = "force-dynamic";
 
@@ -25,29 +26,25 @@ export default async function AdminPanelLayout({ children }: { children: React.R
 
   return (
     <div className="min-h-[70dvh]">
-      <div className="border-b border-slate-200 bg-white">
-        <div className="container-x flex flex-wrap items-center gap-x-4 gap-y-1 py-3">
-          <span className="text-sm font-extrabold">
+      <div className="admin-bar">
+        <div className="container-x flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
+          <Link href="/admin" className="admin-brand">
             {siteName}
-            <span className="ml-2 rounded-md bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-              Admin
-            </span>
-          </span>
-          <nav className="flex gap-1 text-sm">
+            <span className="admin-pill">Admin desk</span>
+          </Link>
+          <nav className="flex flex-wrap gap-1" aria-label="Navigasi dashboard">
             {tabs.map((t) => (
-              <Link
-                key={t.href}
-                href={t.href}
-                className="rounded-lg px-2.5 py-1.5 font-medium text-slate-600 hover:bg-slate-100"
-              >
+              <Link key={t.href} href={t.href} className="admin-nav-link">
                 {t.label}
               </Link>
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden text-xs text-slate-400 sm:inline">{ctx.profile.email}</span>
+            <span className="hidden text-xs text-slate-300 sm:inline">{ctx.profile.email}</span>
             <form action={signOutAction}>
-              <button className="btn-secondary btn-sm">Keluar</button>
+              <ActionButton className="btn-secondary btn-sm" pendingText="Keluar…" type="submit">
+                Keluar
+              </ActionButton>
             </form>
           </div>
         </div>

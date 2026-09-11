@@ -31,12 +31,12 @@ export default async function CheckoutPage({ searchParams }: Props) {
     return (
       <div className="container-x mx-auto max-w-lg">
         <EmptyState
-          icon="🧺"
+          icon="?"
           title="Produk belum dipilih"
           desc="Pilih produk dari katalog untuk melanjutkan checkout."
           action={
             <Link href="/products" className="btn-primary">
-              Lihat Produk
+              Lihat Katalog →
             </Link>
           }
         />
@@ -49,12 +49,12 @@ export default async function CheckoutPage({ searchParams }: Props) {
     return (
       <div className="container-x mx-auto max-w-lg">
         <EmptyState
-          icon="🚫"
+          icon="!"
           title="Produk tidak tersedia"
           desc="Produk ini sudah habis / dinonaktifkan penjual. Silakan pilih produk lain."
           action={
             <Link href="/products" className="btn-primary">
-              Kembali ke Katalog
+              Kembali ke Katalog →
             </Link>
           }
         />
@@ -64,11 +64,14 @@ export default async function CheckoutPage({ searchParams }: Props) {
 
   return (
     <div className="container-x mx-auto max-w-lg">
-      <h1 className="text-xl font-bold">Checkout</h1>
-      <p className="mt-1 text-sm text-slate-500">
-        Pemesan: <strong>{ctx.profile.name}</strong> · {ctx.user.email}
-      </p>
-      <div className="mt-4">
+      <div className="paper-heading">
+        <p className="section-kicker">Halaman pesanan · Edisi checkout</p>
+        <h1 className="paper-heading-title">Siapkan pesananmu</h1>
+        <p className="mt-2 text-sm text-slate-500">
+          Pemesan: <strong>{ctx.profile.name}</strong> · {ctx.user.email}
+        </p>
+      </div>
+      <div className="mt-5">
         <CheckoutForm
           productId={product.id}
           productName={product.name}

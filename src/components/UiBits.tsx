@@ -8,15 +8,15 @@ export function StatCard({
   accent?: string;
 }) {
   return (
-    <div className="card p-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-bold ${accent}`}>{value}</p>
+    <div className="card stat-card p-4">
+      <p className="stat-label">{label}</p>
+      <p className={`stat-value ${accent}`}>{value}</p>
     </div>
   );
 }
 
 export function EmptyState({
-  icon = "🗂️",
+  icon = "AN",
   title,
   desc,
   action,
@@ -27,11 +27,13 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="card grid place-items-center p-10 text-center">
-      <div className="text-4xl" aria-hidden>{icon}</div>
-      <h3 className="mt-3 text-base font-semibold">{title}</h3>
-      {desc && <p className="mt-1 max-w-sm text-sm text-slate-500">{desc}</p>}
-      {action && <div className="mt-4">{action}</div>}
+    <div className="paper-empty grid place-items-center p-10 text-center">
+      <div className="grid size-14 place-items-center border border-slate-900 bg-[#d3942b] font-serif text-xl font-black text-slate-900" aria-hidden>
+        {icon}
+      </div>
+      <h3 className="mt-4 text-lg font-black">{title}</h3>
+      {desc && <p className="mt-1 max-w-sm text-sm leading-6 text-slate-500">{desc}</p>}
+      {action && <div className="mt-5">{action}</div>}
     </div>
   );
 }

@@ -25,14 +25,17 @@ export default async function EditProductPage({ params }: Props) {
 
   return (
     <div className="mx-auto max-w-xl">
-      <Link href="/admin/products" className="text-sm text-slate-500 hover:underline">
+      <Link href="/admin/products" className="paper-link text-sm font-semibold">
         ← Produk
       </Link>
-      <div className="card mt-3 p-6">
-        <h1 className="text-xl font-bold">Edit Produk</h1>
-        <p className="mt-1 text-xs text-slate-400">
-          Perubahan harga TIDAK mengubah order lama (order menyimpan snapshot harga).
-        </p>
+      <div className="card mt-4 p-6">
+        <div className="paper-heading">
+          <p className="section-kicker">Kantor redaksi · Koreksi katalog</p>
+          <h1 className="paper-heading-title">Edit produk</h1>
+          <p className="mt-2 text-xs text-slate-400">
+            Perubahan harga TIDAK mengubah order lama (order menyimpan snapshot harga).
+          </p>
+        </div>
         <div className="mt-5">
           <ProductForm product={data} />
         </div>

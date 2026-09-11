@@ -17,29 +17,27 @@ export function OrderTimeline({ order }: { order: OrderRow }) {
   ];
 
   return (
-    <div className="card p-4">
-      <h2 className="mb-3 text-sm font-semibold text-slate-700">Status Pesanan</h2>
-      <ol className="space-y-2.5">
+    <div className="card p-4 sm:p-5">
+      <div className="paper-heading">
+        <p className="section-kicker">Edisi status</p>
+        <h2 className="mt-1 text-lg font-black">Perjalanan pesanan</h2>
+      </div>
+      <ol className="order-timeline mt-4">
         {steps.map((s, i) => (
-          <li key={s.label} className="flex items-center gap-3 text-sm">
-            <span
-              className={`grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-bold ${
-                s.done ? "bg-brand-600 text-white" : "bg-slate-200 text-slate-500"
-              }`}
-              aria-hidden
-            >
+          <li key={s.label} className={`order-timeline-item ${s.done ? "is-done" : ""}`}>
+            <span className="order-timeline-dot" aria-hidden>
               {s.done ? "✓" : i + 1}
             </span>
-            <span className={s.done ? "font-medium text-slate-900" : "text-slate-500"}>{s.label}</span>
+            <span className="order-timeline-label">{s.label}</span>
           </li>
         ))}
       </ol>
       {order.order_status === "EXPIRED" && (
-        <p className="alert-error mt-3">
+        <p className="alert-error mt-4">
           Pembayaran kadaluarsa. Pesanan dibatalkan — silakan buat order baru.
         </p>
       )}
-      <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-dotted border-slate-300 pt-3">
         <OrderStatusBadge status={order.order_status} />
         <PaymentStatusBadge status={order.payment_status} />
       </div>
