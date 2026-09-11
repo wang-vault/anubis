@@ -1,0 +1,48 @@
+# Environment Variables — arti, klasifikasi, dan dari mana nilainya
+
+Semua var divalidasi terpusat di `src/lib/env.ts` (zod, **fail-fast**: app
+menolak jalan dengan pesan yang menyebut NAMA var yang hilang — bukan nilainya).
+
+Klasifikasi:
+- 🌐 **PUBLIC** — wajib prefix `NEXT_PUBLIC_`, ikut ter-bundle ke browser.
+  Aman dipublik (anon key Supabase hanya bisa melakukan apa yang RLS izinkan).
+- 🖥 **SERVER** — tanpa prefix, hanya terbaca di runtime Vercel/Node.
+- 🔒 **SECRET** — server + rahasia. Jangan pernah di-print, di-log, atau dikirim ke client.
+
+| Variabel | Kelas | Wajib | Dari mana | Contoh format |
+|---|---|---|---|---|
+| `NEXT_PUBLIC_SITE_URL` | 🌐 | ✔ | URL publik situs Anda | `https://toko.anda.com` (tanpa `/` di akhir) |
+| `NEXT_PUBLIC_SITE_NAME` | 🌐 | — (default `Toko Saya`) | Nama toko untuk header/title/pesan WA | `Toko Kopi Budi` |
+| `NEXT_PUBLIC_SUPABASE_ACCOUNT_URL` | 🌐 | ✔ | Supabase #1 → Settings → API → Project URL | `https://abcdefghijkl.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ACCOUNT_ANON_KEY` | 🌐 | ✔ | Supabase #1 → Settings → API → `anon` / `publishable` key | `sb_publishable_…` atau JWT `eyJ…` (panjang) |
+| `SUPABASE_ACCOUNT_SERVICE_ROLE_KEY` | 🔒🖥 | ✔ | Supabase #1 → API → `service_role` key | JWT panjang |
+| `NEXT_PUBLIC_SUPABASE_STORE_URL` | 🌐 | ✔ | Supabase #2 → Settings → API → Project URL | `https://mnopqrstuvwx.supabase.co` |
+| `SUPABASE_STORE_SERVICE_ROLE_KEY` | 🔒🖥 | ✔ | Supabase #2 → API → `service_role` | JWT panjang |
+| `NEXT_PUBLIC_SUPABASE_STORE_ANON_KEY` | 🌐 | — (opsional) | Supabase #2 → `anon`. MVP tidak membacanya dari browser (semua akses toko via server) — kosongkan kecuali nanti ingin query katalog langsung dari client | sama formatnya |
+| `YOBASEPAY_API_KEY` | 🔒🖥 | ✔ (untuk checkout) | Dashboard YoBasePay → project/API key (dipakai sebagai `apikey`) | sesuai dashboard |
+| `YOBASEPAY_WEBHOOK_SECRET` | 🔒🖥 | ✔ | Dashboard YoBasePay → Webhook secret (untuk HMAC `X-YoBasePay-Signature`) | string |
+| `YOBASEPAY_BASE_URL` | 🖥 | — (default `https://yobasepay.net/api`) | Dokumentasi API di dashboard akun Anda — bila versi V3/V4 memakai path berbeda | `https://yobasepay.net/api` |
+| `YOBASEPAY_AMOUNT_TOLERANCE` | 🖥 | — (default `999`) | Toleransi kode unik nominal. V1/V2 (+1..999): `999`. V3 no-unique-code: `0` | `999` |
+| `YOBASEPAY_EXPIRY_TZ_OFFSET` | 🖥 | — (default `+07:00`) | Offset zona waktu field `expired_at` provider (dokumentasi tidak menyebut zona) | `+07:00` |
+| `TELEGRAM_BOT_TOKEN` | 🔒🖥 | — (kosong = notifikasi skip) | Dari @BotFather (`/newbot`) | `123456789:AAExampleTokenFormatNotReal123` |
+| `TELEGRAM_CHAT_ID` | 🖥 | — (berpasangan dengan token) | Chat ID penjual (lihat `docs/telegram.md`) | `987654321` atau `-1001234567890` (grup) |
+
+## Aturan yang ditegakkan proyek
+
+1. **Secret tidak pernah berawalan `NEXT_PUBLIC_`** — kode ini tidak membaca
+   service role/API key/secret dari mana pun selain `process.env` di modul
+   server (`import "server-only"` mencegah kebocoran ke bundle).
+2. **Jangan commit `.env`/`.env.local`** — sudah di `.gitignore`; yang di repo
+   hanya `.env.example` (placeholder, tanpa kredensial nyata).
+3. Di **Vercel**: Project → Settings → Environment Variables; tipe:
+   - `Production, Preview, Development` untuk semua di atas.
+   - Jangan mencentang "Sensitive" untuk var yang perlu dibaca build-time?
+     Aman-aman saja — build Vercel punya akses ke semua env.
+4. Mengubah env di Vercel → **Redeploy** agar runtime memakai nilai baru.
+
+## Cara memverifikasi env terbaca (Vercel)
+
+Buka log deployment (`Deployments → … → View build function logs / Runtime logs`).
+Bila salah satu var wajib kosong, app menampilkan error internal + log berisi:
+`Konfigurasi environment tidak valid… NEXT_PUBLIC_SUPABASE_ACCOUNT_URL: Required`
+— artinya nama var itu **belum dibuat / salah nama / salah scope**.
