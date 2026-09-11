@@ -23,7 +23,8 @@ export async function PATCH(
     const patch = productPatchSchema.parse(await request.json());
     const product = await adminUpdateProduct(id, {
       ...patch,
-      image_url: patch.image_url === undefined ? undefined : patch.image_url || null,
+      // image_url sudah ternormalisasi ke string https | null oleh schema
+      image_url: patch.image_url === undefined ? undefined : patch.image_url,
     });
     return { product };
   }, (data) => ok(data));

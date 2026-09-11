@@ -34,7 +34,7 @@ export default async function ProductDetailPage({ params }: Props) {
       <div className="card mt-3 grid gap-0 overflow-hidden md:grid-cols-2">
         <div className="aspect-square bg-slate-100">
           {product.image_url && /^https:\/\//i.test(product.image_url) ? (
-            // eslint-disable-next-line @next/next/no-img-element
+            
             <img
               src={product.image_url}
               alt={product.name}

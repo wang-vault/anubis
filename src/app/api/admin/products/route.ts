@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       description: input.description,
       price: input.price,
       image_url: input.image_url ?? null,
-      is_active: input.is_active,
+      is_active: input.is_active ?? true,
     });
     return { product };
   }, (data) => ok(data, 201));

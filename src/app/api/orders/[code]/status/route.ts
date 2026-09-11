@@ -28,6 +28,7 @@ export async function GET(
       payment_status: order.payment_status,
       order_status: order.order_status,
       total_amount: order.total_amount,
+      charged_amount: order.charged_amount ?? null,
       paid_at: order.paid_at,
       payment_expired_at: order.payment_expired_at,
       server_time: new Date().toISOString(),

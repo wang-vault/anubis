@@ -59,6 +59,43 @@ export const orderCodeParamSchema = z.string().regex(
   "Kode order tidak valid",
 );
 
+/**
+ * Boolean dari JSON/form:
+ * - true/false murni
+ * - "true"/"false"/"1"/"0"/"on"/"off" (case-insensitive)
+ * JANGAN pakai z.coerce.boolean() — Boolean("false") === true di JS.
+ */
+export const looseBooleanSchema = z.preprocess((val) => {
+  if (typeof val === "boolean") return val;
+  if (typeof val === "number") return val !== 0;
+  if (typeof val === "string") {
+    const s = val.trim().toLowerCase();
+    if (["true", "1", "on", "yes"].includes(s)) return true;
+    if (["false", "0", "off", "no", ""].includes(s)) return false;
+  }
+  return val;
+}, z.boolean());
+
+/** URL gambar opsional: kosong / spasi → null; selain itu wajib https. */
+export const optionalHttpsUrlSchema = z.preprocess(
+  (val) => {
+    if (val === undefined || val === null) return null;
+    if (typeof val !== "string") return val;
+    const t = val.trim();
+    return t.length === 0 ? null : t;
+  },
+  z
+    .union([
+      z.null(),
+      z
+        .string()
+        .url("URL gambar tidak valid")
+        .startsWith("https://", "Gambar harus https")
+        .max(500),
+    ])
+    .default(null),
+);
+
 export const productInputSchema = z.object({
   name: z.string().trim().min(2).max(120),
   description: z.string().trim().max(2000).default(""),
@@ -67,16 +104,8 @@ export const productInputSchema = z.object({
     .int("Harga harus bilangan Rupiah penuh")
     .min(1000, "Harga minimal Rp1.000")
     .max(100_000_000, "Harga maksimal Rp100.000.000"),
-  image_url: z
-    .string()
-    .trim()
-    .url("URL gambar tidak valid")
-    .startsWith("https://", "Gambar harus https")
-    .max(500)
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => (v ? v : null)),
-  is_active: z.coerce.boolean().default(true),
+  image_url: optionalHttpsUrlSchema,
+  is_active: looseBooleanSchema.default(true),
 });
 
 export const productPatchSchema = productInputSchema.partial();
@@ -84,3 +113,16 @@ export const productPatchSchema = productInputSchema.partial();
 export const adminOrderActionSchema = z.object({
   action: z.enum(["process", "complete"]),
 });
+
+/**
+ * Sanitasi kata kunci pencarian admin agar aman dipakai di filter PostgREST `.or()`.
+ * Membuang metakarakter filter (%, _, koma, titik, kurung, backslash).
+ */
+export function sanitizeAdminSearchQuery(raw: string, maxLen = 80): string | null {
+  const cleaned = raw
+    .replace(/[%_,.()\\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLen);
+  return cleaned.length >= 2 ? cleaned : null;
+}

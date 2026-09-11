@@ -6,6 +6,8 @@ import { HttpError } from "@/lib/api";
 import { createOrderForBuyer, updateBuyerWhatsapp } from "@/lib/orders";
 import { checkoutSchema } from "@/lib/validation";
 import { normalizeWhatsapp } from "@/lib/phone";
+import { rateLimit } from "@/lib/ratelimit";
+import { rethrowNextControlFlow } from "@/lib/action-errors";
 import { log } from "@/lib/logger";
 
 export interface ActionState {
@@ -25,6 +27,14 @@ export async function checkoutAction(
   if (!ctx) redirect("/auth/login?next=/checkout");
   if (!ctx.emailVerified) redirect("/auth/verify?unverified=1");
   if (!ctx.profile) redirect("/auth/verify");
+
+  // Samakan proteksi dengan POST /api/orders (anti spam QRIS).
+  const rl = rateLimit(`order:${ctx.user.id}`, 10, 10 * 60_000);
+  if (!rl.ok) {
+    return {
+      error: `Terlalu banyak percobaan. Coba lagi dalam ${rl.retryAfterSec} detik.`,
+    };
+  }
 
   const parsed = checkoutSchema.safeParse({
     productId: formData.get("productId"),
@@ -48,14 +58,16 @@ export async function checkoutAction(
     whatsappOverride = normalized;
   }
 
+  let orderCode: string;
   try {
     const { order } = await createOrderForBuyer(ctx, {
       productId: parsed.data.productId,
       quantity: parsed.data.quantity,
       whatsappOverride,
     });
-    redirect(`/pay/${order.order_code}`);
+    orderCode = order.order_code;
   } catch (err) {
+    rethrowNextControlFlow(err);
     if (err instanceof HttpError) {
       // Pesan HttpError sudah didesain aman & jelas untuk user.
       return { error: err.message };
@@ -63,4 +75,7 @@ export async function checkoutAction(
     log.errorFrom("checkout_unexpected", err);
     return { error: "Terjadi kesalahan. Coba lagi beberapa saat." };
   }
+
+  // redirect() di LUAR try/catch — melempar NEXT_REDIRECT, jangan ditelan.
+  redirect(`/pay/${orderCode}`);
 }

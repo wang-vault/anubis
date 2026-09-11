@@ -9,7 +9,7 @@ interface Props {
 }
 
 export default async function VerifyPage({ searchParams }: Props) {
-  const { registered, unverified, verified } = await searchParams;
+  const { registered: _registered, unverified, verified } = await searchParams;
 
   return (
     <div className="container-x mx-auto max-w-md space-y-4">

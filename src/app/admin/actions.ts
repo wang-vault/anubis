@@ -7,6 +7,7 @@ import { HttpError } from "@/lib/api";
 import { adminCreateProduct, adminUpdateProduct } from "@/lib/products";
 import { adminTransition, findOrderByCodeOrId, refreshOrderStatus } from "@/lib/orders";
 import { productInputSchema } from "@/lib/validation";
+import { rethrowNextControlFlow } from "@/lib/action-errors";
 import { log } from "@/lib/logger";
 import { uuidSchema } from "@/lib/zod-helpers";
 
@@ -56,6 +57,7 @@ export async function createProductAction(
       is_active: parsed.data.is_active,
     });
   } catch (err) {
+    rethrowNextControlFlow(err);
     if (err instanceof HttpError) return { error: err.message };
     log.errorFrom("create_product_unexpected", err);
     return { error: "Gagal menyimpan produk." };
@@ -89,6 +91,7 @@ export async function updateProductAction(
       is_active: parsed.data.is_active,
     });
   } catch (err) {
+    rethrowNextControlFlow(err);
     if (err instanceof HttpError) return { error: err.message };
     log.errorFrom("update_product_unexpected", err, { admin: ctx.user.id });
     return { error: "Gagal menyimpan produk." };
@@ -139,6 +142,7 @@ export async function orderTransitionAction(formData: FormData): Promise<void> {
   try {
     await adminTransition(parsed.data.orderId, parsed.data.action, ctx);
   } catch (err) {
+    rethrowNextControlFlow(err);
     if (err instanceof HttpError) {
       redirect(
         `/admin/orders?error=${encodeURIComponent(err.message)}&t=${Date.now()}`,

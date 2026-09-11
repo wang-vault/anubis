@@ -40,6 +40,7 @@ export default async function PayPage({ params }: Props) {
         product_name: order.product_name_snapshot,
         quantity: order.quantity,
         total_amount: order.total_amount,
+        charged_amount: order.charged_amount ?? null,
         payment_status: order.payment_status,
         order_status: order.order_status,
         payment_url: order.payment_url,

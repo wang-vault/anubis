@@ -55,6 +55,7 @@ export async function GET() {
         product_name: o.product_name_snapshot,
         quantity: o.quantity,
         total_amount: o.total_amount,
+        charged_amount: o.charged_amount ?? null,
         payment_status: o.payment_status,
         order_status: o.order_status,
         created_at: o.created_at,

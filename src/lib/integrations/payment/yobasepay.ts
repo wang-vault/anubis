@@ -137,6 +137,11 @@ export function createYoBasePayProvider(): PaymentProvider {
       const paymentId = asString(data.trx_id) ?? asString(data.trxid);
       if (!paymentId) throw new PaymentProviderError("provider_missing_trxid");
 
+      // Nominal final dari provider (sering = amount + kode unik). Disimpan
+      // agar UI menampilkan angka yang sama dengan yang tertanam di QRIS.
+      const chargedAmount =
+        asNumber(data.amount) ?? asNumber(data.receive_amount) ?? asNumber(data.unique_amount);
+
       return {
         paymentId,
         paymentUrl: asString(data.payment_url),
@@ -147,6 +152,7 @@ export function createYoBasePayProvider(): PaymentProvider {
           asString(data.qr_image_url) ??
           asString(data.qris_url),
         expiresAt: parseProviderDate(data.expired_at, env.YOBASEPAY_EXPIRY_TZ_OFFSET),
+        chargedAmount,
       };
     },
 

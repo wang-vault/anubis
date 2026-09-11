@@ -136,31 +136,48 @@ export async function createOrderForBuyer(
     );
   }
 
-  // 5. Simpan referensi pembayaran pada order.
+  // 5. Simpan referensi pembayaran pada order (termasuk nominal charged provider).
+  const paymentPatch: Record<string, unknown> = {
+    payment_id: created.paymentId,
+    payment_url: created.paymentUrl,
+    qr_image_url: created.qrImageUrl,
+    payment_expired_at: created.expiresAt,
+  };
+  if (created.chargedAmount !== null && created.chargedAmount !== undefined) {
+    paymentPatch.charged_amount = created.chargedAmount;
+  }
+
   const { data: updated, error: uErr } = await db
     .from("orders")
-    .update({
-      payment_id: created.paymentId,
-      payment_url: created.paymentUrl,
-      qr_image_url: created.qrImageUrl,
-      payment_expired_at: created.expiresAt,
-    })
+    .update(paymentPatch)
     .eq("id", order.id)
     .select("*")
     .single<OrderRow>();
   if (uErr || !updated) {
+    // Payment sudah hidup di provider — jangan biarkan order PENDING tanpa
+    // payment_id (webhook/polling tidak bisa dicocokkan). Tandai gagal.
     log.error("order_payment_ref_update_failed", {
       orderCode: order.order_code,
+      paymentId: created.paymentId,
       message: uErr?.message,
     });
+    await db
+      .from("orders")
+      .update({ payment_status: "FAILED", order_status: "EXPIRED" })
+      .eq("id", order.id)
+      .eq("payment_status", "PENDING");
     throw new HttpError(
       500,
       ErrorCodes.internal,
-      "Order dibuat tetapi informasi pembayaran gagal disimpan. Hubungi penjual.",
+      "Order dibuat tetapi informasi pembayaran gagal disimpan. Silakan coba lagi atau hubungi penjual.",
     );
   }
 
-  log.info("order_created", { orderCode: updated.order_code, total });
+  log.info("order_created", {
+    orderCode: updated.order_code,
+    total,
+    charged: created.chargedAmount,
+  });
   return {
     order: updated,
     payment: {
@@ -243,49 +260,90 @@ function scheduleTelegramNotify(order: OrderRow): void {
 /**
  * Tandai order LUNAS. Idempotent: update bersyarat `payment_status in (PENDING, EXPIRED)`
  * hanya berhasil sekali → tidak ada double-process, tidak ada notifikasi ganda.
+ *
+ * payment_status + order_status + paid_at di-update dalam SATU query atomik
+ * agar tidak terjadi payment=PAID tetapi order_status masih PENDING.
  */
 export async function applyPaid(
   db: SupabaseClient,
   order: OrderRow,
-  opts: { source: PaidSource },
+  opts: { source: PaidSource; chargedAmount?: number | null },
 ): Promise<{ changed: boolean; reason?: string }> {
   // Validasi nominal dilakukan PEMCALLI sebelum memanggil fungsi ini:
   //  - webhook  → amount WAJIB ada & cocok (handleWebhookEvent)
   //  - polling  → amount dari API privat check-status, dicocokkan bila ada.
 
-  const { data: updated, error } = await db
+  const nowIso = new Date().toISOString();
+
+  // Path A (umum): payment + order status atomik dalam SATU update.
+  // Hanya berlaku bila order_status masih PENDING/EXPIRED.
+  const atomicPatch: Record<string, unknown> = {
+    payment_status: "PAID",
+    order_status: "PAID" as OrderStatus,
+    paid_at: nowIso,
+  };
+  if (opts.chargedAmount != null && Number.isFinite(opts.chargedAmount)) {
+    atomicPatch.charged_amount = opts.chargedAmount;
+  }
+
+  const { data: atomic, error: atomicErr } = await db
     .from("orders")
-    .update({ payment_status: "PAID", paid_at: new Date().toISOString() })
+    .update(atomicPatch)
     .eq("id", order.id)
     .in("payment_status", ["PENDING", "EXPIRED"])
+    .in("order_status", ["PENDING", "EXPIRED"])
     .select("*")
     .maybeSingle<OrderRow>();
 
-  if (error) {
-    log.error("apply_paid_failed", { orderCode: order.order_code, message: error.message });
+  if (atomicErr) {
+    log.error("apply_paid_failed", { orderCode: order.order_code, message: atomicErr.message });
     throw new HttpError(500, ErrorCodes.internal, "Gagal memperbarui pembayaran.");
   }
-  if (!updated) return { changed: false, reason: "already_processed" };
 
-  // Sinkronkan status pesanan (hanya dari PENDING/EXPIRED — jangan turunkan
-  // DONE/PROCESSING yang sudah di-set manual bila ada balasan telat).
-  await db
-    .from("orders")
-    .update({ order_status: "PAID" as OrderStatus })
-    .eq("id", order.id)
-    .in("order_status", ["PENDING", "EXPIRED"]);
+  let updated: OrderRow | null = atomic;
+
+  if (!updated) {
+    // Path B: order_status sudah PROCESSING/DONE (admin lebih dulu) ATAU
+    // payment sudah diproses. Coba set payment saja tanpa menyentuh order_status.
+    const paymentOnly: Record<string, unknown> = {
+      payment_status: "PAID",
+      paid_at: nowIso,
+    };
+    if (opts.chargedAmount != null && Number.isFinite(opts.chargedAmount)) {
+      paymentOnly.charged_amount = opts.chargedAmount;
+    }
+    const { data: payOnly, error: payErr } = await db
+      .from("orders")
+      .update(paymentOnly)
+      .eq("id", order.id)
+      .in("payment_status", ["PENDING", "EXPIRED"])
+      .select("*")
+      .maybeSingle<OrderRow>();
+    if (payErr) {
+      log.error("apply_paid_failed", { orderCode: order.order_code, message: payErr.message });
+      throw new HttpError(500, ErrorCodes.internal, "Gagal memperbarui pembayaran.");
+    }
+    if (!payOnly) return { changed: false, reason: "already_processed" };
+    updated = payOnly;
+  }
 
   const fresh = (await loadOrderById(db, order.id)) ?? updated;
 
-  // Klaim notifikasi (anti-duplikat lintas webhook retry / polling paralel).
-  const { data: claimed } = await db
-    .from("orders")
-    .update({ telegram_notified_at: new Date().toISOString() })
-    .eq("id", order.id)
-    .is("telegram_notified_at", null)
-    .select("id")
-    .maybeSingle<{ id: string }>();
-  if (claimed) scheduleTelegramNotify(fresh);
+  // Klaim notifikasi HANYA jika Telegram terkonfigurasi. Bila disabled, jangan
+  // set telegram_notified_at agar notifikasi bisa dikirim setelah env diisi.
+  const { telegramConfigured } = await import("@/lib/env");
+  if (telegramConfigured()) {
+    const { data: claimed } = await db
+      .from("orders")
+      .update({ telegram_notified_at: nowIso })
+      .eq("id", order.id)
+      .is("telegram_notified_at", null)
+      .select("id")
+      .maybeSingle<{ id: string }>();
+    if (claimed) scheduleTelegramNotify(fresh);
+  } else {
+    log.warn("telegram_skip_unconfigured", { orderCode: order.order_code });
+  }
 
   log.info("order_paid", { orderCode: order.order_code, source: opts.source });
   return { changed: true };
@@ -347,10 +405,14 @@ export async function refreshOrderStatus(order: OrderRow): Promise<RefreshResult
   if (now - last < PROVIDER_CHECK_THROTTLE_MS) {
     return { order, checkedProvider: false };
   }
-  await db.from("orders").update({ last_payment_checked_at: new Date(now).toISOString() }).eq("id", order.id);
 
   if (!order.payment_id) {
     // Belum ada referensi pembayaran (pembuatan gagal) → expired-kan via clock saja.
+    // Tetap catat throttle agar clock-check tidak spam DB.
+    await db
+      .from("orders")
+      .update({ last_payment_checked_at: new Date(now).toISOString() })
+      .eq("id", order.id);
     return expireIfPastDeadline(db, order);
   }
 
@@ -360,9 +422,15 @@ export async function refreshOrderStatus(order: OrderRow): Promise<RefreshResult
   } catch (err) {
     const detail = err instanceof PaymentProviderError ? String(err.detail ?? err.message) : "";
     log.error("provider_check_failed", { orderCode: order.order_code, detail });
-    // Provider tidak bisa dihubungi: jangan ubah status, biarkan buyer mencoba lagi.
+    // Provider gagal dihubungi: JANGAN set throttle, biarkan retry segera.
     return { order, checkedProvider: false };
   }
+
+  // Throttle hanya setelah call provider sukses.
+  await db
+    .from("orders")
+    .update({ last_payment_checked_at: new Date(now).toISOString() })
+    .eq("id", order.id);
 
   switch (result.state) {
     case "paid": {
@@ -370,7 +438,7 @@ export async function refreshOrderStatus(order: OrderRow): Promise<RefreshResult
         log.error("polling_amount_mismatch", { orderCode: order.order_code, charged: result.amount });
         return { order: (await loadOrderById(db, order.id)) ?? order, checkedProvider: true };
       }
-      await applyPaid(db, order, { source: "polling" });
+      await applyPaid(db, order, { source: "polling", chargedAmount: result.amount });
       break;
     }
     case "expired":
@@ -444,7 +512,10 @@ export async function handleWebhookEvent(params: {
         });
         return { handled: "ignored", reason: check.reason };
       }
-      const res = await applyPaid(db, order, { source: "webhook" });
+      const res = await applyPaid(db, order, {
+        source: "webhook",
+        chargedAmount: params.amount,
+      });
       return { handled: "paid", reason: res.changed ? undefined : res.reason };
     }
     case "expired":
@@ -478,8 +549,17 @@ export async function listAdminOrders(filter: {
   let query = db.from("orders").select("*").order("created_at", { ascending: false }).limit(200);
   if (filter.status) query = query.eq("order_status", filter.status);
   if (filter.q) {
-    const like = `%${filter.q.replace(/[%_]/g, "")}%`;
-    query = query.or(`order_code.ilike.${like},buyer_name_snapshot.ilike.${like},product_name_snapshot.ilike.${like}`);
+    const { sanitizeAdminSearchQuery } = await import("@/lib/validation");
+    const cleaned = sanitizeAdminSearchQuery(filter.q);
+    if (cleaned) {
+      // Escape sisa metakarakter LIKE; karakter filter PostgREST sudah dibuang.
+      const like = `%${cleaned.replace(/[%_]/g, "")}%`;
+      // bungkus nilai dengan kutip ganda agar koma/spasi tidak memecah .or()
+      const quoted = `"${like.replace(/"/g, "")}"`;
+      query = query.or(
+        `order_code.ilike.${quoted},buyer_name_snapshot.ilike.${quoted},product_name_snapshot.ilike.${quoted}`,
+      );
+    }
   }
   const { data, error } = await query;
   if (error) {
@@ -499,10 +579,11 @@ export async function getAdminOrder(orderId: string): Promise<AdminOrderView | n
 export async function findOrderByCodeOrId(codeOrId: string): Promise<AdminOrderView | null> {
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(codeOrId);
   const db = await storeDb();
+  const column = isUuid ? "id" : "order_code";
   const { data } = await db
     .from("orders")
     .select("*")
-    [isUuid ? "eq" : "eq"](isUuid ? "id" : "order_code", codeOrId)
+    .eq(column, codeOrId)
     .maybeSingle<AdminOrderView>();
   return data;
 }

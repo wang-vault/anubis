@@ -11,6 +11,7 @@ const sample: OrderRow = {
   unit_price_snapshot: 85000,
   quantity: 1,
   total_amount: 85000,
+  charged_amount: 85042,
   payment_status: "PAID",
   order_status: "PAID",
   payment_id: "YO-ABC12345",
