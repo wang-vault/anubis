@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
+import { parseSiteUrl } from "@/lib/next-url";
 
 // Semua halaman bersifat dinamis (header menampilkan state login per-user).
 // Kecepatan tetap terjaga lewat unstable_cache pada query katalog (60 dtk)
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 const siteName = process.env.NEXT_PUBLIC_SITE_NAME ?? "Toko Saya";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  metadataBase: parseSiteUrl(process.env.NEXT_PUBLIC_SITE_URL),
   title: {
     default: `${siteName} — beli, bayar QRIS, pesanan diantar via WhatsApp`,
     template: `%s — ${siteName}`,
