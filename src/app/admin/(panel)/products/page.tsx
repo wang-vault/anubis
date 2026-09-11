@@ -3,6 +3,7 @@ import Link from "next/link";
 import { adminListProducts } from "@/lib/products";
 import { formatRupiah } from "@/lib/money";
 import { toggleProductAction } from "@/app/admin/actions";
+import { ActionButton } from "@/components/ActionButton";
 
 export const metadata: Metadata = { title: "Produk — Admin" };
 
@@ -16,10 +17,11 @@ export default async function AdminProductsPage({ searchParams }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="paper-heading flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold">Produk</h1>
-          <p className="text-sm text-slate-500">{products.length} produk di katalog toko.</p>
+          <p className="section-kicker">Kantor redaksi · Katalog</p>
+          <h1 className="paper-heading-title">Kelola produk</h1>
+          <p className="mt-2 text-sm text-slate-500">{products.length} produk di katalog toko.</p>
         </div>
         <Link href="/admin/products/new" className="btn-primary">
           + Tambah Produk
@@ -30,31 +32,30 @@ export default async function AdminProductsPage({ searchParams }: Props) {
       {sp.saved === "1" && <p className="alert-info">✅ Perubahan produk tersimpan.</p>}
 
       {products.length === 0 ? (
-        <div className="card p-10 text-center text-sm text-slate-500">
+        <div className="paper-empty p-10 text-center text-sm text-slate-500">
           Belum ada produk. Tambahkan produk pertama lewat tombol di atas.
         </div>
       ) : (
         <div className="space-y-2.5">
           {products.map((p) => (
-            <div key={p.id} className="card flex flex-wrap items-center gap-3 p-3">
-              <div className="size-14 shrink-0 overflow-hidden rounded-xl bg-slate-100">
+            <div key={p.id} className="card flex flex-wrap items-center gap-3 p-3 sm:p-4">
+              <div className="product-placeholder size-14 shrink-0 text-sm">
                 {p.image_url && /^https:\/\//i.test(p.image_url) ? (
-                  
                   <img src={p.image_url} alt="" loading="lazy" className="h-full w-full object-cover" />
                 ) : (
-                  <div className="grid h-full w-full place-items-center text-lg">📦</div>
+                  <span>AN</span>
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">{p.name}</p>
-                <p className="text-sm font-bold text-brand-700">{formatRupiah(p.price)}</p>
+                <p className="truncate font-serif text-base font-black">{p.name}</p>
+                <p className="font-serif text-sm font-bold text-brand-700">{formatRupiah(p.price)}</p>
               </div>
               <span
                 className={`badge ${p.is_active ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}
               >
                 {p.is_active ? "Aktif" : "Nonaktif"}
               </span>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Link href={`/admin/products/${p.id}`} className="btn-secondary btn-sm">
                   Edit
                 </Link>
@@ -62,9 +63,9 @@ export default async function AdminProductsPage({ searchParams }: Props) {
                   <input type="hidden" name="id" value={p.id} />
                   <input type="hidden" name="active" value={p.is_active ? "false" : "true"} />
                   <input type="hidden" name="back" value="/admin/products" />
-                  <button className="btn-secondary btn-sm" type="submit">
+                  <ActionButton className="btn-secondary btn-sm" type="submit" pendingText="Mengubah…">
                     {p.is_active ? "Nonaktifkan" : "Aktifkan"}
-                  </button>
+                  </ActionButton>
                 </form>
               </div>
             </div>

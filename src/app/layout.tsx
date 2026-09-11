@@ -24,15 +24,15 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#16a34a",
+  themeColor: "#a61e2b",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="id">
-      <body className="flex min-h-dvh flex-col">
+      <body className="newspaper-body flex min-h-dvh flex-col">
         <Header />
-        <main className="flex-1 py-6">{children}</main>
+        <main className="newspaper-main flex-1 py-6">{children}</main>
         <Footer />
       </body>
     </html>
