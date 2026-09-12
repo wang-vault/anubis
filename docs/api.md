@@ -110,6 +110,20 @@ idempoten + cek `payment_status=PAID`). Salah kondisi → 409 CONFLICT.
 (Endpoint internal UI juga mendukung `expire` utk admin membatalkan PENDING:
 `src/app/admin/actions.ts`.)
 
+### GET /api/admin/payments/diagnose
+Diagnosa koneksi YoBasePay **tanpa efek samping**: memanggil `checkstatus`
+dengan trxid karangan (`YO-DIAGNOSTIK-000000`) sehingga tidak membuat
+transaksi dan tidak memotong saldo, lalu menerjemahkan jawaban provider
+menjadi vonis + langkah perbaikan.
+→ `{ok, diagnostics:{verdict, verdictLabel, hints[], env[], domainLock,
+webhookUrl, baseUrl, amountTolerance, qrRenderConfigured, probe, checkedAt}}`
+Vonis: `OK_KEY_VALID` | `NOT_CONFIGURED` | `INVALID_API_KEY` | `DOMAIN_LOCK` |
+`INSUFFICIENT_BALANCE` | `PLAN_MISMATCH` | `PROVIDER_UNREACHABLE` |
+`BAD_RESPONSE` | `UNKNOWN`. Nilai env **disamarkan** (`maskSecret`) — rahasia
+tidak pernah dikembalikan utuh. Rate limit 10/10 menit per admin.
+Dipakai panel "Diagnosa QRIS Otomatis" di `/admin/settings`
+(`src/components/admin/PaymentDiagnostics.tsx`). Detail: `docs/yobasepay.md` §4b.
+
 ### Verifikasi pembayaran manual (server action admin)
 `src/app/admin/actions.ts`:
 | Action | Input | Efek |

@@ -27,6 +27,7 @@ Klasifikasi:
 | `YOBASEPAY_BASE_URL` | 🖥 | — (default `https://yobasepay.net/api`) | Dokumentasi API di dashboard akun Anda — bila versi V3/V4 memakai path berbeda | `https://yobasepay.net/api` |
 | `YOBASEPAY_AMOUNT_TOLERANCE` | 🖥 | — (default `999`) | Toleransi kode unik nominal. V1/V2 (+1..999): `999`. V3 no-unique-code: `0` | `999` |
 | `YOBASEPAY_EXPIRY_TZ_OFFSET` | 🖥 | — (default `+07:00`) | Offset zona waktu field `expired_at` provider (dokumentasi tidak menyebut zona) | `+07:00` |
+| `YOBASEPAY_QR_RENDER_URL` | 🖥 | — (opsional, default kosong) | Template layanan pembuat gambar QR, dipakai HANYA bila provider mengirim payload QRIS (string EMVCo) alih-alih gambar. Wajib https + memuat `{payload}` | `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data={payload}` |
 | `TELEGRAM_BOT_TOKEN` | 🔒🖥 | — (kosong = notifikasi skip) | Dari @BotFather (`/newbot`) | `123456789:AAExampleTokenFormatNotReal123` |
 | `TELEGRAM_CHAT_ID` | 🖥 | — (berpasangan dengan token) | Chat ID penjual (lihat `docs/telegram.md`) | `987654321` atau `-1001234567890` (grup) |
 

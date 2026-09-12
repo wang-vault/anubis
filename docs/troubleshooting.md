@@ -34,13 +34,35 @@ dicantumkan di bawah).
   1–2 menit.
 
 ## 4. "QRIS tidak muncul / halaman pembayaran kosong"
-- Penyebab: createpayment gagal (saldo API/provider down/key salah/domain-lock
-  menolak karena Origin tidak terdaftar); `qr_image` null dari provider.
-- Cek: log `payment_create_failed` (detail pesan provider ada di log);
-  curl manual createpayment (yobasepay.md §5); Order di DB: `payment_id` null?
-- Solusi: perbaiki API key/domain lock → redeploy; bila provider mengembalikan
-  payment_url saja tanpa gambar → tombol "Buka Halaman Pembayaran" tetap jalan;
-  order gagal create → buyer order ulang.
+
+**Langkah pertama: `/admin/settings` → "Diagnosa QRIS Otomatis" → Jalankan
+diagnosa.** Tombol ini menguji kredensial ke provider tanpa membuat transaksi
+(`yobasepay.md` §4b) dan langsung menyebut penyebabnya: API key salah, Domain
+Lock menolak, saldo YC kurang, paket tidak mengaktifkan V1, atau provider tak
+terjangkau.
+
+Lalu bedakan dua kasus lewat Supabase #2 → `orders` (baris order tes):
+
+**4a. `payment_id` NULL, `payment_status=FAILED`** → transaksi gagal DIBUAT.
+- Penyebab: key salah/kosong, Domain Lock ≠ `NEXT_PUBLIC_SITE_URL`, saldo YC 0,
+  paket tidak mengaktifkan API V1, provider down, base URL salah.
+- Cek: log `payment_create_failed` (field `detail` = pesan asli provider);
+  buyer melihat "Gerbang pembayaran sedang tidak tersedia."
+- Solusi: ikuti vonis panel diagnosa → perbaiki env/dashboard → **Redeploy**
+  bila yang diubah env. Order gagal → buyer order ulang.
+
+**4b. `payment_id` TERISI (`YO-…`) tapi QR tak tampil** → transaksi berhasil,
+gambarnya yang tidak bisa dirender. Halaman bayar menampilkan "QR tidak
+tersedia — gunakan tombol Buka Halaman Pembayaran".
+- Penyebab: provider mengirim QR dalam bentuk yang tak terduga — payload QRIS
+  (string EMVCo) alih-alih gambar, base64, atau nama field di luar daftar.
+- Cek: log `yobasepay_qr_payload_only` atau `yobasepay_qr_missing` — keduanya
+  mencetak **daftar nama field** yang dikirim provider. Kolom `qr_image_url`
+  di DB: null / bukan https / `data:` URI.
+- Solusi: payload QRIS → isi `YOBASEPAY_QR_RENDER_URL` (`yobasepay.md` §2.5);
+  nama field baru → tambahkan ke konstanta `QR_IMAGE_KEYS`/`QR_PAYLOAD_KEYS` di
+  `src/lib/integrations/payment/normalize.ts` (modul murni, ada unit test);
+  sementara itu buyer tetap bisa bayar lewat tombol "Buka Halaman Pembayaran".
 
 ## 5. "Pembayaran sudah dilakukan tapi order masih PENDING"
 - Penyebab umum: webhook telat/belum dikonfigurasi; nominal tidak cocok

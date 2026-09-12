@@ -18,7 +18,18 @@ export interface CreatedPayment {
   /** ID transaksi dari provider (YoBasePay: trx_id, mis. "YO-ABC12345"). */
   paymentId: string;
   paymentUrl: string | null;
+  /**
+   * Sumber gambar QR siap render: URL https absolut ATAU `data:image/…;base64`.
+   * Adapter sudah menormalisasi URL relatif/protocol-relative milik provider,
+   * jadi nilai di sini selalu lolos `isRenderableQrSrc()` bila tidak null.
+   */
   qrImageUrl: string | null;
+  /**
+   * Payload QRIS mentah (string EMVCo/BRCode) bila provider TIDAK mengirim
+   * gambar. Berguna untuk diagnostik & (opsional) dirender sendiri lewat
+   * `YOBASEPAY_QR_RENDER_URL`. Null bila provider mengirim gambar.
+   */
+  qrPayload?: string | null;
   /** ISO string, boleh null bila provider tidak memberi. */
   expiresAt: string | null;
   /**

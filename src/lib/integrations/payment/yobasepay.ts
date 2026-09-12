@@ -8,29 +8,50 @@ import {
   type NormalizedWebhook,
   type PaymentProvider,
   type PaymentStatusResult,
-  type ProviderPaymentState,
 } from "./types";
+import {
+  AMOUNT_KEYS,
+  EXPIRY_KEYS,
+  PAYMENT_URL_KEYS,
+  TRX_ID_KEYS,
+  asNumber,
+  asString,
+  extractQr,
+  mapStatus,
+  parseProviderDate,
+  pickNumber,
+  pickString,
+  renderPayloadToUrl,
+} from "./normalize";
 
 /**
  * Implementasi YoBasePay — "Payment Engine" QRIS (bukan payment gateway).
  *
- * Sesuai dokumentasi RESMI publik:
- *   https://yobasepay.net/index.php?page=docs_public   (diakses 2026-09-11)
+ * Kontrak yang dipakai (dokumentasi resmi pernah publik di
+ * https://yobasepay.net/index.php?page=docs_public; per 2026-09-12 halaman itu
+ * mensyaratkan login, jadi bentuk respons diverifikasi ulang lewat probe API):
  *
  *   GET {BASE}?action=createpayment&apikey={API_KEY}&amount={NOMINAL}
  *     → { status: true, data: { trx_id, amount, payment_url, qr_image,
  *         expired_at, environment } }
  *   GET {BASE}?action=checkstatus&apikey={API_KEY}&trxid={TRX_ID}
- *     → { status: true, data: { status: "SUCCESS" | "EXPIRED" | ..., amount, ... } }
+ *     → { status: true, data: { status: "SUCCESS" | "EXPIRED" | ..., amount } }
  *   Webhook (POST ke URL kita, dikirim saat SUCCESS/EXPIRED):
  *     body: { trxid, status, amount, ... }
  *     header: X-YoBasePay-Signature = HMAC-SHA256(rawBody, WEBHOOK_SECRET) hex
  *   Domain Lock: request wajib menyertakan header Referer/Origin = domain
- *   yang terdaftar di dashboard YoBasePay (kirim NEXT_PUBLIC_SITE_URL).
+ *   yang terdaftar di dashboard YoBasePay (dikirim dari NEXT_PUBLIC_SITE_URL).
  *
- * ⚠️ FIELD YANG BELUM TERDOKUMENTASI PASTI (per tanggal di atas) diberi
- *    tanda [VERIFIKASI] dan kode ditulis toleran terhadap beberapa nama field.
- *    Cek dashboard dokumentasi akun Anda (login → Docs) sebelum production.
+ * Probe 2026-09-12 (apikey palsu) → `{"status":false,"message":"Invalid API Key"}`:
+ * base URL & bentuk request di atas masih valid untuk API V1.
+ *
+ * ⚠️ NAMA FIELD QR BERBEDA ANTAR PAKET (V1/V2/V3/V4/MyPG) dan tidak semuanya
+ *    terdokumentasi publik. Semua varian yang dikenal ditangani di
+ *    ./normalize.ts (URL absolut, path relatif, protocol-relative, base64,
+ *    data URI, dan payload EMVCo). Bila provider hanya mengirim PAYLOAD,
+ *    set `YOBASEPAY_QR_RENDER_URL` untuk merendernya jadi gambar.
+ *    Untuk memastikan field apa yang sebenarnya dikirim akunmu, pakai
+ *    GET /api/admin/payments/diagnose (lihat lib/integrations/payment/diagnose.ts).
  */
 
 const PROVIDER_NAME = "yobasepay";
@@ -53,66 +74,16 @@ async function apiGet(url: string, origin: string): Promise<Record<string, unkno
   try {
     json = JSON.parse(text) as Record<string, unknown>;
   } catch {
-    log.error("yobasepay_bad_json", { httpStatus: res.status });
+    log.error("yobasepay_bad_json", { httpStatus: res.status, preview: text.slice(0, 120) });
     throw new PaymentProviderError("provider_bad_response");
   }
   if (!res.ok || json.status !== true) {
     const message = typeof json.message === "string" ? json.message : "";
+    // Pesan provider TIDAK dikirim ke buyer (lihat orders.ts) — hanya ke log
+    // dan ke panel diagnosa admin.
     throw new PaymentProviderError(`provider_error ${res.status}`.trim(), message);
   }
   return (json.data ?? {}) as Record<string, unknown>;
-}
-
-function asString(v: unknown): string | null {
-  return typeof v === "string" && v.length > 0 ? v : null;
-}
-
-function asNumber(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string") {
-    const n = Number.parseInt(v, 10);
-    if (Number.isFinite(n)) return n;
-  }
-  return null;
-}
-
-/**
- * "2026-01-01 12:00:00" (tanpa zona waktu, diasumsikan WIB) → ISO string.
- * [VERIFIKASI] format tanggal bisa berubah — parser toleran ISO juga.
- */
-function parseProviderDate(v: unknown, tzOffset: string): string | null {
-  const s = asString(v);
-  if (!s) return null;
-  const iso = s.includes("T") ? s : `${s.replace(" ", "T")}${tzOffset}`;
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return null;
-  return new Date(t).toISOString();
-}
-
-function mapStatus(status: string | null): ProviderPaymentState | "unknown" {
-  switch ((status ?? "").toUpperCase()) {
-    case "SUCCESS":
-    case "SUCCESSFUL":
-    case "PAID":
-    case "COMPLETED":
-      return "paid";
-    case "EXPIRED":
-      return "expired";
-    case "FAILED":
-    case "CANCELLED":
-    case "CANCELED":
-    case "REVERSED":
-    case "REFUNDED":
-      return "failed";
-    case "PENDING":
-    case "WAITING_PAYMENT":
-    case "WAITING":
-    case "UNPAID":
-    case "IN_PROGRESS":
-      return "pending";
-    default:
-      return "unknown";
-  }
 }
 
 export function createYoBasePayProvider(): PaymentProvider {
@@ -139,35 +110,64 @@ export function createYoBasePayProvider(): PaymentProvider {
           "YOBASEPAY_API_KEY / YOBASEPAY_WEBHOOK_SECRET belum diisi",
         );
       }
-      // Dokumentasi: parameter hanya apikey + amount. Reference order TIDAK
+      // Dokumentasi V1: parameter hanya apikey + amount. Reference order TIDAK
       // dikirim ke API publik → pencocokan webhook lewat trx_id (payment_id
-      // yang kita simpan di order). [VERIFIKASI] apakah API versi akun Anda
-      // mendukung parameter reference/order_id tambahan.
+      // yang kita simpan di order).
       const url = new URL(base);
       url.searchParams.set("action", "createpayment");
       url.searchParams.set("apikey", env.YOBASEPAY_API_KEY);
       url.searchParams.set("amount", String(amount));
 
       const data = await apiGet(url.toString(), origin);
-      const paymentId = asString(data.trx_id) ?? asString(data.trxid);
-      if (!paymentId) throw new PaymentProviderError("provider_missing_trxid");
+
+      const trx = pickString(data, TRX_ID_KEYS);
+      if (!trx) {
+        // Respons "sukses" tanpa ID transaksi → tidak bisa dicocokkan dengan
+        // webhook/polling. Catat field yang ADA agar mudah dipetakan.
+        log.error("yobasepay_missing_trxid", { fields: Object.keys(data) });
+        throw new PaymentProviderError("provider_missing_trxid");
+      }
 
       // Nominal final dari provider (sering = amount + kode unik). Disimpan
       // agar UI menampilkan angka yang sama dengan yang tertanam di QRIS.
-      const chargedAmount =
-        asNumber(data.amount) ?? asNumber(data.receive_amount) ?? asNumber(data.unique_amount);
+      const charged = pickNumber(data, AMOUNT_KEYS);
+
+      // --- QR: bagian yang paling sering berbeda antar paket/versi API ------
+      const qr = extractQr(data, base);
+      let qrImageUrl = qr.imageUrl;
+      const qrPayload = qr.payload;
+
+      if (!qrImageUrl && qrPayload) {
+        // Provider mengirim string QRIS, bukan gambar. Coba render lewat
+        // layanan yang dikonfigurasi penjual (opsional, wajib https).
+        const rendered = renderPayloadToUrl(qrPayload, env.YOBASEPAY_QR_RENDER_URL);
+        if (rendered) {
+          qrImageUrl = rendered;
+        } else {
+          log.warn("yobasepay_qr_payload_only", {
+            fields: Object.keys(data),
+            fieldUsed: qr.fieldUsed,
+            payloadLength: qrPayload.length,
+            hint: "Isi YOBASEPAY_QR_RENDER_URL bila ingin payload dirender jadi gambar QR.",
+          });
+        }
+      }
+      if (!qrImageUrl && !qrPayload) {
+        // Tidak ada QR sama sekali: buyer masih bisa membayar lewat
+        // payment_url (bila ada). Log field yang tersedia = kunci diagnosa.
+        log.warn("yobasepay_qr_missing", { fields: Object.keys(data) });
+      }
+
+      const paymentUrl = pickString(data, PAYMENT_URL_KEYS);
+      const expiryRaw = pickString(data, EXPIRY_KEYS);
 
       return {
-        paymentId,
-        paymentUrl: asString(data.payment_url),
-        // [VERIFIKASI] contoh dokumentasi memakai `qr_image`; sebagian
-        // versi memakai `qr_image_url` / `qris_url`.
-        qrImageUrl:
-          asString(data.qr_image) ??
-          asString(data.qr_image_url) ??
-          asString(data.qris_url),
-        expiresAt: parseProviderDate(data.expired_at, env.YOBASEPAY_EXPIRY_TZ_OFFSET),
-        chargedAmount,
+        paymentId: trx.value,
+        paymentUrl: paymentUrl?.value ?? null,
+        qrImageUrl,
+        qrPayload,
+        expiresAt: parseProviderDate(expiryRaw?.value ?? null, env.YOBASEPAY_EXPIRY_TZ_OFFSET),
+        chargedAmount: charged?.value ?? null,
       };
     },
 
@@ -185,7 +185,7 @@ export function createYoBasePayProvider(): PaymentProvider {
       // Nominal dari provider (sudah termasuk kode unik) untuk validasi.
       const amount = asNumber(data.amount) ?? asNumber(data.receive_amount);
       if (status === null) {
-        log.warn("yobasepay_checkstatus_no_status", { paymentId });
+        log.warn("yobasepay_checkstatus_no_status", { paymentId, fields: Object.keys(data) });
       }
       return { state: mapStatus(status), amount, raw: data };
     },
@@ -206,15 +206,14 @@ export function createYoBasePayProvider(): PaymentProvider {
     },
 
     normalizeWebhook(body): NormalizedWebhook {
-      const paymentId =
-        asString(body.trxid) ?? asString(body.trx_id) ?? asString(body.transaction_id);
-      const amount = asNumber(body.amount) ?? asNumber(body.receive_amount);
+      const paymentId = pickString(body, TRX_ID_KEYS);
+      const amount = pickNumber(body, AMOUNT_KEYS);
       const status = asString(body.status);
       return {
-        paymentId,
+        paymentId: paymentId?.value ?? null,
         orderCode: asString(body.order_id) ?? asString(body.reference) ?? null,
         state: mapStatus(status),
-        amount,
+        amount: amount?.value ?? null,
         raw: body,
       };
     },
