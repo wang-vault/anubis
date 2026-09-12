@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { claimManualPaymentAction, type ManualClaimState } from "@/app/pay/actions";
 import { formatRupiah } from "@/lib/money";
+import { isRenderableQrSrc } from "@/lib/qr-image";
 import type {
   ManualReviewStatus,
   OrderStatus,
@@ -290,7 +291,7 @@ export function PaymentPanel({ order, manual, product }: PaymentPanelProps) {
           ) : (
             <>
               <div className="payment-qr-frame mt-4">
-                {order.qr_image_url && /^https:\/\//i.test(order.qr_image_url) ? (
+                {isRenderableQrSrc(order.qr_image_url) ? (
                   <>
                     <img
                       src={order.qr_image_url}
@@ -383,7 +384,7 @@ function ManualPaymentSection({
     }
   }, [amountText]);
 
-  if (!manual || !manual.qrSrc) {
+  if (!manual || !isRenderableQrSrc(manual.qrSrc)) {
     return (
       <p className="alert-error mt-4">
         QR pembayaran manual belum tersedia. Silakan hubungi penjual atau buat order baru dengan

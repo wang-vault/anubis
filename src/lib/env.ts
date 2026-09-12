@@ -56,6 +56,27 @@ const schema = z.object({
   YOBASEPAY_AMOUNT_TOLERANCE: z.coerce.number().int().min(0).max(999).default(999),
   // expired_at dari YoBasePay berupa datetime tanpa zona waktu; diasumsikan WIB.
   YOBASEPAY_EXPIRY_TZ_OFFSET: z.string().default("+07:00"),
+  // OPSIONAL: sebagian paket/versi API YoBasePay mengembalikan PAYLOAD QRIS
+  // (string EMVCo) alih-alih gambar QR. Isi dengan template layanan pembuat
+  // gambar QR yang kamu percaya — WAJIB https dan memuat placeholder {payload}:
+  //   https://api.qrserver.com/v1/create-qr-code/?size=320x320&data={payload}
+  // Kosongkan (default) bila provider mengirim gambar: nilai ini tidak dipakai.
+  // Catatan: payload QRIS memuat nama merchant & nominal, jadi pertimbangkan
+  // memakai layanan yang kamu host sendiri bila tidak ingin mengirimnya keluar.
+  YOBASEPAY_QR_RENDER_URL: z.preprocess(
+    (v) => (typeof v === "string" ? (v.trim().length === 0 ? null : v.trim()) : (v ?? null)),
+    z
+      .union([
+        z.null(),
+        z
+          .string()
+          .url("URL renderer QR tidak valid")
+          .startsWith("https://", "Renderer QR harus https")
+          .max(500)
+          .refine((v) => v.includes("{payload}"), "Template renderer QR harus memuat {payload}"),
+      ])
+      .default(null),
+  ),
 
   // --- Pembayaran MANUAL (QRIS statis milik penjual, mis. QR GoPay Merchant) ---
   // Metode ini tidak butuh provider: buyer scan QR statis, transfer, lalu

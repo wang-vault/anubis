@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { MANUAL_QR_MAX_BYTES, getManualPaymentView } from "@/lib/payment-config";
 import { serverEnv, yobasepayConfigured } from "@/lib/env";
 import { ManualPaymentSettingsForm } from "@/components/admin/ManualPaymentSettingsForm";
+import { PaymentDiagnostics } from "@/components/admin/PaymentDiagnostics";
 
 export const metadata: Metadata = { title: "Pembayaran — Admin" };
 export const dynamic = "force-dynamic";
@@ -68,6 +69,8 @@ export default async function AdminPaymentSettingsPage({ searchParams }: Props) 
           </p>
         )}
       </div>
+
+      <PaymentDiagnostics />
 
       <ManualPaymentSettingsForm
         initial={{

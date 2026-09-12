@@ -5,6 +5,24 @@ Ditulis terhadap **dokumentasi publik resmi**: `https://yobasepay.net/index.php?
 dashboard akun Anda (menu Docs) dan sesuaikan HANYA file
 `src/lib/integrations/payment/yobasepay.ts` — kode bisnis tidak tersentuh.
 
+> **Update 2026-09-12.** Halaman `docs_public` sekarang **mensyaratkan login**
+> ("Silakan login terlebih dahulu untuk mengakses dokumentasi teknis API"), jadi
+> kontrak API tidak bisa lagi diverifikasi dari luar. Dua hal diverifikasi ulang
+> tanpa login:
+> 1. **Endpoint V1 masih hidup** — probe `GET https://yobasepay.net/api?action=createpayment&apikey=test&amount=10000`
+>    menjawab `{"status":false,"message":"Invalid API Key"}`. Artinya base URL,
+>    nama action, dan bentuk `{status,data,message}` di adapter ini benar; yang
+>    ditolak adalah kredensialnya.
+> 2. **Homepage mereka menampilkan `POST /api/v4/create-transaction`** sebagai
+>    "Unified API Core". Adapter ini mengimplementasikan **API V1** (GET
+>    `?action=createpayment`). Paket **Starter (Rp 0) hanya mengaktifkan V1**;
+>    V1+V2+V3 terbuka mulai paket Rp 50.000. Bila akun Anda memakai V4/MyPG,
+>    adapter perlu disesuaikan (satu file, logika bisnis tidak berubah).
+>
+> Karena nama field tidak lagi bisa dipastikan dari luar, **semua varian QR yang
+> dikenal ditangani di `src/lib/integrations/payment/normalize.ts`** dan ada
+> **tombol diagnosa** di `/admin/settings` (lihat §4b).
+
 > **YoBasePay adalah Payment Engine (API wrapper) atas mutasi QRIS, BUKAN payment
 > gateway.** Dana masuk ke Saldo YoBasePay (YC) / QRIS pribadi Anda tergantung
 > paket (V1 Standard, V2 MyMerchant, V3 no-unique-code, V4 Multi-channel,
@@ -86,15 +104,95 @@ Jangan mengarang. Kode ditulis toleran, tetapi **cek dashboard docs akunmu**:
    `YOBASEPAY_EXPIRY_TZ_OFFSET`); sesuaikan bila terbukti lain.
 5. Apakah webhook body memakai `trxid` atau `trx_id` — keduanya diterima.
 
+### 2.5 Bentuk data QR yang ditoleransi aplikasi
+
+Ini bagian yang paling sering membuat "QR gagal" padahal transaksinya **berhasil
+dibuat**: provider mengirim QR dalam bentuk yang tidak langsung bisa dipakai
+atribut `src` sebuah `<img>`. `normalize.ts` menangani semuanya:
+
+| Bentuk nilai dari provider | Contoh | Perlakuan |
+|---|---|---|
+| URL https absolut | `https://yobasepay.net/qr/a.png` | dipakai apa adanya |
+| URL http | `http://yobasepay.net/qr/a.png` | dinaikkan ke https (menghindari *mixed content*) |
+| Protocol-relative | `//yobasepay.net/qr/a.png` | diberi skema `https:` |
+| Path relatif | `/uploads/qr/a.png`, `qr/ABC123` | di-resolve terhadap origin `YOBASEPAY_BASE_URL` |
+| `data:` URI gambar | `data:image/png;base64,iVBOR…` | dipakai apa adanya |
+| Base64 tanpa prefix | `iVBORw0KGgo…` | dibungkus jadi `data:image/png;base64,…` |
+| **Payload QRIS (EMVCo)** | `0002010102122668…` | **tidak bisa dirender sendiri** → lihat bawah |
+| Skema lain | `javascript:…` | ditolak (guard `src/lib/qr-image.ts`) |
+
+Nama field yang dicoba (urut prioritas): `qr_image`, `qr_image_url`, `qris_url`,
+`qr_url`, `qris_image`, `qris_image_url`, `qr_code_url`, `qr_code_image`,
+`qrcode_url`, `qr_img`, `image_url`, `qr_image_base64`, `qr_base64`, `qr`,
+`qr_code`, `qrcode`, `qris` — lalu field payload: `qr_string`, `qris_string`,
+`qr_payload`, `qris_payload`, `qr_content`, `qris_content`, `qr_data`,
+`qris_data`, `qr_text`, `qr_value`, `qr_raw`, `brcode`, `br_code`, `payload`.
+Hal yang sama berlaku untuk `trx_id`/`payment_url`/`amount`/`expired_at`
+(daftar lengkap: konstanta `*_KEYS` di `normalize.ts`).
+
+**Bila provider hanya mengirim PAYLOAD QRIS** (string EMVCo, bukan gambar),
+aplikasi tidak bisa menggambar QR sendiri tanpa encoder. Dua pilihan:
+
+1. Isi `YOBASEPAY_QR_RENDER_URL` dengan template https yang memuat `{payload}`,
+   mis. `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data={payload}`.
+   Payload di-URL-encode otomatis. Catatan privasi: payload memuat nama merchant
+   & nominal, jadi lebih baik host renderer sendiri bila tidak ingin mengirimnya
+   ke pihak ketiga.
+2. Biarkan kosong → buyer memakai tombol **"Buka Halaman Pembayaran"**
+   (`payment_url` dari provider). Transaksi tetap bisa dibayar.
+
+Saat ini terjadi, log mencetak `yobasepay_qr_payload_only`; bila QR tidak ada
+sama sekali, log mencetak `yobasepay_qr_missing`. **Keduanya menyertakan daftar
+nama field yang dikirim provider** — itulah informasi yang dibutuhkan untuk
+menambah field baru ke `normalize.ts`.
+
+## 4b. Diagnosa dari dashboard admin (tanpa curl, tanpa buka log)
+
+`/admin/settings` → bagian **"Diagnosa QRIS Otomatis"** → tombol **Jalankan
+diagnosa** (endpoint `GET /api/admin/payments/diagnose`, khusus admin).
+
+Yang dilakukan: memanggil `checkstatus` dengan **trxid karangan** → **tidak
+membuat transaksi dan tidak memotong saldo**, tetapi cukup untuk mengetahui
+apakah kredensial diterima. Jawaban provider diterjemahkan menjadi vonis:
+
+| Vonis | Arti | Yang harus dikerjakan |
+|---|---|---|
+| `OK_KEY_VALID` | API key + Domain Lock benar | Masalah ada di bentuk data QR → lihat §2.5 dan log `yobasepay_qr_*` |
+| `NOT_CONFIGURED` | env kosong | Isi `YOBASEPAY_API_KEY` **dan** `YOBASEPAY_WEBHOOK_SECRET` → Redeploy |
+| `INVALID_API_KEY` | key ditolak | Salin ulang key project **V1**; pastikan tanpa spasi → Redeploy |
+| `DOMAIN_LOCK` | Origin/Referer ditolak | Samakan Domain Lock di dashboard dengan `NEXT_PUBLIC_SITE_URL` |
+| `INSUFFICIENT_BALANCE` | saldo YC kurang | Top up YC (flat fee per transaksi dipotong dari saldo) |
+| `PLAN_MISMATCH` | paket/API tidak mengizinkan | Cek paket aktif; Starter = V1 saja |
+| `PROVIDER_UNREACHABLE` | timeout/DNS | Cek status layanan provider & `YOBASEPAY_BASE_URL` |
+| `BAD_RESPONSE` | balasan bukan JSON | `YOBASEPAY_BASE_URL` mengarah ke halaman HTML, bukan endpoint API |
+
+Panel ini juga menampilkan: nilai env **tersamar** (bukan rahasia utuh), Domain
+Lock yang harus didaftarkan, Webhook URL yang harus diisi, dan base URL yang
+dipakai. Batas: 10 kali / 10 menit per admin.
+
 ## 3. Pasang credential di Vercel
 
 ```
 YOBASEPAY_API_KEY=…            # server-only, secret
-YOBASEPAY_WEBHOOK_SECRET=…     # server-only, secret
+YOBASEPAY_WEBHOOK_SECRET=…     # server-only, secret — WAJIB walau webhook belum dipakai
 YOBASEPAY_BASE_URL=https://yobasepay.net/api
 YOBASEPAY_AMOUNT_TOLERANCE=999 # 0 bila pakai V3 no-unique-code
+YOBASEPAY_EXPIRY_TZ_OFFSET=+07:00
+YOBASEPAY_QR_RENDER_URL=       # isi HANYA bila provider mengirim payload QRIS (§2.5)
 ```
 → Settings → Environment Variables → Save → **Redeploy**.
+
+Tiga hal yang paling sering terlewat:
+
+1. **Kedua secret wajib terisi.** `yobasepayConfigured()` menuntut API key **dan**
+   webhook secret; bila salah satu kosong, metode QRIS **disembunyikan** dari
+   checkout dan `createPayment` ditolak dengan `provider_disabled`.
+2. **`NEXT_PUBLIC_SITE_URL` = Domain Lock.** Nilai itu yang dikirim sebagai
+   header `Origin`/`Referer` ke provider (`yobasepay.ts`). Masih
+   `http://localhost:3000` padahal sudah produksi → createpayment ditolak.
+3. **Saldo YC harus cukup.** Paket Starter memotong flat fee per transaksi
+   (YC 500) di luar fee persentase. Saldo 0 → createpayment gagal.
+   Uji dengan nominal Rp10.000–50.000, jangan Rp1.000.
 
 ## 4. Tentukan webhook URL + secret
 
