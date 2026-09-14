@@ -35,6 +35,37 @@ describe("asString / asNumber", () => {
     expect(asNumber("abc")).toBeNull();
     expect(asNumber(Number.NaN)).toBeNull();
   });
+
+  /**
+   * REGRESI (uang): parser sempat membuang SEMUA non-digit, sehingga nominal
+   * berdesimal "10500.00" (bentuk lazim untuk kolom DECIMAL) dibaca 1050000 —
+   * 100× lipat. Akibatnya charged_amount salah di halaman bayar DAN webhook
+   * pembayaran yang sah ditolak `amount_mismatch` → order tidak pernah PAID.
+   */
+  it("nominal berdesimal tidak boleh terbaca 100x lipat", () => {
+    expect(asNumber("10500.00")).toBe(10500);
+    expect(asNumber("10500,00")).toBe(10500);
+    expect(asNumber("10,500.00")).toBe(10500);
+    expect(asNumber("10.500,00")).toBe(10500);
+  });
+
+  it("membedakan pemisah ribuan (3 digit) dari desimal (1-2 digit)", () => {
+    expect(asNumber("1.234.567")).toBe(1234567);
+    expect(asNumber("1,234,567.89")).toBe(1234568);
+    expect(asNumber("10 500")).toBe(10500);
+  });
+
+  it("Rupiah tidak memakai sen — hasil selalu integer", () => {
+    expect(asNumber("10500.50")).toBe(10501);
+    expect(asNumber(10500.4)).toBe(10500);
+    expect(asNumber("0.99")).toBe(1);
+  });
+
+  it("nilai tanpa digit tetap ditolak", () => {
+    expect(asNumber("-")).toBeNull();
+    expect(asNumber(".")).toBeNull();
+    expect(asNumber("Rp")).toBeNull();
+  });
 });
 
 describe("pickString / pickNumber (prioritas nama field)", () => {

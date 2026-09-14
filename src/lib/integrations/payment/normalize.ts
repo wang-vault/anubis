@@ -23,15 +23,54 @@ export function asString(v: unknown): string | null {
   return typeof v === "string" && v.trim().length > 0 ? v.trim() : null;
 }
 
+/**
+ * Nominal uang dari provider → integer Rupiah.
+ *
+ * Provider mengirim nominal dalam bentuk yang berbeda-beda: number, string
+ * polos ("10500"), berformat ribuan ("Rp10.500", "10,500"), maupun berdesimal
+ * ("10500.00", "10500,00" — lazim pada API yang memakai tipe DECIMAL).
+ *
+ * JANGAN membuang semua non-digit: "10500.00" akan menjadi 1050000 (100× lipat)
+ * dan itu merusak uang sungguhan — nominal yang ditampilkan ke buyer salah, dan
+ * validasi webhook menolak pembayaran yang sebenarnya sah sehingga order yang
+ * SUDAH dibayar tidak pernah menjadi PAID.
+ *
+ * Karena itu pemisah ribuan dan pemisah desimal dibedakan: pemisah paling kanan
+ * dianggap DESIMAL bila diikuti 1–2 digit, dan dianggap RIBUAN bila diikuti
+ * tepat 3 digit (konvensi Rupiah, mis. "10.500"). Rupiah tidak memakai sen,
+ * jadi hasil akhir dibulatkan ke integer terdekat.
+ */
 export function asNumber(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string") {
-    const cleaned = v.trim().replace(/[^\d-]/g, "");
-    if (cleaned.length === 0 || cleaned === "-") return null;
-    const n = Number.parseInt(cleaned, 10);
-    if (Number.isFinite(n)) return n;
+  if (typeof v === "number") return Number.isFinite(v) ? Math.round(v) : null;
+  if (typeof v !== "string") return null;
+
+  // Sisakan digit, pemisah, dan tanda minus di depan (buang "Rp", spasi, dll).
+  const cleaned = v.trim().replace(/[^\d.,-]/g, "");
+  const negative = /^-/.test(cleaned);
+  const digitsAndSeps = cleaned.replace(/-/g, "");
+  if (!/\d/.test(digitsAndSeps)) return null;
+
+  const lastDot = digitsAndSeps.lastIndexOf(".");
+  const lastComma = digitsAndSeps.lastIndexOf(",");
+  const lastSep = Math.max(lastDot, lastComma);
+
+  let intPart = digitsAndSeps;
+  let fracPart = "";
+  if (lastSep !== -1) {
+    const tail = digitsAndSeps.slice(lastSep + 1);
+    // 1–2 digit setelah pemisah terakhir = sen/desimal; 3 digit = pemisah ribuan.
+    if (/^\d{1,2}$/.test(tail)) {
+      intPart = digitsAndSeps.slice(0, lastSep);
+      fracPart = tail;
+    }
   }
-  return null;
+
+  const intDigits = intPart.replace(/[.,]/g, "");
+  if (intDigits.length === 0 && fracPart.length === 0) return null;
+
+  const value = Number.parseFloat(`${intDigits || "0"}.${fracPart || "0"}`);
+  if (!Number.isFinite(value)) return null;
+  return Math.round(negative ? -value : value);
 }
 
 /** Ambil string pertama yang terisi dari daftar nama field kandidat. */
