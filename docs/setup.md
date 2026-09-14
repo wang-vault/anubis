@@ -39,9 +39,23 @@ cp .env.example .env.local
 
 Isi `.env.local` dengan nilai asli dari Supabase dashboard (lihat
 `docs/environment-variables.md` untuk arti & lokasi tiap variabel).
-Untuk YoBasePay/Telegram sementara boleh kosong — tapi app **sengaja
-fail-fast** bila var wajib belum diisi; isi placeholder dari Supabase dulu,
-YoBasePay bisa menyusul (checkout baru aktif setelah env YoBasePay diisi).
+
+Yang **wajib** hanya kredensial Supabase (URL + keys kedua project): app
+sengaja **fail-fast** bila salah satu belum diisi. `YOBASEPAY_*` dan
+`TELEGRAM_*` boleh dibiarkan kosong.
+
+> **Default file ini = mode "manual saja".** Dengan `YOBASEPAY_API_KEY` &
+> `YOBASEPAY_WEBHOOK_SECRET` kosong, metode QRIS Otomatis otomatis
+> disembunyikan dan toko berjalan penuh memakai **Transfer Manual** (QRIS
+> statis milikmu). Checkout **tidak** menunggu YoBasePay.
+>
+> Syaratnya satu: **upload gambar QR di `/admin/settings`**. Tanpa QR itu
+> metode manual dianggap belum siap dan checkout menampilkan "Pembayaran
+> belum tersedia". Panduan lengkap: `docs/manual-payment.md`.
+>
+> Env *preferensi* (`DEFAULT_PAYMENT_METHOD`, `MANUAL_PAYMENT_ENABLED`)
+> toleran salah ketik — nilai tak dikenal jatuh ke default aman, tidak
+> menjatuhkan situs. Yang tetap fail-fast hanya kredensial.
 
 > `.env.local` tidak akan pernah ter-commit (ada di `.gitignore`).
 

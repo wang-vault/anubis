@@ -118,10 +118,30 @@ Deployments tab pantau build (~1 menit). ✅ berhasil = status *Ready* dan
 
 ✅ `https://tokoanda.com` hijau di Vercel (SSL otomatis).
 
-## I. Konfigurasi YoBasePay (akun & API key)
+## I. Konfigurasi YoBasePay (akun & API key) — OPSIONAL
+
+> **Lewati bagian I & J bila kamu memakai mode "manual saja".**
+> Biarkan `YOBASEPAY_API_KEY` & `YOBASEPAY_WEBHOOK_SECRET` kosong: metode QRIS
+> Otomatis otomatis disembunyikan dari checkout, webhook ditolak, dan toko
+> berjalan penuh dengan **Transfer Manual**. Yang wajib dilakukan hanya
+> **upload gambar QR di `/admin/settings`** (lihat §I-alt di bawah).
 
 Ikuti **`docs/yobasepay.md`** bagian 1–4 (registrasi, buat project, API key,
 domain lock, saldo/aktif). Setelah credential masuk Vercel → **Redeploy**.
+
+### I-alt. Mode "manual saja" (tanpa provider)
+
+1. Login `/admin/login` → menu **Pembayaran** (`/admin/settings`).
+2. Pastikan **"Aktifkan metode pembayaran manual"** tercentang.
+3. **Upload gambar QR statis** kamu (QR GoPay Merchant / QRIS bank; PNG/JPG/WebP).
+4. Isi *Nama penerima* & *Batas waktu bayar* → **Simpan**.
+5. Cek panel **Status saat ini**: "Transfer Manual" harus hijau/"Tampil di
+   halaman checkout". Bila tertulis `no_qr`, gambar QR belum tersimpan.
+
+✅ Buka `/checkout?product=…` sebagai buyer → hanya "Transfer Manual" muncul.
+
+> Tanpa langkah 3, checkout menampilkan **"Pembayaran belum tersedia"** karena
+> tidak ada satu pun metode yang siap.
 
 Uji cepat create-payment dari server (bukan browser!):
 ```bash
@@ -154,10 +174,12 @@ register buyer → verif email → tambah produk (admin) → checkout → QRIS b
 - [ ] Repo privat / tidak ada `.env` ter-commit (`git log -p --all -S service_role`)
 - [ ] Semua env terisi & **Redeploy** setelah perubahan apa pun
 - [ ] Supabase: Autoconfirm **OFF**, SMTP dikirim sendiri, backup harian aktif (Settings → Database → Pitr)
-- [ ] Domain final = `NEXT_PUBLIC_SITE_URL` = Supabase Site URL = Domain lock YoBasePay = webhook URL (keempat-empatnya)
+- [ ] Domain final = `NEXT_PUBLIC_SITE_URL` = Supabase Site URL (+ bila pakai YoBasePay: = Domain lock = webhook URL)
 - [ ] Akun admin tes sudah login `/admin/login`
 - [ ] Produk nyata dibuat; produk dummy tidak ada (memang tidak pernah dibuat)
-- [ ] Webhook live: order tes lunas otomatis (bukan dari tombol)
+- [ ] **Minimal satu metode bayar siap** — cek `/admin/settings` → panel "Status saat ini":
+  - mode manual saja → "Transfer Manual" tampil di checkout (QR sudah di-upload)
+  - mode QRIS otomatis → webhook live: order tes lunas otomatis (bukan dari tombol)
 - [ ] Telegram tes masuk saat PAID
 - [ ] Rate limit Cloudflare aktif (opsional disarankan — `docs/cloudflare.md`)
 - [ ] Nominal transfer unik buyer terverifikasi oleh tolerance check (cek log 1x)

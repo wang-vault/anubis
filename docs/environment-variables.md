@@ -1,7 +1,19 @@
 # Environment Variables — arti, klasifikasi, dan dari mana nilainya
 
-Semua var divalidasi terpusat di `src/lib/env.ts` (zod, **fail-fast**: app
-menolak jalan dengan pesan yang menyebut NAMA var yang hilang — bukan nilainya).
+Semua var divalidasi terpusat di `src/lib/env.ts` (zod). Validasinya dibedakan
+menurut risiko:
+
+- **Kredensial** (URL & key Supabase) → **fail-fast**: app menolak jalan dengan
+  pesan yang menyebut NAMA var yang hilang — bukan nilainya. Ini disengaja:
+  lebih baik mati saat start daripada jalan setengah benar.
+- **Preferensi** (`DEFAULT_PAYMENT_METHOD`, `MANUAL_PAYMENT_ENABLED`) →
+  **toleran**: kapitalisasi/spasi diabaikan (`manual`, ` MANUAL ` → `MANUAL`),
+  dan nilai tak dikenal jatuh ke default yang aman.
+
+> Kenapa preferensi tidak ikut fail-fast: `serverEnv()` dipanggil lewat
+> `lib/supabase/server.ts` oleh hampir semua halaman — termasuk katalog publik
+> dan login. Kalau preferensi ikut melempar, satu salah ketik pada var
+> pembayaran akan membuat **seluruh situs** balas 500, bukan cuma checkout.
 
 Klasifikasi:
 - 🌐 **PUBLIC** — wajib prefix `NEXT_PUBLIC_`, ikut ter-bundle ke browser.
@@ -19,8 +31,8 @@ Klasifikasi:
 | `NEXT_PUBLIC_SUPABASE_STORE_URL` | 🌐 | ✔ | Supabase #2 → Settings → API → Project URL | `https://mnopqrstuvwx.supabase.co` |
 | `SUPABASE_STORE_SERVICE_ROLE_KEY` | 🔒🖥 | ✔ | Supabase #2 → API → `service_role` | JWT panjang |
 | `NEXT_PUBLIC_SUPABASE_STORE_ANON_KEY` | 🌐 | — (opsional) | Supabase #2 → `anon`. MVP tidak membacanya dari browser (semua akses toko via server) — kosongkan kecuali nanti ingin query katalog langsung dari client | sama formatnya |
-| `DEFAULT_PAYMENT_METHOD` | 🖥 | — (default `MANUAL`) | Metode terpilih default di checkout: `MANUAL` / `YOBASEPAY` | `MANUAL` |
-| `MANUAL_PAYMENT_ENABLED` | 🖥 | — (default `true`) | Saklar global metode transfer manual (saklar kedua ada di `/admin/settings`) | `true` / `false` |
+| `DEFAULT_PAYMENT_METHOD` | 🖥 | — (default `MANUAL`) | Metode terpilih default di checkout: `MANUAL` / `YOBASEPAY`. Toleran kapitalisasi; nilai tak dikenal → `MANUAL` | `MANUAL` |
+| `MANUAL_PAYMENT_ENABLED` | 🖥 | — (default `true`) | Saklar global metode transfer manual (saklar kedua ada di `/admin/settings`). Nilai tak dikenal → `true` | `true` / `false` |
 | `MANUAL_PAYMENT_QR_IMAGE_URL` | 🖥 | — (opsional) | URL https gambar QR statis bila kamu host sendiri; mengalahkan gambar yang di-upload dari dashboard | `https://cdn.anda/qris.png` |
 | `YOBASEPAY_API_KEY` | 🔒🖥 | — (kosong = QRIS otomatis nonaktif) | Dashboard YoBasePay → project/API key (dipakai sebagai `apikey`) | sesuai dashboard |
 | `YOBASEPAY_WEBHOOK_SECRET` | 🔒🖥 | — (kosong = webhook ditolak 403) | Dashboard YoBasePay → Webhook secret (untuk HMAC `X-YoBasePay-Signature`) | string |
