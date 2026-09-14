@@ -21,8 +21,15 @@
 
 const DATA_URI_IMAGE = /^data:image\/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/i;
 const LOCAL_HTTP = /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/|$)/i;
-/** Path same-origin: diawali satu `/` dan BUKAN `//`. */
-const SAME_ORIGIN_PATH = /^\/(?!\/)[^\s]*$/;
+/**
+ * Path same-origin: diawali satu `/`, BUKAN `//`, dan TANPA backslash.
+ *
+ * Backslash sengaja dilarang: menurut WHATWG URL, `\` setara `/` pada URL
+ * ber-skema khusus (http/https), sehingga `/\evil.com/q.png` BUKAN path —
+ * browser me-resolve-nya menjadi `https://evil.com/q.png`, keluar dari
+ * origin kita persis seperti `//evil.com/q.png` yang sudah ditolak di atas.
+ */
+const SAME_ORIGIN_PATH = /^\/(?![/\\])[^\s\\]*$/;
 /** Batas panjang data URI (base64 gambar QR ± 900 KB → ~1,2 juta karakter). */
 const MAX_DATA_URI_LENGTH = 2_000_000;
 

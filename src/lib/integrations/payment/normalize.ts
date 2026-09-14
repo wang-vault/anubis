@@ -262,9 +262,16 @@ export function resolveProviderUrl(value: string, baseUrl: string): string | nul
   if (s.startsWith("//")) return `https:${s}`;
   // Tolak skema eksplisit lain sebelum memperlakukan nilai sebagai path.
   if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return null;
+  // Backslash = "/" menurut WHATWG pada URL http(s): "/\evil.id/q.png"
+  // bukan path melainkan host lain. Tolak agar hasil resolve tidak pernah
+  // keluar dari origin provider.
+  if (s.includes("\\")) return null;
   try {
     const { origin } = new URL(baseUrl);
-    return new URL(s.startsWith("/") ? s : `/${s}`, origin).toString();
+    const resolved = new URL(s.startsWith("/") ? s : `/${s}`, origin);
+    // Sabuk pengaman: apa pun bentuk inputnya, hasil WAJIB tetap di origin
+    // provider (mis. "/..//evil.id" atau bentuk lain yang belum terpikirkan).
+    return resolved.origin === origin ? resolved.toString() : null;
   } catch {
     return null;
   }

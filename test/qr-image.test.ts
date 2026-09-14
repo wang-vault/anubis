@@ -51,3 +51,22 @@ describe("isRenderableQrSrc — apa yang boleh masuk atribut src <img>", () => {
     expect(isRenderableQrSrc(huge)).toBe(false);
   });
 });
+
+describe("isRenderableQrSrc — backslash tidak boleh lolos sebagai path same-origin", () => {
+  /**
+   * Browser (dan WHATWG URL) memperlakukan "\" sama dengan "/" pada URL
+   * ber-skema khusus, sehingga `/\evil.example/q.png` di atribut src akan
+   * di-resolve menjadi https://evil.example/q.png — LINTAS DOMAIN.
+   * Nilai seperti ini bisa datang dari respons provider (orders.qr_image_url),
+   * jadi guard wajib menolaknya, sama seperti ia menolak "//host/…".
+   */
+  it("menolak path yang menyamar same-origin lewat backslash", () => {
+    expect(isRenderableQrSrc("/\\evil.example/q.png")).toBe(false);
+    expect(isRenderableQrSrc("/\\\\evil.example/q.png")).toBe(false);
+    expect(isRenderableQrSrc("/\\/evil.example/q.png")).toBe(false);
+  });
+
+  it("tetap menerima path same-origin biasa", () => {
+    expect(isRenderableQrSrc("/api/manual-qr?v=2026-09-12T02%3A00%3A00.000Z")).toBe(true);
+  });
+});

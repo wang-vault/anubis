@@ -126,6 +126,22 @@ describe("resolveProviderUrl", () => {
     expect(resolveProviderUrl("data:image/png;base64,AAAA", BASE)).toBeNull();
     expect(resolveProviderUrl("", BASE)).toBeNull();
   });
+
+  /**
+   * REGRESI (keamanan): "\" setara "/" pada URL ber-skema khusus menurut
+   * WHATWG, jadi "/\evil.id/qr.png" BUKAN path — ia di-resolve menjadi
+   * https://evil.id/qr.png, keluar dari origin provider. Nilai ini datang
+   * dari respons provider dan berakhir di atribut src <img> halaman bayar,
+   * jadi hasilnya harus tetap berada di origin provider.
+   */
+  it("path yang memuat backslash tidak boleh keluar dari origin provider", () => {
+    for (const value of ["/\\evil.id/qr.png", "/\\\\evil.id/qr.png", "\\/evil.id/qr.png"]) {
+      const resolved = resolveProviderUrl(value, BASE);
+      if (resolved !== null) {
+        expect(new URL(resolved).origin).toBe("https://yobasepay.net");
+      }
+    }
+  });
 });
 
 describe("classifyQrValue", () => {
