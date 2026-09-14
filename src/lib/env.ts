@@ -13,15 +13,34 @@ import { z } from "zod";
  * Boolean dari env: menerima "1"/"true"/"yes"/"on" (case-insensitive) sebagai
  * true; string kosong TIDAK diartikan true (berbeda dari Boolean("false")).
  */
-const looseBool = z.preprocess((v) => {
-  if (typeof v === "boolean") return v;
-  if (typeof v === "string") {
-    const s = v.trim().toLowerCase();
-    if (["1", "true", "yes", "on"].includes(s)) return true;
-    if (["", "0", "false", "no", "off"].includes(s)) return false;
-  }
-  return v;
-}, z.boolean());
+const looseBool = (fallback: boolean) =>
+  z.preprocess((v) => {
+    if (v === undefined || v === null) return fallback;
+    if (typeof v === "boolean") return v;
+    if (typeof v === "string") {
+      const s = v.trim().toLowerCase();
+      if (["1", "true", "yes", "on"].includes(s)) return true;
+      if (["", "0", "false", "no", "off"].includes(s)) return false;
+    }
+    // Nilai tak dikenal (mis. "ya") JANGAN melempar: serverEnv() dipanggil oleh
+    // supabase/server.ts, jadi satu salah ketik pada preferensi pembayaran akan
+    // menjatuhkan SELURUH situs (katalog & login ikut 500) — bukan hanya
+    // checkout. Untuk nilai preferensi, jatuh ke default jauh lebih aman
+    // daripada fail-fast. Kredensial di bawah tetap wajib & tetap fail-fast.
+    return fallback;
+  }, z.boolean());
+
+/**
+ * Enum yang toleran terhadap kapitalisasi & spasi ("manual", " MANUAL " → MANUAL).
+ * Nilai tak dikenal jatuh ke default, dengan alasan yang sama seperti looseBool:
+ * ini preferensi, bukan kredensial — tidak boleh menjatuhkan situs.
+ */
+const loosePaymentMethod = (fallback: "YOBASEPAY" | "MANUAL") =>
+  z.preprocess((v) => {
+    if (typeof v !== "string") return fallback;
+    const s = v.trim().toUpperCase();
+    return s === "YOBASEPAY" || s === "MANUAL" ? s : fallback;
+  }, z.enum(["YOBASEPAY", "MANUAL"]));
 
 const schema = z.object({
   // --- Aplikasi ---
@@ -81,9 +100,9 @@ const schema = z.object({
   // --- Pembayaran MANUAL (QRIS statis milik penjual, mis. QR GoPay Merchant) ---
   // Metode ini tidak butuh provider: buyer scan QR statis, transfer, lalu
   // menekan "Saya sudah transfer"; penjual memverifikasi mutasi di dashboard.
-  MANUAL_PAYMENT_ENABLED: looseBool.default(true),
+  MANUAL_PAYMENT_ENABLED: looseBool(true).default(true),
   // Metode default yang dipilih di halaman checkout.
-  DEFAULT_PAYMENT_METHOD: z.enum(["YOBASEPAY", "MANUAL"]).default("MANUAL"),
+  DEFAULT_PAYMENT_METHOD: loosePaymentMethod("MANUAL").default("MANUAL"),
   // Opsional: bila kamu sudah meng-host gambar QR sendiri (https), URL ini
   // mengalahkan gambar yang di-upload dari /admin/settings.
   MANUAL_PAYMENT_QR_IMAGE_URL: z.preprocess(
