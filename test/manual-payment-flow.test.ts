@@ -405,6 +405,24 @@ describe("adminRejectManualClaim", () => {
       status: 409,
     });
   });
+
+  /**
+   * REGRESI: guard race-safe sempat memakai `.is("payment_status","PENDING")`.
+   * Di PostgREST `is.` hanya sah untuk null/true/false, jadi query itu ditolak
+   * server (22P02) dan SETIAP penolakan klaim gagal dengan 409 palsu — tombol
+   * "Tolak Klaim" mustahil dipakai penjual. Guard harus memakai `.eq`.
+   */
+  it("tidak memakai filter `is.` untuk kolom teks (harus `eq`) saat mengunci status", async () => {
+    const db = setup({
+      orders: [orderRow({ manual_claim_at: new Date().toISOString(), manual_claim_note: "Budi" })],
+    });
+
+    await adminRejectManualClaim(onlyOrder(db).id, adminCtx, { note: "belum masuk" });
+
+    // Fake store menandai filter `is.` non-boolean sebagai error 22P02.
+    expect(db.calls.some((c) => c.includes("22P02"))).toBe(false);
+    expect(onlyOrder(db).manual_review_status).toBe("REJECTED");
+  });
 });
 
 // ---------------------------------------------------------------------------

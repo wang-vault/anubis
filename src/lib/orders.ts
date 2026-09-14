@@ -840,10 +840,16 @@ export async function adminRejectManualClaim(
       manual_review_note: input.note ?? "",
     })
     .eq("id", orderId)
-    .is("payment_status", "PENDING")
+    // Guard race-safe: HARUS `.eq` — `.is` di PostgREST hanya untuk null/boolean
+    // (`payment_status=is.PENDING` ditolak server sebagai error 22P02).
+    .eq("payment_status", "PENDING")
     .select("*")
     .maybeSingle<OrderRow>();
   if (error || !data) {
+    log.error("manual_claim_reject_failed", {
+      orderCode: order.order_code,
+      message: error?.message,
+    });
     throw new HttpError(
       409,
       ErrorCodes.conflict,

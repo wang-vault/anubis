@@ -80,6 +80,8 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
   private wantsCount = false;
   private limitN: number | null = null;
   private orderSpec: { col: string; asc: boolean } | null = null;
+  /** Diisi bila filter yang dipasang tidak valid di PostgREST (mis. `.is("x","STR")`). */
+  private forcedError: { message: string; code?: string } | null = null;
 
   constructor(
     private readonly tableName: string,
@@ -108,7 +110,22 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
     return this;
   }
 
+  /**
+   * PostgREST `is.` HANYA menerima `null` / `true` / `false` (lihat tipe
+   * `is(column, value: boolean | null)` di @supabase/postgrest-js). Memberi
+   * string seperti "PENDING" menghasilkan `payment_status=is.PENDING` yang
+   * DITOLAK server dengan error 22P02 — bukan "tidak cocok", tapi query gagal.
+   * Fake ini meniru penolakan itu supaya salah-pakai `.is()` ketahuan di test
+   * (dulu diam-diam lolos karena dianggap perbandingan biasa).
+   */
   is(col: string, value: unknown): this {
+    if (value !== null && typeof value !== "boolean") {
+      this.forcedError = {
+        message: `invalid input syntax for type boolean: "${String(value)}"`,
+        code: "22P02",
+      };
+      return this;
+    }
     this.filters.push((r) =>
       value === null ? r[col] === null || r[col] === undefined : r[col] === value,
     );
@@ -168,6 +185,12 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
 
   private run(): FakeResult {
     const calls = this.db.calls;
+
+    // Filter tidak valid → PostgREST membalas error, bukan hasil kosong.
+    if (this.forcedError) {
+      calls.push(`${this.op}(${this.tableName}) → ${this.forcedError.code}`);
+      return { data: null, error: this.forcedError };
+    }
 
     if (this.op === "insert") {
       const incoming = Array.isArray(this.payload) ? this.payload : [this.payload!];
