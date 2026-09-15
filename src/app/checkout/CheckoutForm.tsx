@@ -25,14 +25,18 @@ export function CheckoutForm({
   unitPrice: number;
   maxQuantity?: number;
   whatsapp: string;
-  /** Metode yang benar-benar tersedia (sudah disaring server). */
+  /** Metode yang ditampilkan (termasuk status ongoing). */
   methods: AvailablePaymentMethod[];
   defaultMethod: string;
 }) {
   const [qty, setQty] = useState(1);
-  const [method, setMethod] = useState<string>(
-    methods.some((m) => m.id === defaultMethod) ? defaultMethod : (methods[0]?.id ?? ""),
-  );
+  const activeMethods = useMemo(() => methods.filter((m) => !m.disabled), [methods]);
+  const initialMethod = useMemo(() => {
+    const found = methods.find((m) => !m.disabled && m.id === defaultMethod);
+    return found ? found.id : (activeMethods[0]?.id ?? "MANUAL");
+  }, [methods, defaultMethod, activeMethods]);
+
+  const [method, setMethod] = useState<string>(initialMethod);
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
     checkoutAction,
     {},
@@ -43,7 +47,7 @@ export function CheckoutForm({
     [unitPrice, safeQuantity],
   );
 
-  const selected = methods.find((m) => m.id === method) ?? methods[0];
+  const selected = methods.find((m) => m.id === method && !m.disabled) ?? activeMethods[0];
 
   return (
     <form action={formAction} className="space-y-4">
@@ -106,14 +110,20 @@ export function CheckoutForm({
         <legend className="section-kicker">Cara bayar</legend>
         <div className="mt-3 space-y-2">
           {methods.map((m) => {
-            const checked = (selected?.id ?? "") === m.id;
+            const isMethodDisabled = Boolean(m.disabled);
+            const checked = !isMethodDisabled && (selected?.id ?? "") === m.id;
             return (
               <label
                 key={m.id}
-                className={`flex cursor-pointer items-start gap-3 border p-3 transition-colors ${
-                  checked
-                    ? "border-slate-900 bg-amber-50"
-                    : "border-dotted border-slate-300 bg-white hover:bg-slate-50"
+                onClick={(e) => {
+                  if (isMethodDisabled) e.preventDefault();
+                }}
+                className={`flex items-start gap-3 border p-3 transition-colors ${
+                  isMethodDisabled
+                    ? "cursor-not-allowed border-slate-200 bg-slate-50 opacity-80"
+                    : checked
+                      ? "cursor-pointer border-slate-900 bg-amber-50"
+                      : "cursor-pointer border-dotted border-slate-300 bg-white hover:bg-slate-50"
                 }`}
               >
                 <input
@@ -121,12 +131,21 @@ export function CheckoutForm({
                   name="paymentMethod"
                   value={m.id}
                   checked={checked}
-                  onChange={() => setMethod(m.id)}
-                  disabled={pending}
+                  onChange={() => {
+                    if (!isMethodDisabled) setMethod(m.id);
+                  }}
+                  disabled={pending || isMethodDisabled}
                   className="mt-1 size-4 shrink-0 accent-brand-700"
                 />
-                <span>
-                  <span className="block text-sm font-bold text-slate-800">{m.label}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-bold text-slate-800">{m.label}</span>
+                    {m.statusBadge && (
+                      <span className="inline-flex items-center rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-900">
+                        {m.statusBadge}
+                      </span>
+                    )}
+                  </span>
                   <span className="mt-0.5 block text-xs leading-5 text-slate-500">{m.note}</span>
                 </span>
               </label>
@@ -135,7 +154,7 @@ export function CheckoutForm({
         </div>
         {selected?.id === "MANUAL" && (
           <p className="hint mt-3">
-            Kamu akan melihat QR penjual, transfer sendiri dengan nominal persis (termasuk kode
+            Kamu akan melihat instruksi / QR penjual, transfer sendiri dengan nominal persis (termasuk kode
             unik), lalu menekan tombol konfirmasi. Penjual memverifikasi mutasi sebelum pesanan
             diproses.
           </p>
@@ -165,7 +184,7 @@ export function CheckoutForm({
       {state.error && <p role="alert" className="alert-error">{state.error}</p>}
 
       <button type="submit" className="btn-primary w-full" disabled={pending || !selected}>
-        {pending ? "Menyusun pesanan…" : "Buat Pesanan & Lanjut Bayar →"}
+        {pending ? "Menyusun pesanan…" : "Buat Pesanan & Lanjut Bayar (Manual) →"}
       </button>
       <p className="hint text-center">
         Dengan membayar, kamu menyetujui pesanan diproses manual oleh penjual via WhatsApp.

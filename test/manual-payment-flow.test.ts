@@ -564,4 +564,31 @@ describe("konfigurasi pembayaran manual (lib/payment-config)", () => {
     expect(view.available).toBe(false);
     expect(view.reason).toBe("disabled");
   });
+
+  it("getCheckoutPaymentMethods menaruh opsi manual pertama (aktif) dan QRIS berstatus ongoing (disabled)", async () => {
+    setup();
+    const { getCheckoutPaymentMethods } = await import("@/lib/payment-config");
+
+    const checkoutMethods = await getCheckoutPaymentMethods();
+    expect(checkoutMethods).toHaveLength(2);
+
+    const [manualMethod, qrisMethod] = checkoutMethods;
+    expect(manualMethod?.id).toBe("MANUAL");
+    expect(manualMethod?.disabled).toBe(false);
+    expect(manualMethod?.label).toContain("Transfer Manual");
+
+    expect(qrisMethod?.id).toBe("YOBASEPAY");
+    expect(qrisMethod?.disabled).toBe(true);
+    expect(qrisMethod?.isOngoing).toBe(true);
+    expect(qrisMethod?.statusBadge).toBe("Ongoing");
+  });
+
+  it("getCheckoutPaymentMethods menonaktifkan manual jika pengaturan manual dimatikan penjual", async () => {
+    setup({ settings: settingsRow({ is_enabled: false }) });
+    const { getCheckoutPaymentMethods } = await import("@/lib/payment-config");
+
+    const checkoutMethods = await getCheckoutPaymentMethods();
+    const manualMethod = checkoutMethods.find((m) => m.id === "MANUAL");
+    expect(manualMethod?.disabled).toBe(true);
+  });
 });

@@ -57,8 +57,8 @@ export default async function AdminPaymentSettingsPage({ searchParams }: Props) 
             label="QRIS Otomatis (YoBasePay)"
             detail={
               autoConfigured
-                ? `Aktif · metode default: ${env.DEFAULT_PAYMENT_METHOD}.`
-                : "Tidak aktif — YOBASEPAY_API_KEY / YOBASEPAY_WEBHOOK_SECRET kosong. Metode ini disembunyikan dari buyer sampai diisi."
+                ? `Terkonfigurasi · status di checkout: ONGOING (pembeli menggunakan Transfer Manual terlebih dahulu).`
+                : "Status saat ini: ONGOING (sedang disiapkan). Pembeli di checkout diarahkan menggunakan opsi Transfer Manual terlebih dahulu."
             }
           />
         </div>

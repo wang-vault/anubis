@@ -17,8 +17,7 @@ export default async function ProductsPage() {
           <h1 className="catalog-title">Semua produk</h1>
         </div>
         <p className="catalog-deck">
-          Harga sudah termasuk pajak toko. Temukan barang yang sedang jadi berita utama, lalu bayar
-          langsung dengan QRIS setelah checkout.
+          Harga sudah termasuk pajak toko. Temukan barang yang sedang jadi berita utama, lalu selesaikan transaksi dengan transfer manual (opsi QRIS status ongoing) setelah checkout.
         </p>
       </div>
       <div className="mt-6">

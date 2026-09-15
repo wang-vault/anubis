@@ -3,8 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthContext } from "@/lib/authz";
 import { getProduct } from "@/lib/products";
-import { getAvailablePaymentMethods } from "@/lib/payment-config";
-import { serverEnv } from "@/lib/env";
+import { getAvailablePaymentMethods, getCheckoutPaymentMethods } from "@/lib/payment-config";
 import { CheckoutForm } from "@/app/checkout/CheckoutForm";
 import { EmptyState } from "@/components/UiBits";
 
@@ -47,7 +46,9 @@ export default async function CheckoutPage({ searchParams }: Props) {
   }
 
   const product = await getProduct(productId);
-  const methods = await getAvailablePaymentMethods();
+  const available = await getAvailablePaymentMethods();
+  const methods = await getCheckoutPaymentMethods();
+
   if (!product || !product.is_active) {
     return (
       <div className="container-x mx-auto max-w-lg">
@@ -65,9 +66,8 @@ export default async function CheckoutPage({ searchParams }: Props) {
     );
   }
 
-  // Tidak ada metode bayar yang siap (mis. QR penjual belum di-upload & QRIS
-  // otomatis belum aktif) → jangan tampilkan form yang pasti gagal.
-  if (methods.length === 0) {
+  // Tidak ada metode bayar yang siap
+  if (available.length === 0) {
     return (
       <div className="container-x mx-auto max-w-lg">
         <EmptyState
@@ -84,11 +84,8 @@ export default async function CheckoutPage({ searchParams }: Props) {
     );
   }
 
-  const env = serverEnv();
-  const firstMethod = methods[0]?.id ?? "MANUAL";
-  const defaultMethod = methods.some((m) => m.id === env.DEFAULT_PAYMENT_METHOD)
-    ? env.DEFAULT_PAYMENT_METHOD
-    : firstMethod;
+  // Opsi manual dulu sebagai pilihan utama pembelian
+  const defaultMethod = "MANUAL";
 
   return (
     <div className="container-x mx-auto max-w-lg">

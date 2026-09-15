@@ -152,6 +152,39 @@ export async function getAvailablePaymentMethods(): Promise<AvailablePaymentMeth
 }
 
 /**
+ * Daftar metode pembayaran yang ditampilkan di halaman checkout kepada pembeli.
+ * Sesuai kebutuhan operasional toko:
+ *  - Pembayaran manual menjadi opsi utama yang aktif untuk pembelian ("opsi manual dulu").
+ *  - Opsi QRIS ditampilkan dengan status "ongoing" (disabled, status badge "Ongoing")
+ *    sehingga pembeli mengetahui metode QRIS sedang disiapkan dan diarahkan ke Transfer Manual.
+ */
+export async function getCheckoutPaymentMethods(): Promise<AvailablePaymentMethod[]> {
+  const manual = await getManualPaymentView();
+  const list: AvailablePaymentMethod[] = [];
+
+  // 1. Opsi Manual DULU (aktif untuk proses belanja)
+  const manualLabel = manual.label?.trim() || "Transfer Manual";
+  list.push({
+    id: PAYMENT_METHOD_MANUAL,
+    label: manualLabel,
+    note: "Transfer mandiri via rekening/e-wallet/QRIS statis penjual · konfirmasi di halaman pembayaran.",
+    disabled: !manual.available,
+  });
+
+  // 2. Opsi QRIS dibuat status ongoing
+  list.push({
+    id: PAYMENT_METHOD_AUTO,
+    label: "QRIS Otomatis",
+    note: "Metode pembayaran QRIS sedang dalam proses (status ongoing). Silakan gunakan opsi Transfer Manual terlebih dahulu.",
+    disabled: true,
+    isOngoing: true,
+    statusBadge: "Ongoing",
+  });
+
+  return list;
+}
+
+/**
  * Tentukan metode untuk order baru.
  *  - tidak diisi        → default dari env (bila tersedia), selain itu satu-satunya
  *    metode yang tersedia.
@@ -182,7 +215,7 @@ export async function resolvePaymentMethod(requested: unknown): Promise<PaymentM
       409,
       ErrorCodes.conflict,
       chosen === PAYMENT_METHOD_AUTO
-        ? "Pembayaran QRIS otomatis sedang tidak aktif. Pilih Transfer Manual."
+        ? "Pembayaran QRIS otomatis sedang dalam proses (status ongoing). Silakan gunakan opsi Transfer Manual terlebih dahulu."
         : "Pembayaran manual belum dikonfigurasi penjual. Pilih metode lain.",
     );
   }

@@ -14,11 +14,11 @@ const siteName = process.env.NEXT_PUBLIC_SITE_NAME ?? "Toko Saya";
 export const metadata: Metadata = {
   metadataBase: parseSiteUrl(process.env.NEXT_PUBLIC_SITE_URL),
   title: {
-    default: `${siteName} — beli, bayar QRIS, pesanan diantar via WhatsApp`,
+    default: `${siteName} — belanja mudah, bayar transfer manual, pesanan via WhatsApp`,
     template: `%s — ${siteName}`,
   },
   description:
-    "Toko online sederhana: bayar QRIS otomatis terverifikasi, pesanan diproses penjual, dan dikirim lewat WhatsApp.",
+    "Toko online sederhana: bayar via transfer manual mudah (opsi QRIS status ongoing), pesanan diproses penjual, dan dikirim lewat WhatsApp.",
 };
 
 export const viewport: Viewport = {
