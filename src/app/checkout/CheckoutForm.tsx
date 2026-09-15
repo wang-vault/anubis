@@ -115,6 +115,9 @@ export function CheckoutForm({
             return (
               <label
                 key={m.id}
+                onClick={(e) => {
+                  if (isMethodDisabled) e.preventDefault();
+                }}
                 className={`flex items-start gap-3 border p-3 transition-colors ${
                   isMethodDisabled
                     ? "cursor-not-allowed border-slate-200 bg-slate-50 opacity-80"
