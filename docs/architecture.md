@@ -33,6 +33,10 @@
 5  Submit checkout → server action:
         validasi → ambil produk+harga dari Supabase #2 → total = price×qty (server)
         → tentukan metode (resolvePaymentMethod: env + pengaturan penjual)
+           Catatan UI: halaman checkout MERENDER kedua opsi lewat
+           getCheckoutPaymentMethods() — manual pertama & default, QRIS otomatis
+           selalu disabled ber-badge "Ongoing" (pembelian dari UI ⇒ manual;
+           order YOBASEPAY tetap bisa dibuat via POST /api/orders)
         → INSERT orders (PENDING/PENDING, order_code ORD-YYYYMMDD-XXXXXX, snapshot, payment_method)
         ├─ YOBASEPAY: GET action=createpayment&amount=TOTAL → { trx_id, payment_url, qr_image, expired_at }
         │             → UPDATE orders (payment_id, payment_url, qr_image_url, payment_expired_at)
@@ -89,9 +93,17 @@ updated_at; RLS: select/update baris sendiri saja; anon: tidak ada akses.
 - `products`: `id · name · description · price(bigint Rp) · image_url · is_active · timestamps`
 - `orders`: `id · order_code(unique) · account_id · product_id(FK) ·
   product_name_snapshot · unit_price_snapshot · quantity · total_amount ·
-  payment_status · order_status · payment_id(unique) · payment_url ·
-  qr_image_url · payment_expired_at · last_payment_checked_at · paid_at ·
-  telegram_notified_at · buyer_name/whatsapp/email_snapshot · timestamps`
+  charged_amount(nominal final termasuk kode unik) · payment_status ·
+  order_status · payment_method('YOBASEPAY'|'MANUAL') · payment_id(unique) ·
+  payment_url · qr_image_url · payment_expired_at · last_payment_checked_at ·
+  paid_at · telegram_notified_at · buyer_name/whatsapp/email_snapshot ·
+  timestamps` + kolom jejak pembayaran manual: `manual_claim_at/note/
+  reference/notified_at` (klaim buyer) dan `manual_reviewed_at/reviewed_by/
+  review_status(APPROVED|REJECTED)/review_note` (verifikasi penjual)
+- `manual_payment_settings`: satu baris (`id=1`) konfigurasi metode manual —
+  `is_enabled · label · account_name · instructions · expiry_minutes ·
+  qr_image_mime/base64/size`; RLS tanpa policy (hanya service role), gambar
+  disajikan ulang lewat `GET /api/manual-qr`
 
 Snapshot nama/harga/kontak disimpan di order → histori tidak berubah kalau
 produk diedit nanti. Indexes: katalog aktif, order per-account, antrian
@@ -102,7 +114,7 @@ produk diedit nanti. Indexes: katalog aktif, order per-account, antrian
 | Ancaman | Pertahanan |
 |---|---|
 | Manipulasi harga dari form | Total dihitung ulang dari DB (select price saat create order) |
-| "Saya sudah bayar" dari klien | Status PAID hanya dari webhook ber-signature / checkstatus API privat |
+| "Saya sudah bayar" dari klien | Status PAID hanya dari webhook ber-signature / checkstatus API privat / **konfirmasi penjual** (manual) — klaim buyer hanya mengisi antrian verifikasi |
 | Webhook palsu | HMAC-SHA256 raw-body, constant-time compare; invalid → 403 |
 | Webhook replay/dobel | Update bersyarat idempoten + nominal check + klaim notif sekali |
 | Buyer akses admin | `requireAdmin()` cek `profiles.role` (DB) di setiap aksi admin + layout; RLS tidak memberi akses |
@@ -137,3 +149,9 @@ produk diedit nanti. Indexes: katalog aktif, order per-account, antrian
   payment" — tidak ada jalur palsu yang menandai order lunas.
 - Env `YOBASEPAY_BASE_URL` & `YOBASEPAY_AMOUNT_TOLERANCE` memisahkan asumsi
   provider (kode unik, endpoint) dari kode bisnis.
+- `src/lib/payment-config.ts` memisahkan **ketersediaan** (apa yang boleh
+  dieksekusi server: `getAvailablePaymentMethods()`/`resolvePaymentMethod()`)
+  dari **daftar tampilan checkout** (`getCheckoutPaymentMethods()` — tempat
+  keputusan produk "QRIS = opsi Ongoing non-aktif, manual dulu" hidup).
+  Membuka QRIS untuk buyer di UI = satu edit di fungsi itu saja, tanpa
+  menyentuh state machine order.

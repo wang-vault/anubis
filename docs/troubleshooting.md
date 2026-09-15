@@ -159,14 +159,30 @@ tersedia — gunakan tombol Buka Halaman Pembayaran".
 - Cek: Settings → Infrastructure usage. Solusi: upgrade paket, aktifkan
   `unstable_cache` (sudah on), pertimbangkan read replica — di luar MVP.
 
-## 15. Metode "Transfer Manual" tidak muncul di checkout
-- Penyebab: gambar QR belum diunggah, saklar mati, atau `MANUAL_PAYMENT_ENABLED=false`.
+## 15. Metode "Transfer Manual" tidak bisa dipilih di checkout
+- Gejalanya: opsi tampil TETAPI greyed/disabled (atau checkout menolak dengan
+  "Pembayaran belum tersedia"). Penyebab: gambar QR belum diunggah, saklar
+  di `/admin/settings` mati, atau `MANUAL_PAYMENT_ENABLED=false`.
 - Cek: `/admin/settings` → bagian **Status saat ini** menjelaskan alasan persisnya
   (`no_qr` = belum ada gambar, `disabled` = saklar mati).
 - Solusi: unggah gambar QR (PNG/JPG/WebP ≤ 900 KB) → Simpan → buka `/checkout`
   lagi. Tidak perlu deploy ulang.
 - Bila `MANUAL_PAYMENT_QR_IMAGE_URL` diisi, URL itu yang dipakai — pastikan
   https dan bisa dibuka di tab privat.
+
+## 15b. "QRIS Otomatis" tidak bisa diklik / badge "Ongoing"
+- **By design, bukan error.** Sejak integrasi pembayaran manual, halaman
+  checkout menampilkan opsi QRIS dalam keadaan `disabled` + badge **"Ongoing"**
+  ("sedang dalam proses") supaya buyer tahu metode itu sedang disiapkan dan
+  memakai Transfer Manual. Berlaku juga ketika `YOBASEPAY_*` sudah terisi —
+  yang berubah hanyalah status di `/admin/settings` ("Terkonfigurasi · status di
+  checkout: ONGOING").
+- Integrasi server-nya tetap hidup: webhook, `⟳ Cek Pembayaran` admin, dan
+  pembuatan order QRIS via `POST /api/orders {"paymentMethod":"YOBASEPAY"}`
+  (resep: `docs/yobasepay.md` §5).
+- Bila memang ingin mengaktifkan pemilihannya di UI: setel SATU fungsi
+  `getCheckoutPaymentMethods()` di `src/lib/payment-config.ts` (hapus
+  `disabled/isOngoing` untuk YOBASEPAY) — logika bisnis tidak tersentuh.
 
 ## 16. Gambar QR buyer rusak / tidak tampil
 - Cek langsung: buka `https://tokoanda.com/api/manual-qr` di tab baru.

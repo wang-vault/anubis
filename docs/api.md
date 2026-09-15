@@ -31,9 +31,21 @@ Buat order + pembayaran.
                "qrImageUrl":"/api/manual-qr?v=…","expiresAt":"2026-09-12T14:30:00.000Z" } }
 ```
 Syarat: login + email verified. Harga dari DB, BUKAN dari request.
-`paymentMethod` yang tidak tersedia (mis. QRIS otomatis belum aktif) → 409;
-tidak diisi → memakai `DEFAULT_PAYMENT_METHOD` / satu-satunya metode aktif.
+`paymentMethod` yang tidak tersedia (mis. QRIS otomatis belum dikonfigurasi) →
+409 `"Pembayaran QRIS otomatis sedang dalam proses (status ongoing). Silakan
+gunakan opsi Transfer Manual terlebih dahulu."`; metode manual belum siap →
+409 `"Pembayaran manual belum dikonfigurasi penjual…"`; tidak ada metode sama
+sekali → 503 `paymentUnavailable`. Tidak diisi → memakai
+`DEFAULT_PAYMENT_METHOD` / satu-satunya metode aktif.
 Gagal provider → 503 (order ditandai FAILED/EXPIRED agar tidak menggantung).
+
+> **Tampilan checkout ≠ ketersediaan API.** Halaman `/checkout` selalu
+> menampilkan kedua opsi lewat `getCheckoutPaymentMethods()`: Transfer Manual
+> (aktif, default) dan QRIS Otomatis **disabled dengan badge "Ongoing"** —
+> pengajuan QRIS dari UI tidak mungkin. Ketersediaan nyata untuk order dihitung
+> `getAvailablePaymentMethods()` (env YoBasePay + pengaturan manual penjual),
+> sehingga order `YOBASEPAY` tetap bisa dibuat lewat endpoint ini — jalur yang
+> dipakai untuk uji end-to-end QRIS.
 
 ### GET /api/orders
 Daftar order milik sendiri (maks 30, terbaru dulu).

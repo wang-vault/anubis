@@ -6,9 +6,11 @@ Toko online **ringan, cepat, aman, dan tanpa VPS** untuk penjual tunggal:
 > terverifikasi → penjual dapat **notifikasi Telegram** → penjual proses →
 > chat **WhatsApp** buyer → tandai **Selesai**.
 >
-> Dua metode bayar: **QRIS Otomatis** (YoBasePay + webhook) dan **Transfer
-> Manual** (QRIS statis milik penjual — mis. QR GoPay Merchant — diverifikasi
-> penjual dari mutasi). Panduan lengkap: `docs/manual-payment.md`.
+> Dua metode bayar: **Transfer Manual** (QRIS statis milik penjual — mis.
+> QR GoPay Merchant — diverifikasi penjual dari mutasi) yang saat ini jadi
+> pilihan utama checkout, dan **QRIS Otomatis** (YoBasePay + webhook) yang
+> di halaman checkout ditampilkan dengan status **"Ongoing"** (tidak bisa
+> dipilih buyer). Panduan lengkap: `docs/manual-payment.md`.
 
 Tidak ada marketplace, tidak ada keranjang rumit, tidak ada WhatsApp OTP,
 tidak ada VPS. Semuanya serverless di Vercel.
@@ -23,7 +25,7 @@ tidak ada VPS. Semuanya serverless di Vercel.
 | Hosting | **Vercel** (serverless) | Tanpa VPS |
 | Akun & Auth | **Supabase #1** (Auth + `profiles`) | Register/login/email verification/password reset lewat Supabase Auth — tidak ada sistem password buatan sendiri |
 | Toko | **Supabase #2** (`products`, `orders`) | Terpisah; harga & status ditegakkan server-side |
-| Pembayaran #1 | **YoBasePay** (Payment Engine QRIS) + webhook HMAC | Bukan payment gateway — API wrapper mutasi QRIS. **Opsional**: kosongkan API key → metode otomatis nonaktif |
+| Pembayaran #1 | **YoBasePay** (Payment Engine QRIS) + webhook HMAC | Bukan payment gateway — API wrapper mutasi QRIS. **Opsional/berstatus "Ongoing"**: kosongkan API key → integrasi nonaktif; di checkout opsi ini tampil ber-badge "Ongoing" (tidak bisa dipilih) |
 | Pembayaran #2 | **Transfer Manual** (QRIS statis penjual, mis. QR GoPay Merchant) | Tanpa provider: buyer scan QR + transfer + konfirmasi, penjual verifikasi mutasi → `docs/manual-payment.md` |
 | Notifikasi | **Telegram Bot API** (ke penjual saja) | Gagal kirim ≠ pembayaran gagal |
 | Keamanan tambahan | **Cloudflare (opsional)** DNS/proxy/WAF/rate limit | Lihat `docs/cloudflare.md` |
@@ -76,7 +78,7 @@ tidak ada VPS. Semuanya serverless di Vercel.
 | `docs/supabase-account.md` | Supabase #1: auth, email verification, RLS, akun admin pertama |
 | `docs/supabase-store.md` | Supabase #2: schema toko, RLS, testing |
 | `docs/yobasepay.md` | Registrasi, API key, payment flow, webhook, signature test |
-| `docs/manual-payment.md` | Pembayaran manual: upload QR, kode unik nominal, alur verifikasi penjual |
+| `docs/manual-payment.md` | Pembayaran manual: upload QR, kode unik nominal, alur verifikasi penjual, status "Ongoing" QRIS |
 | `docs/telegram.md` | Buat bot dari nol, ambil chat ID, test notifikasi |
 | `docs/api.md` | Kontrak semua endpoint API |
 | `docs/admin-guide.md` | Manual owner/penjual setelah deploy (A–O) |
@@ -143,9 +145,10 @@ npm run typecheck && npm run build
 > **Env wajib** saat build/run: `NEXT_PUBLIC_SUPABASE_ACCOUNT_URL`,
 > `NEXT_PUBLIC_SUPABASE_ACCOUNT_ANON_KEY`, `SUPABASE_ACCOUNT_SERVICE_ROLE_KEY`,
 > `NEXT_PUBLIC_SUPABASE_STORE_URL`, `SUPABASE_STORE_SERVICE_ROLE_KEY`.
-> `YOBASEPAY_*` opsional (kosong = QRIS otomatis nonaktif, toko tetap jalan
-> dengan pembayaran manual); `TELEGRAM_*` opsional (skip + log bila kosong).
-> Penjelasan tiap variabel: `docs/environment-variables.md`.
+> `YOBASEPAY_*` opsional (kosong = integrasi QRIS otomatis nonaktif — opsi di
+> checkout tampil ber-badge **"Ongoing"** dan tidak bisa dipilih, toko tetap
+> jalan dengan pembayaran manual); `TELEGRAM_*` opsional (skip + log bila
+> kosong). Penjelasan tiap variabel: `docs/environment-variables.md`.
 >
 > **Setelah deploy**: buka `/admin/settings` → unggah gambar QRIS statis kamu →
 > metode Transfer Manual langsung aktif tanpa deploy ulang.
@@ -159,6 +162,13 @@ sistem ini sudah memvalidasi nominal dengan toleransi tersebut (dapat
 disetel `YOBASEPAY_AMOUNT_TOLERANCE`). Detail field yang tidak terdokumentasi
 publik ditandai **[VERIFIKASI]** di `docs/yobasepay.md` — jangan ditebak, cek
 dokumentasi di dashboard akun Anda.
+
+**Status saat ini:** pembeli di halaman checkout memakai **Transfer Manual**;
+opsi "QRIS Otomatis" tampil non-aktif dengan badge **"Ongoing"**. Isi
+`YOBASEPAY_*` bila akun sudah aktif — integrasi sisi server (webhook, cek
+status, order via `POST /api/orders`) langsung hidup tanpa perubahan kode;
+untuk membukanya juga di UI checkout, cukup setel satu fungsi
+`getCheckoutPaymentMethods()` di `src/lib/payment-config.ts`.
 
 ## Keamanan (ringkas)
 

@@ -45,8 +45,9 @@ sengaja **fail-fast** bila salah satu belum diisi. `YOBASEPAY_*` dan
 `TELEGRAM_*` boleh dibiarkan kosong.
 
 > **Default file ini = mode "manual saja".** Dengan `YOBASEPAY_API_KEY` &
-> `YOBASEPAY_WEBHOOK_SECRET` kosong, metode QRIS Otomatis otomatis
-> disembunyikan dan toko berjalan penuh memakai **Transfer Manual** (QRIS
+> `YOBASEPAY_WEBHOOK_SECRET` kosong, integrasi QRIS Otomatis nonaktif — di
+> halaman checkout opsinya tetap tampil namun ber-badge **"Ongoing"** (tidak
+> bisa dipilih), dan toko berjalan penuh memakai **Transfer Manual** (QRIS
 > statis milikmu). Checkout **tidak** menunggu YoBasePay.
 >
 > Syaratnya satu: **upload gambar QR di `/admin/settings`**. Tanpa QR itu
@@ -85,7 +86,7 @@ webhook test → admin). Untuk menguji pembayaran QRIS asli diperlukan akun
 YoBasePay (lihat `docs/yobasepay.md`) dan untuk webhook dari internet kamu perlu
 URL publik — dev lokal tidak menerima webhook; gunakan tunnel (opsional:
 `npx ngrok http 3000` + daftarkan URL ngrok sebagai webhook sementara) atau
-test webhook dengan curl bertanda tangan (resep ada di `docs/yobasepay.md` §7).
+test webhook dengan curl bertanda tangan (resep ada di `docs/yobasepay.md` §6).
 
 ## Troubleshooting awal
 

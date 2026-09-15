@@ -34,7 +34,9 @@ Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 - [ ] [MANUAL] Quantity 0/99/abc/UUID palsu → ditolak 400, tidak ada order yatim
 
 ## 4. PAYMENT
-- [ ] [MANUAL] Checkout menghasilkan QRIS (qr_image + payment_url) + countdown dari `payment_expired_at`
+- [ ] [MANUAL] Order QRIS via `POST /api/orders {"paymentMethod":"YOBASEPAY"}`
+      (halaman checkout menampilkannya sebagai "Ongoing" non-aktif) →
+      menghasilkan QRIS (qr_image + payment_url) + countdown dari `payment_expired_at`
 - [ ] [MANUAL] Pembayaran sukses (scan) → webhook → order PAID otomatis; halaman berubah ✅ tanpa refresh manual
 - [ ] [MANUAL] Pembayaran gagal/ batal tidak mengubah order (tetap PENDING sampai expired)
 - [ ] [MANUAL] Tidak bayar → kadaluarsa → ❌ + tombol buat order baru; DB `payment_status=EXPIRED`
@@ -48,7 +50,7 @@ Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 ## 4b. PEMBAYARAN MANUAL (QRIS statis penjual)
 - [ ] [MANUAL] `/admin/settings` → unggah QR (PNG) → Simpan → pratinjau muncul; file > 900 KB / tipe salah → ditolak dengan pesan jelas
 - [ ] [MANUAL] `GET /api/manual-qr` → 200 `image/png`; sebelum upload → 404 teks
-- [ ] [MANUAL] Checkout menampilkan metode yang aktif saja; QRIS otomatis hilang saat `YOBASEPAY_*` kosong; dua-duanya mati → "Pembayaran belum tersedia" (bukan error)
+- [ ] [MANUAL] Checkout SELALU menampilkan dua opsi: "Transfer Manual" pertama & terpilih, "QRIS Otomatis" non-aktif ber-badge **"Ongoing"** — klik pada opsi disabled terblokir, submit berbunyi "(Manual)". `/admin/settings` → "Status saat ini" menyebut QRIS **ONGOING** (terkonfigurasi maupun tidak). Tidak ada metode siap → "Pembayaran belum tersedia" (bukan error)
 - [ ] [MANUAL] Order manual: `payment_method=MANUAL`, `charged_amount = total + kode unik (1..999)`, `payment_expired_at` sesuai `expiry_minutes`, `payment_id` NULL
 - [ ] [MANUAL] Halaman `/pay/[code]`: QR tampil, nominal = `charged_amount`, tombol **Salin nominal** bekerja, countdown jalan
 - [ ] [AUTO] **Klaim buyer tidak bisa melunaskan order** (`claimManualPayment`): klaim dicatat, `payment_status` tetap PENDING, klaim kedua no-op, notifikasi sekali
@@ -65,6 +67,7 @@ Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 - [ ] [AUTO] `manualUniqueCode` (rentang 1..999, deterministik, beda order beda nominal) + `manualChargedAmount`
 - [ ] [AUTO] `formatManualClaimMessage` memuat order, nominal tagihan, referensi, catatan, jam WIB
 - [ ] [AUTO] `resolvePaymentMethod` / `getAvailablePaymentMethods` / `getManualPaymentView` (metode tak tersedia → 409/503, QR belum ada → `no_qr`)
+- [ ] [AUTO] `getCheckoutPaymentMethods` — manual diurutkan pertama (disabled bila saklar penjual mati), QRIS selalu ada namun `disabled` + `isOngoing` + badge `"Ongoing"` (`test/manual-payment-flow.test.ts`)
 
 > Test otomatis alur manual ada di `test/manual-payment-flow.test.ts` (domain
 > logic asli dijalankan terhadap fake Supabase — lihat `test/helpers/fake-store.ts`).
