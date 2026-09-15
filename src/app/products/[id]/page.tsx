@@ -84,7 +84,7 @@ export default async function ProductDetailPage({ params }: Props) {
             </Link>
           </div>
           <p className="hint mt-4">
-            Pembayaran via QRIS, verifikasi otomatis. Pesanan dikirim penjual lewat WhatsApp.
+            Pembayaran via Transfer Manual (opsi QRIS status ongoing), verifikasi oleh penjual. Pesanan dikirim penjual lewat WhatsApp.
           </p>
           {!ctx && (
             <p className="mt-4 border-t border-dotted border-slate-300 pt-3 text-sm text-slate-500">

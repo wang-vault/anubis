@@ -384,33 +384,46 @@ function ManualPaymentSection({
     }
   }, [amountText]);
 
-  if (!manual || !isRenderableQrSrc(manual.qrSrc)) {
+  if (!manual) {
     return (
       <p className="alert-error mt-4">
-        QR pembayaran manual belum tersedia. Silakan hubungi penjual atau buat order baru dengan
-        metode lain.
+        Pengaturan pembayaran manual belum tersedia. Silakan hubungi penjual.
       </p>
     );
   }
 
+  const hasValidQr = Boolean(manual.qrSrc && isRenderableQrSrc(manual.qrSrc));
   const waiting = Boolean(claimedAt);
   const rejected = reviewStatus === "REJECTED" && !waiting;
 
   return (
     <div className="mt-4">
-      <div className="payment-qr-frame">
-        <img
-          src={manual.qrSrc}
-          alt={`QRIS statis penjual untuk order ${orderCode}`}
-          width={280}
-          height={280}
-          className="mx-auto w-64 max-w-full border border-slate-300 bg-white"
-        />
-        <p className="mt-3 text-xs leading-5 text-slate-500">
-          {manual.label} — scan dengan aplikasi bank/e-wallet apa pun yang mendukung QRIS
-          (GoPay, OVO, DANA, ShopeePay, m-banking).
-        </p>
-      </div>
+      {hasValidQr ? (
+        <div className="payment-qr-frame">
+          <img
+            src={manual.qrSrc!}
+            alt={`QRIS statis penjual untuk order ${orderCode}`}
+            width={280}
+            height={280}
+            className="mx-auto w-64 max-w-full border border-slate-300 bg-white"
+          />
+          <p className="mt-3 text-xs leading-5 text-slate-500">
+            {manual.label} — scan dengan aplikasi bank/e-wallet apa pun yang mendukung QRIS
+            (GoPay, OVO, DANA, ShopeePay, m-banking).
+          </p>
+        </div>
+      ) : (
+        <div className="border border-dashed border-amber-600 bg-amber-50 p-4 text-center">
+          <p className="font-serif text-sm font-bold text-amber-900">Transfer Manual ke Rekening / E-Wallet Penjual</p>
+          {manual.accountName && (
+            <p className="mt-1 text-xs text-slate-700">Atas Nama: <strong>{manual.accountName}</strong></p>
+          )}
+          <p className="mt-2 text-xs leading-5 text-slate-600">
+            {manual.instructions ||
+              "Silakan lakukan transfer sesuai nominal persis ke rekening atau e-wallet penjual, lalu isi konfirmasi di bawah."}
+          </p>
+        </div>
+      )}
 
       <div className="alert-info mt-3 flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm">
@@ -422,7 +435,7 @@ function ManualPaymentSection({
         </button>
       </div>
 
-      {manual.instructions && (
+      {hasValidQr && manual.instructions && (
         <p className="hint mt-2 whitespace-pre-line">{manual.instructions}</p>
       )}
 
@@ -430,7 +443,7 @@ function ManualPaymentSection({
         <div className="alert-info mt-4">
           <p className="text-sm font-bold">Konfirmasi kamu sudah kami terima 🙌</p>
           <p className="mt-1 text-xs leading-5">
-            Penjual sedang mencocokkan mutasi QRIS. Status halaman ini berubah otomatis menjadi
+            Penjual sedang mencocokkan mutasi transfer. Status halaman ini berubah otomatis menjadi
             “Pembayaran berhasil” setelah diverifikasi — biasanya beberapa menit pada jam kerja.
           </p>
           <p className="mt-2 text-xs text-slate-500">

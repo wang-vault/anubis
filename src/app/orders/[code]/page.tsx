@@ -62,13 +62,13 @@ export default async function OrderDetailPage({ params }: Props) {
             <div className="alert-info mt-3">
               <span className="font-bold">🧾 Menunggu verifikasi penjual.</span>{" "}
               Kamu sudah melaporkan transfer. Penjual sedang mencocokkan mutasi
-              QRIS — status halaman ini berubah otomatis setelah diverifikasi.
+              transfer manual — status halaman ini berubah otomatis setelah diverifikasi.
             </div>
           ) : (
             <div className="alert-warn mt-3 flex items-center justify-between gap-2">
               <span>Belum ada pembayaran terverifikasi.</span>
               <Link href={`/pay/${order.order_code}`} className="btn-primary btn-sm shrink-0">
-                {order.payment_method === "MANUAL" ? "Lanjut Bayar →" : "Bayar QRIS →"}
+                {order.payment_method === "MANUAL" ? "Lanjut Bayar (Transfer Manual) →" : "Bayar QRIS →"}
               </Link>
             </div>
           ))}

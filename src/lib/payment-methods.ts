@@ -99,4 +99,7 @@ export interface AvailablePaymentMethod {
   id: PaymentMethod;
   label: string;
   note: string;
+  disabled?: boolean;
+  isOngoing?: boolean;
+  statusBadge?: string;
 }

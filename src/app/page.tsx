@@ -4,7 +4,7 @@ import { ProductCard } from "@/components/ProductCard";
 
 const HOW_IT_WORKS = [
   { n: "01", t: "Pilih berita utama", d: "Buka katalog, baca detailnya, lalu pilih produk yang paling cocok." },
-  { n: "02", t: "Bayar lewat QRIS", d: "Scan QR — pembayaran terverifikasi otomatis tanpa kirim bukti transfer." },
+  { n: "02", t: "Bayar lewat Transfer Manual", d: "Lakukan transfer manual dan laporkan di website. Opsi pembayaran QRIS sedang berstatus ongoing." },
   { n: "03", t: "Pesanan diberitakan", d: "Penjual memproses pesanan dan mengabarkan kabar baik lewat WhatsApp." },
 ] as const;
 
@@ -20,7 +20,7 @@ export default async function HomePage() {
             Belanja gampang, <em>kabar</em> pembayaran datang cepat.
           </h1>
           <p className="front-page-deck">
-            Pilih barang favoritmu, scan QRIS, dan biarkan kami mengurus kabar berikutnya. Semua
+            Pilih barang favoritmu, lakukan pembayaran manual (opsi QRIS ongoing), dan biarkan kami mengurus kabar berikutnya. Semua
             proses dibuat singkat, jelas, dan terasa seperti halaman depan yang menyenangkan.
           </p>
           <div className="hero-actions">
@@ -33,12 +33,12 @@ export default async function HomePage() {
           </div>
           <div className="hero-facts" aria-label="Keunggulan toko">
             <div className="hero-fact">
-              <strong>QRIS</strong>
-              <span>Bayar praktis</span>
+              <strong>Manual</strong>
+              <span>Transfer utama</span>
             </div>
             <div className="hero-fact">
-              <strong>Otomatis</strong>
-              <span>Status terpantau</span>
+              <strong>QRIS</strong>
+              <span className="font-bold text-amber-700">Status Ongoing</span>
             </div>
             <div className="hero-fact">
               <strong>WhatsApp</strong>
@@ -49,10 +49,9 @@ export default async function HomePage() {
         <aside className="hero-brief" aria-label="Ringkasan layanan">
           <p className="hero-brief-label">Headline layanan</p>
           <div>
-            <p className="hero-brief-title">Scan.<br />Bayar.<br />Selesai.</p>
+            <p className="hero-brief-title">Pesan.<br />Transfer.<br />Selesai.</p>
             <p className="hero-brief-copy">
-              Tak perlu menunggu konfirmasi manual. Status pembayaran dicek oleh server dengan
-              aman.
+              Gunakan opsi transfer manual terlebih dahulu untuk pembayaran. Opsi QRIS otomatis saat ini dalam status ongoing (sedang disiapkan).
             </p>
           </div>
         </aside>
