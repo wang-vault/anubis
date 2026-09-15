@@ -34,10 +34,18 @@ dashboard akun Anda (menu Docs) dan sesuaikan HANYA file
 > **Integrasi ini OPSIONAL.** Toko punya metode kedua — **Transfer Manual**
 > (QRIS statis milikmu, mis. QR GoPay Merchant) yang tidak butuh provider sama
 > sekali: lihat `docs/manual-payment.md`. Bila akun YoBasePay belum aktif,
-> kosongkan `YOBASEPAY_API_KEY` & `YOBASEPAY_WEBHOOK_SECRET` → metode QRIS
-> otomatis disembunyikan dari checkout dan webhook ditolak 403, sementara toko
-> tetap berjualan lewat pembayaran manual. Setelah aktif, isi kembali kedua
-> variabel itu — metodenya muncul lagi tanpa perubahan kode.
+> kosongkan `YOBASEPAY_API_KEY` & `YOBASEPAY_WEBHOOK_SECRET` → webhook ditolak
+> 403 dan order QRIS via API balas 409, sementara toko tetap berjualan lewat
+> pembayaran manual. Setelah aktif, isi kembali kedua variabel itu —
+> integrasinya hidup tanpa perubahan kode (webhook, cek status, order via API).
+>
+> **Catatan status produk:** sejak integrasi manual, opsi "QRIS Otomatis" di
+> halaman `/checkout` **selalu** ditampilkan dengan badge **"Ongoing"** dan
+> disabled (lihat `getCheckoutPaymentMethods()` di
+> `src/lib/payment-config.ts`) — pembeli diarahkan memakai Transfer Manual.
+> Mengisi credential YoBasePay TIDAK mengubah tampilan itu; yang aktif adalah
+> sisi server-nya. Untuk menguji alur QRIS dari sisi buyer, buat order lewat
+> `POST /api/orders` dengan `"paymentMethod": "YOBASEPAY"` (§5).
 
 ## 1. Buat akun & project
 
@@ -185,8 +193,10 @@ YOBASEPAY_QR_RENDER_URL=       # isi HANYA bila provider mengirim payload QRIS (
 Tiga hal yang paling sering terlewat:
 
 1. **Kedua secret wajib terisi.** `yobasepayConfigured()` menuntut API key **dan**
-   webhook secret; bila salah satu kosong, metode QRIS **disembunyikan** dari
-   checkout dan `createPayment` ditolak dengan `provider_disabled`.
+   webhook secret; bila salah satu kosong, metode QRIS **tidak tersedia** —
+   `createPayment` ditolak dengan `provider_disabled` dan `POST /api/orders`
+   `paymentMethod=YOBASEPAY` balas 409 ("status ongoing"). Di UI checkout opsi
+   ini memang selalu tampil disabled ber-badge "Ongoing".
 2. **`NEXT_PUBLIC_SITE_URL` = Domain Lock.** Nilai itu yang dikirim sebagai
    header `Origin`/`Referer` ke provider (`yobasepay.ts`). Masih
    `http://localhost:3000` padahal sudah produksi → createpayment ditolak.
@@ -205,8 +215,22 @@ Tiga hal yang paling sering terlewat:
 
 ## 5. Test payment end-to-end
 
+> Karena opsi QRIS di halaman checkout saat ini tampil **"Ongoing"
+> (disabled)**, order QRIS dibuat lewat API dengan cookie session buyer uji —
+> bukan lewat form checkout:
+>
+> ```bash
+> curl -sS -X POST "https://tokoanda.com/api/orders" \
+>   -b "sb-<ref1>-auth-token=…" -H 'Content-Type: application/json' \
+>   -d '{"productId":"<uuid>","quantity":1,"paymentMethod":"YOBASEPAY"}'
+> # → 201 { order: {order_code…}, payment: { paymentUrl, qrImageUrl, expiresAt } }
+> ```
+> (Alternatif pengembangan: buka sementara opsi itu di
+> `getCheckoutPaymentMethods()` — satu fungsi, tanpa menyentuh logika bisnis.)
+
 1. `/admin/products` → buat produk `Rp10.000` → aktif.
-2. Daftar buyer uji (email terverifikasi) → checkout → muncul halaman QRIS.
+2. Daftar buyer uji (email terverifikasi) → buat order QRIS (curl di atas) →
+   buka `/pay/<order_code>` → muncul halaman QRIS.
 3. Scan & bayar QRIS dari e-wallet manapun (nominal = 10.000 + kode unik yang
    tercetak di QR — jangan ketik manual berbeda).
 4. Dalam hitungan detik: halaman buyer berubah **✅ PEMBAYARAN BERHASIL**,

@@ -35,8 +35,12 @@ jalan ke orders adalah server aplikasi (yang sudah memfilter kepemilikan).
 1. Harga order = `products.price` dibaca ulang di server saat create — body
    klien hanya `productId`/`quantity`.
 2. `total_amount` dihitung server (int Rupiah × int qty) dan disimpan snapshot.
-3. Menuju PAID hanya 2 jalur: webhook terverifikasi; `checkstatus` API privat
-   dari server. Endpoint klien tidak menerima field status apa pun.
+3. Menuju PAID hanya 3 jalur: webhook terverifikasi; `checkstatus` API privat
+   dari server; dan **konfirmasi penjual** untuk order manual
+   (`adminConfirmManualPayment` — diverifikasi `requireAdmin` + guard
+   `payment_method=MANUAL`). Endpoint klien tidak menerima field status apa
+   pun; klaim "saya sudah transfer" dari buyer hanya mencatat
+   `manual_claim_at` (antrian verifikasi), bukan melunasi order.
 4. Webhook validasi nominal: `total ≤ charged ≤ total + toleransi` (kode unik
    YoBasePay). Amount absen/salah → diabaikan + log, tidak ada auto-PAID.
 5. Update PAID idempoten (`WHERE payment_status IN ('PENDING','EXPIRED')`) →

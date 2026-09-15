@@ -24,16 +24,22 @@ Menu **Produk** atau beranda. Produk dengan label **● Tersedia** bisa dibeli.
 ## 5–6. Membeli & checkout
 1. Buka produk → **Beli Sekarang**.
 2. Pilih jumlah (maks 20/order).
-3. Pilih **Cara bayar** (yang tampil tergantung metode yang diaktifkan penjual):
-   - **QRIS Otomatis** — QR dibuat sistem, nominal terkunci, status lunas otomatis.
+3. Pilih **Cara bayar**. Opsi yang tampil:
    - **Transfer Manual** — QR statis milik penjual (mis. QRIS GoPay Merchant);
-     kamu transfer sendiri lalu konfirmasi di halaman bayar.
+     kamu transfer sendiri lalu konfirmasi di halaman bayar. Ini opsi utama:
+     selalu diurutkan pertama dan sudah terpilih secara default.
+   - **QRIS Otomatis** — QR dibuat sistem, nominal terkunci, status lunas
+     otomatis. Selama masih ber-badge **"Ongoing"** opsi ini **belum bisa
+     dipilih** (sedang disiapkan penjual) — gunakan Transfer Manual.
 4. Pastikan **nomor WhatsApp** yang tertera benar — boleh langsung diperbaiki
    di form checkout.
 5. **Buat Pesanan & Lanjut Bayar** — total dihitung otomatis oleh sistem sesuai
    harga di katalog.
 
 ## 7a. Bayar dengan QRIS Otomatis
+> ℹ️ Opsi ini hanya bisa dipilih bila penjual sudah membukanya di checkout.
+> Selama badge **"Ongoing"** masih menempel, bayar lewat Transfer Manual (§7b).
+
 Halaman pembayaran menampilkan QR:
 1. Buka e-wallet/mobile banking apa pun yang mendukung **QRIS** (m-BCA,
    Livin, BRImo, DANA, OVO, GoPay, ShopeePay…).

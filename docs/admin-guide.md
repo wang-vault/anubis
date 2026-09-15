@@ -117,6 +117,13 @@ unggah gambar QRIS statis (PNG/JPG/WebP, maks 900 KB) → isi nama penerima &
 batas waktu bayar → **Simpan**. Gambar disimpan di database toko (bukan bucket),
 diganti kapan pun tanpa deploy ulang.
 
+Di panel **Status saat ini** kamu akan melihat dua baris: "Transfer Manual
+(QRIS statis)" (✓ tampil di checkout / ✗ dengan alasan `no_qr`/`disabled`) dan
+"QRIS Otomatis (YoBasePay)" yang selama masa persiapan selalu berbunyi
+**ONGOING** — artinya di halaman checkout opsi QRIS ditampilkan ber-badge
+"Ongoing" tetapi tidak bisa dipilih buyer, dan semua pembelian otomatis
+mengalir ke Transfer Manual. Ini perilaku bawaan yang disengaja, bukan error.
+
 **Harian (verifikasi)**:
 1. Telegram mengirim **🧾 KLAIM TRANSFER MANUAL** (order, nominal ditagihkan,
    nama pengirim, no. referensi).
