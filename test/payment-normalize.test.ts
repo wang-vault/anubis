@@ -35,6 +35,37 @@ describe("asString / asNumber", () => {
     expect(asNumber("abc")).toBeNull();
     expect(asNumber(Number.NaN)).toBeNull();
   });
+
+  /**
+   * REGRESI (uang): parser sempat membuang SEMUA non-digit, sehingga nominal
+   * berdesimal "10500.00" (bentuk lazim untuk kolom DECIMAL) dibaca 1050000 —
+   * 100× lipat. Akibatnya charged_amount salah di halaman bayar DAN webhook
+   * pembayaran yang sah ditolak `amount_mismatch` → order tidak pernah PAID.
+   */
+  it("nominal berdesimal tidak boleh terbaca 100x lipat", () => {
+    expect(asNumber("10500.00")).toBe(10500);
+    expect(asNumber("10500,00")).toBe(10500);
+    expect(asNumber("10,500.00")).toBe(10500);
+    expect(asNumber("10.500,00")).toBe(10500);
+  });
+
+  it("membedakan pemisah ribuan (3 digit) dari desimal (1-2 digit)", () => {
+    expect(asNumber("1.234.567")).toBe(1234567);
+    expect(asNumber("1,234,567.89")).toBe(1234568);
+    expect(asNumber("10 500")).toBe(10500);
+  });
+
+  it("Rupiah tidak memakai sen — hasil selalu integer", () => {
+    expect(asNumber("10500.50")).toBe(10501);
+    expect(asNumber(10500.4)).toBe(10500);
+    expect(asNumber("0.99")).toBe(1);
+  });
+
+  it("nilai tanpa digit tetap ditolak", () => {
+    expect(asNumber("-")).toBeNull();
+    expect(asNumber(".")).toBeNull();
+    expect(asNumber("Rp")).toBeNull();
+  });
 });
 
 describe("pickString / pickNumber (prioritas nama field)", () => {
@@ -94,6 +125,22 @@ describe("resolveProviderUrl", () => {
     expect(resolveProviderUrl("javascript:alert(1)", BASE)).toBeNull();
     expect(resolveProviderUrl("data:image/png;base64,AAAA", BASE)).toBeNull();
     expect(resolveProviderUrl("", BASE)).toBeNull();
+  });
+
+  /**
+   * REGRESI (keamanan): "\" setara "/" pada URL ber-skema khusus menurut
+   * WHATWG, jadi "/\evil.id/qr.png" BUKAN path — ia di-resolve menjadi
+   * https://evil.id/qr.png, keluar dari origin provider. Nilai ini datang
+   * dari respons provider dan berakhir di atribut src <img> halaman bayar,
+   * jadi hasilnya harus tetap berada di origin provider.
+   */
+  it("path yang memuat backslash tidak boleh keluar dari origin provider", () => {
+    for (const value of ["/\\evil.id/qr.png", "/\\\\evil.id/qr.png", "\\/evil.id/qr.png"]) {
+      const resolved = resolveProviderUrl(value, BASE);
+      if (resolved !== null) {
+        expect(new URL(resolved).origin).toBe("https://yobasepay.net");
+      }
+    }
   });
 });
 
