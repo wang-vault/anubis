@@ -34,9 +34,10 @@
         validasi → ambil produk+harga dari Supabase #2 → total = price×qty (server)
         → tentukan metode (resolvePaymentMethod: env + pengaturan penjual)
            Catatan UI: halaman checkout MERENDER kedua opsi lewat
-           getCheckoutPaymentMethods() — manual pertama & default, QRIS otomatis
-           selalu disabled ber-badge "Ongoing" (pembelian dari UI ⇒ manual;
-           order YOBASEPAY tetap bisa dibuat via POST /api/orders)
+           getCheckoutPaymentMethods() — manual pertama & default; QRIS otomatis
+           bisa dipilih bila env YOBASEPAY_* terisi, dan disabled ber-badge
+           "Ongoing" bila belum (order YOBASEPAY juga bisa dibuat via
+           POST /api/orders)
         → INSERT orders (PENDING/PENDING, order_code ORD-YYYYMMDD-XXXXXX, snapshot, payment_method)
         ├─ YOBASEPAY: GET action=createpayment&amount=TOTAL → { trx_id, payment_url, qr_image, expired_at }
         │             → UPDATE orders (payment_id, payment_url, qr_image_url, payment_expired_at)
@@ -151,7 +152,8 @@ produk diedit nanti. Indexes: katalog aktif, order per-account, antrian
   provider (kode unik, endpoint) dari kode bisnis.
 - `src/lib/payment-config.ts` memisahkan **ketersediaan** (apa yang boleh
   dieksekusi server: `getAvailablePaymentMethods()`/`resolvePaymentMethod()`)
-  dari **daftar tampilan checkout** (`getCheckoutPaymentMethods()` — tempat
-  keputusan produk "QRIS = opsi Ongoing non-aktif, manual dulu" hidup).
-  Membuka QRIS untuk buyer di UI = satu edit di fungsi itu saja, tanpa
-  menyentuh state machine order.
+  dari **daftar tampilan checkout** (`getCheckoutPaymentMethods()`), tetapi
+  keduanya membaca sumber yang sama (`yobasepayConfigured()` + pengaturan
+  manual penjual): QRIS otomatis tampil & bisa dipilih bila kredensial terisi,
+  dan jatuh ke badge "Ongoing" (disabled) bila belum — tanpa menyentuh state
+  machine order.

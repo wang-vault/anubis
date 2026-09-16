@@ -565,8 +565,9 @@ describe("konfigurasi pembayaran manual (lib/payment-config)", () => {
     expect(view.reason).toBe("disabled");
   });
 
-  it("getCheckoutPaymentMethods menaruh opsi manual pertama (aktif) dan QRIS berstatus ongoing (disabled)", async () => {
+  it("getCheckoutPaymentMethods menaruh opsi manual pertama (aktif) dan QRIS berstatus ongoing (disabled) saat YoBasePay belum terkonfigurasi", async () => {
     setup();
+    h.yobasepay = false;
     const { getCheckoutPaymentMethods } = await import("@/lib/payment-config");
 
     const checkoutMethods = await getCheckoutPaymentMethods();
@@ -581,6 +582,42 @@ describe("konfigurasi pembayaran manual (lib/payment-config)", () => {
     expect(qrisMethod?.disabled).toBe(true);
     expect(qrisMethod?.isOngoing).toBe(true);
     expect(qrisMethod?.statusBadge).toBe("Ongoing");
+  });
+
+  it("getCheckoutPaymentMethods membuka opsi QRIS otomatis (bisa dipilih) saat kredensial terisi", async () => {
+    setup();
+    h.yobasepay = true;
+    const { getCheckoutPaymentMethods } = await import("@/lib/payment-config");
+
+    const checkoutMethods = await getCheckoutPaymentMethods();
+    expect(checkoutMethods).toHaveLength(2);
+
+    const [manualMethod, qrisMethod] = checkoutMethods;
+    // Manual tetap urutan pertama & jadi default, tetapi keduanya kini bisa dipilih.
+    expect(manualMethod?.id).toBe("MANUAL");
+    expect(manualMethod?.disabled).toBe(false);
+
+    expect(qrisMethod?.id).toBe("YOBASEPAY");
+    expect(qrisMethod?.disabled).toBeFalsy();
+    expect(qrisMethod?.isOngoing).toBeFalsy();
+    expect(qrisMethod?.statusBadge).toBeUndefined();
+  });
+
+  it("getCheckoutPaymentMethods tetap menampilkan QRIS ongoing walau manual sedang aktif & terkonfigurasi", async () => {
+    setup();
+    h.yobasepay = false;
+    const { getCheckoutPaymentMethods, getAvailablePaymentMethods } = await import(
+      "@/lib/payment-config"
+    );
+
+    // Ketersediaan server (order) tidak bergantung daftar tampilan checkout.
+    await expect(getAvailablePaymentMethods()).resolves.toEqual([
+      expect.objectContaining({ id: "MANUAL" }),
+    ]);
+
+    const qris = (await getCheckoutPaymentMethods()).find((m) => m.id === "YOBASEPAY");
+    expect(qris?.disabled).toBe(true);
+    expect(qris?.statusBadge).toBe("Ongoing");
   });
 
   it("getCheckoutPaymentMethods menonaktifkan manual jika pengaturan manual dimatikan penjual", async () => {

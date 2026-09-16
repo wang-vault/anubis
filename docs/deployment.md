@@ -126,7 +126,8 @@ Deployments tab pantau build (~1 menit). ✅ berhasil = status *Ready* dan
 > "QRIS Otomatis" di checkout tetap tampil namun ber-badge **"Ongoing"** dan
 > tidak bisa dipilih, dan toko berjalan penuh dengan **Transfer Manual**. Yang
 > wajib dilakukan hanya **upload gambar QR di `/admin/settings`** (lihat §I-alt
-> di bawah).
+> di bawah). Setelah kedua var itu diisi + redeploy, opsi QRIS Otomatis
+> otomatis bisa dipilih buyer di halaman checkout.
 
 Ikuti **`docs/yobasepay.md`** bagian 1–4 (registrasi, buat project, API key,
 domain lock, saldo/aktif). Setelah credential masuk Vercel → **Redeploy**.
@@ -139,10 +140,13 @@ domain lock, saldo/aktif). Setelah credential masuk Vercel → **Redeploy**.
 4. Isi *Nama penerima* & *Batas waktu bayar* → **Simpan**.
 5. Cek panel **Status saat ini**: "Transfer Manual" harus hijau/"Tampil di
    halaman checkout". Bila tertulis `no_qr`, gambar QR belum tersimpan. Baris
-   "QRIS Otomatis (YoBasePay)" berbunyi **ONGOING** — normal pada tahap ini.
+   "QRIS Otomatis (YoBasePay)" berbunyi **ONGOING** — normal pada tahap ini
+   (env `YOBASEPAY_*` belum terisi).
 
 ✅ Buka `/checkout?product=…` sebagai buyer → "Transfer Manual" terpilih
-(default), "QRIS Otomatis" tampil non-aktif ber-badge **"Ongoing"**.
+(default); "QRIS Otomatis" ber-badge **"Ongoing"** dan tidak bisa dipilih
+selama env `YOBASEPAY_*` belum terisi (bisa dipilih setelah env terisi +
+redeploy).
 
 > Tanpa langkah 3, checkout menampilkan **"Pembayaran belum tersedia"** karena
 > tidak ada satu pun metode yang siap.
@@ -184,9 +188,10 @@ register buyer → verif email → tambah produk (admin) → checkout → QRIS b
 - [ ] **Minimal satu metode bayar siap** — cek `/admin/settings` → panel "Status saat ini":
   - mode manual saja → "Transfer Manual" tampil di checkout (QR sudah di-upload);
     "QRIS Otomatis" ber-badge ONGOING — itu disengaja
-  - mode QRIS otomatis → webhook live: order tes lunas otomatis (bukan dari
-    tombol). Catatan: opsi QRIS masih "Ongoing" di halaman checkout — buat
-    order tes via `POST /api/orders {"paymentMethod":"YOBASEPAY"}` (lihat `docs/yobasepay.md` §5)
+  - mode QRIS otomatis → webhook live **dan** opsi "QRIS Otomatis" bisa
+    dipilih buyer di halaman checkout (badge "Ongoing" hilang). Uji lewat UI
+    checkout atau `POST /api/orders {"paymentMethod":"YOBASEPAY"}` (lihat
+    `docs/yobasepay.md` §5)
 - [ ] Telegram tes masuk saat PAID
 - [ ] Rate limit Cloudflare aktif (opsional disarankan — `docs/cloudflare.md`)
 - [ ] Nominal transfer unik buyer terverifikasi oleh tolerance check (cek log 1x)

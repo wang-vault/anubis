@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getAuthContext } from "@/lib/authz";
 import { getProduct } from "@/lib/products";
 import { getAvailablePaymentMethods, getCheckoutPaymentMethods } from "@/lib/payment-config";
+import { PAYMENT_METHOD_MANUAL } from "@/lib/payment-methods";
 import { CheckoutForm } from "@/app/checkout/CheckoutForm";
 import { EmptyState } from "@/components/UiBits";
 
@@ -84,8 +85,10 @@ export default async function CheckoutPage({ searchParams }: Props) {
     );
   }
 
-  // Opsi manual dulu sebagai pilihan utama pembelian
-  const defaultMethod = "MANUAL";
+  // Opsi manual sebagai pilihan utama pembelian; bila manual belum siap
+  // (saklar mati / QR belum diunggah), jatuh ke metode yang tersedia.
+  const defaultMethod =
+    available.find((m) => m.id === PAYMENT_METHOD_MANUAL)?.id ?? available[0]?.id ?? PAYMENT_METHOD_MANUAL;
 
   return (
     <div className="container-x mx-auto max-w-lg">

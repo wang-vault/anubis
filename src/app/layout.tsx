@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     template: `%s — ${siteName}`,
   },
   description:
-    "Toko online sederhana: bayar via transfer manual mudah (opsi QRIS status ongoing), pesanan diproses penjual, dan dikirim lewat WhatsApp.",
+    "Toko online sederhana: pilih bayar transfer manual atau QRIS otomatis (bila aktif), pesanan diproses penjual, dan dikirim lewat WhatsApp.",
 };
 
 export const viewport: Viewport = {
