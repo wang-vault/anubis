@@ -48,7 +48,9 @@ sengaja **fail-fast** bila salah satu belum diisi. `YOBASEPAY_*` dan
 > `YOBASEPAY_WEBHOOK_SECRET` kosong, integrasi QRIS Otomatis nonaktif — di
 > halaman checkout opsinya tetap tampil namun ber-badge **"Ongoing"** (tidak
 > bisa dipilih), dan toko berjalan penuh memakai **Transfer Manual** (QRIS
-> statis milikmu). Checkout **tidak** menunggu YoBasePay.
+> statis milikmu). Checkout **tidak** menunggu YoBasePay. Begitu kedua var
+> terisi + redeploy, opsi QRIS Otomatis otomatis ikut bisa dipilih buyer
+> (badge "Ongoing"-nya hilang).
 >
 > Syaratnya satu: **upload gambar QR di `/admin/settings`**. Tanpa QR itu
 > metode manual dianggap belum siap dan checkout menampilkan "Pembayaran

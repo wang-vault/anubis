@@ -74,20 +74,22 @@ tidak perlu hosting eksternal, dan ganti QR tidak perlu deploy ulang.
 > `MANUAL_PAYMENT_QR_IMAGE_URL=https://…/qris.png`. URL itu yang dipakai buyer
 > (gambar di dashboard jadi cadangan).
 
-### 3. Opsi "QRIS Otomatis" — ditampilkan berstatus **Ongoing**
+### 3. Opsi "QRIS Otomatis" — bisa dipilih bila kredensial terisi, selain itu **Ongoing**
 
-Sejak integrasi pembayaran manual, halaman `/checkout` **selalu** menampilkan
-dua opsi bayar (dibangun oleh `getCheckoutPaymentMethods()` di
-`src/lib/payment-config.ts`):
+Halaman `/checkout` **selalu** menampilkan dua opsi bayar (dibangun oleh
+`getCheckoutPaymentMethods()` di `src/lib/payment-config.ts`) dan buyer
+**bisa memilih** salah satunya:
 
 | Opsi di checkout | Perilaku |
 |---|---|
 | **Transfer Manual** | diurutkan **pertama** dan jadi pilihan default; aktif begitu QR kamu terunggah (disabled/greyed bila belum) |
-| **QRIS Otomatis** | tampil dengan badge amber **"Ongoing"** + catatan "sedang dalam proses", tapi **tidak dapat dipilih** — radio button dan klik pada kartu dinonaktifkan |
+| **QRIS Otomatis** | **bisa dipilih** bila `YOBASEPAY_API_KEY` **dan** `YOBASEPAY_WEBHOOK_SECRET` terisi. Bila salah satu kosong → badge amber **"Ongoing"** + catatan "sedang dalam proses" dan **tidak dapat dipilih** (radio & klik pada kartu dinonaktifkan) |
 
-Tujuannya: buyer tetap melihat bahwa metode QRIS sedang disiapkan (alih-alih
-mengira tokonya rusak), dan otomatis diarahkan ke Transfer Manual. Tombol
-submit checkout berbunyi "Buat Pesanan & Lanjut Bayar (Manual)".
+Jadi selama akun QRIS-mu belum aktif, buyer tetap melihat bahwa metode itu
+sedang disiapkan (alih-alih mengira tokonya rusak) dan otomatis memakai
+Transfer Manual; begitu kedua env terisi + redeploy, opsi QRIS Otomatis ikut
+terbuka tanpa perubahan kode. Tombol submit mengikuti pilihan buyer:
+"Buat Pesanan & Lanjut Bayar (Transfer Manual)" / "… (QRIS Otomatis)".
 
 Bila akun YoBasePay belum aktif, cukup kosongkan kedua env-nya:
 
@@ -99,15 +101,16 @@ YOBASEPAY_WEBHOOK_SECRET=
 Keduanya kosong → integrasi YoBasePay mati di level server: `createPayment`
 ditolak (`provider_disabled`), `POST /api/orders` dengan
 `paymentMethod=YOBASEPAY` balas **409** ("sedang dalam proses, status
-ongoing"), dan **semua webhook ditolak 403** (tanpa secret, signature tidak
-bisa diverifikasi). Toko tetap jalan penuh dengan pembayaran manual.
+ongoing"), **semua webhook ditolak 403** (tanpa secret, signature tidak bisa
+diverifikasi), dan di checkout opsi QRIS Otomatis kembali tampil ber-badge
+"Ongoing" (tidak bisa dipilih). Toko tetap jalan penuh dengan pembayaran
+manual.
 
-> Mengisi kedua var itu **tidak** mengubah tampilan checkout — opsi QRIS tetap
-> "Ongoing" di UI. Yang aktif adalah integrasinya di belakang layar (webhook
-> diterima, polling/tombol "Cek Pembayaran" admin bekerja, order bisa dibuat
-> via API untuk pengujian). Bila kelak QRIS ingin dibuka untuk buyer di
-> halaman checkout, ubah SATU fungsi saja: `getCheckoutPaymentMethods()` —
-> logika bisnis tidak tersentuh.
+Isi keduanya → integrasi hidup **dan** opsi QRIS Otomatis ikut bisa dipilih
+buyer di halaman checkout. Ingin menutupnya lagi (mis. provider sedang
+gangguan)? Kosongkan kedua env lalu redeploy — UI otomatis kembali ke badge
+"Ongoing", tanpa menyentuh kode: keputusannya hidup di satu fungsi,
+`getCheckoutPaymentMethods()`.
 
 ---
 
@@ -187,10 +190,11 @@ Detail lengkap: `docs/environment-variables.md`.
 ## G. Checklist uji cepat
 
 1. `/admin/settings` → unggah QR → **Simpan** → pratinjau muncul; baris
-   "QRIS Otomatis" di panel *Status saat ini* berbunyi **ONGOING**.
+   "QRIS Otomatis" di panel *Status saat ini* berbunyi **ONGOING** selama env
+   YoBasePay belum terisi.
 2. Buka `/checkout?product=<id>` → **Transfer Manual** tampil pertama dan
-   terpilih; **QRIS Otomatis** tampil ber-badge **"Ongoing"** dan tidak bisa
-   diklik/dipilih (apa pun konfigurasi YoBasePay). Buat order.
+   terpilih. **QRIS Otomatis**: bisa dipilih bila env YoBasePay terisi; bila
+   belum → ber-badge **"Ongoing"** dan tidak bisa diklik. Buat order.
 3. `/pay/ORD-…` menampilkan QR + nominal `total + kode unik` + tombol salin.
 4. Tekan **Saya sudah transfer** → muncul "Konfirmasi kamu sudah kami terima";
    tombol tidak bisa dipakai dua kali.

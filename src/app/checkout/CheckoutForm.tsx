@@ -4,7 +4,11 @@ import { useMemo, useState } from "react";
 import { checkoutAction, type ActionState } from "@/app/checkout/actions";
 import { useActionState } from "react";
 import { formatRupiah } from "@/lib/money";
-import type { AvailablePaymentMethod } from "@/lib/payment-methods";
+import {
+  PAYMENT_METHOD_AUTO,
+  PAYMENT_METHOD_MANUAL,
+  type AvailablePaymentMethod,
+} from "@/lib/payment-methods";
 
 /**
  * Form checkout (komponen klien kecil — hanya untuk qty + preview total).
@@ -33,7 +37,7 @@ export function CheckoutForm({
   const activeMethods = useMemo(() => methods.filter((m) => !m.disabled), [methods]);
   const initialMethod = useMemo(() => {
     const found = methods.find((m) => !m.disabled && m.id === defaultMethod);
-    return found ? found.id : (activeMethods[0]?.id ?? "MANUAL");
+    return found ? found.id : (activeMethods[0]?.id ?? PAYMENT_METHOD_MANUAL);
   }, [methods, defaultMethod, activeMethods]);
 
   const [method, setMethod] = useState<string>(initialMethod);
@@ -48,6 +52,9 @@ export function CheckoutForm({
   );
 
   const selected = methods.find((m) => m.id === method && !m.disabled) ?? activeMethods[0];
+  /** Nama singkat metode terpilih — dipakai label tombol & catatan di bawah. */
+  const selectedShortLabel =
+    selected?.id === PAYMENT_METHOD_AUTO ? "QRIS Otomatis" : "Transfer Manual";
 
   return (
     <form action={formAction} className="space-y-4">
@@ -152,11 +159,17 @@ export function CheckoutForm({
             );
           })}
         </div>
-        {selected?.id === "MANUAL" && (
+        {selected?.id === PAYMENT_METHOD_MANUAL && (
           <p className="hint mt-3">
             Kamu akan melihat instruksi / QR penjual, transfer sendiri dengan nominal persis (termasuk kode
             unik), lalu menekan tombol konfirmasi. Penjual memverifikasi mutasi sebelum pesanan
             diproses.
+          </p>
+        )}
+        {selected?.id === PAYMENT_METHOD_AUTO && (
+          <p className="hint mt-3">
+            QR dibuat otomatis dengan nominal yang sudah terisi. Setelah kamu membayar, status lunas
+            terdeteksi sistem dalam beberapa saat — tidak perlu konfirmasi ke penjual.
           </p>
         )}
       </fieldset>
@@ -184,7 +197,7 @@ export function CheckoutForm({
       {state.error && <p role="alert" className="alert-error">{state.error}</p>}
 
       <button type="submit" className="btn-primary w-full" disabled={pending || !selected}>
-        {pending ? "Menyusun pesanan…" : "Buat Pesanan & Lanjut Bayar (Manual) →"}
+        {pending ? "Menyusun pesanan…" : `Buat Pesanan & Lanjut Bayar (${selectedShortLabel}) →`}
       </button>
       <p className="hint text-center">
         Dengan membayar, kamu menyetujui pesanan diproses manual oleh penjual via WhatsApp.

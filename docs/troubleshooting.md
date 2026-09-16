@@ -171,18 +171,21 @@ tersedia — gunakan tombol Buka Halaman Pembayaran".
   https dan bisa dibuka di tab privat.
 
 ## 15b. "QRIS Otomatis" tidak bisa diklik / badge "Ongoing"
-- **By design, bukan error.** Sejak integrasi pembayaran manual, halaman
-  checkout menampilkan opsi QRIS dalam keadaan `disabled` + badge **"Ongoing"**
-  ("sedang dalam proses") supaya buyer tahu metode itu sedang disiapkan dan
-  memakai Transfer Manual. Berlaku juga ketika `YOBASEPAY_*` sudah terisi —
-  yang berubah hanyalah status di `/admin/settings` ("Terkonfigurasi · status di
-  checkout: ONGOING").
-- Integrasi server-nya tetap hidup: webhook, `⟳ Cek Pembayaran` admin, dan
-  pembuatan order QRIS via `POST /api/orders {"paymentMethod":"YOBASEPAY"}`
-  (resep: `docs/yobasepay.md` §5).
-- Bila memang ingin mengaktifkan pemilihannya di UI: setel SATU fungsi
-  `getCheckoutPaymentMethods()` di `src/lib/payment-config.ts` (hapus
-  `disabled/isOngoing` untuk YOBASEPAY) — logika bisnis tidak tersentuh.
+- **Artinya kredensialnya belum terbaca server.** Opsi QRIS Otomatis di
+  checkout hanya bisa dipilih bila `YOBASEPAY_API_KEY` **dan**
+  `YOBASEPAY_WEBHOOK_SECRET` terisi di environment (Vercel) dan sudah
+  **diredeploy**. Salah satu kosong → opsi tampil `disabled` + badge
+  **"Ongoing"** ("sedang dalam proses") supaya buyer tahu metode itu belum
+  dibuka dan memakai Transfer Manual.
+- Cek cepat: `/admin/settings` → panel **Status saat ini** → baris "QRIS
+  Otomatis (YoBasePay)". Tertulis *dapat dipilih pembeli di halaman checkout*
+  = sudah aktif; *ONGOING (sedang disiapkan)* = env belum terbaca (nilai
+  kosong, salah project/environment Vercel, atau belum redeploy setelah
+  disimpan).
+- Saat env belum terisi, sisi server-nya ikut mati: webhook ditolak 403 dan
+  `POST /api/orders {"paymentMethod":"YOBASEPAY"}` balas 409 ("status
+  ongoing"). Setelah env terisi + redeploy, semuanya hidup bersamaan: webhook,
+  `⟳ Cek Pembayaran` admin, order via API, dan pilihan di UI checkout.
 
 ## 16. Gambar QR buyer rusak / tidak tampil
 - Cek langsung: buka `https://tokoanda.com/api/manual-qr` di tab baru.

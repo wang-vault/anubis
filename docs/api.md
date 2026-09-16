@@ -39,13 +39,14 @@ sekali → 503 `paymentUnavailable`. Tidak diisi → memakai
 `DEFAULT_PAYMENT_METHOD` / satu-satunya metode aktif.
 Gagal provider → 503 (order ditandai FAILED/EXPIRED agar tidak menggantung).
 
-> **Tampilan checkout ≠ ketersediaan API.** Halaman `/checkout` selalu
+> **Tampilan checkout mengikuti ketersediaan API.** Halaman `/checkout`
 > menampilkan kedua opsi lewat `getCheckoutPaymentMethods()`: Transfer Manual
-> (aktif, default) dan QRIS Otomatis **disabled dengan badge "Ongoing"** —
-> pengajuan QRIS dari UI tidak mungkin. Ketersediaan nyata untuk order dihitung
-> `getAvailablePaymentMethods()` (env YoBasePay + pengaturan manual penjual),
-> sehingga order `YOBASEPAY` tetap bisa dibuat lewat endpoint ini — jalur yang
-> dipakai untuk uji end-to-end QRIS.
+> (aktif, default) dan QRIS Otomatis — yang terakhir **bisa dipilih** bila env
+> YoBasePay terisi, dan ber-badge **"Ongoing"** (disabled) bila belum. Daftar
+> itu membaca sumber yang sama dengan `getAvailablePaymentMethods()` (env
+> YoBasePay + pengaturan manual penjual) yang dipakai
+> `resolvePaymentMethod()`, jadi nilai yang dikirim UI selalu valid. Endpoint
+> ini tetap jalur utama untuk uji end-to-end QRis tanpa browser.
 
 ### GET /api/orders
 Daftar order milik sendiri (maks 30, terbaru dulu).

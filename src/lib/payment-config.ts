@@ -153,16 +153,28 @@ export async function getAvailablePaymentMethods(): Promise<AvailablePaymentMeth
 
 /**
  * Daftar metode pembayaran yang ditampilkan di halaman checkout kepada pembeli.
- * Sesuai kebutuhan operasional toko:
- *  - Pembayaran manual menjadi opsi utama yang aktif untuk pembelian ("opsi manual dulu").
- *  - Opsi QRIS ditampilkan dengan status "ongoing" (disabled, status badge "Ongoing")
- *    sehingga pembeli mengetahui metode QRIS sedang disiapkan dan diarahkan ke Transfer Manual.
+ *
+ * Kedua opsi SELALU ditampilkan supaya pembeli tahu metode apa yang tersedia:
+ *  - Pembayaran manual: opsi utama & default (aktif bila penjual sudah
+ *    mengaktifkan saklar + mengunggah QR).
+ *  - QRIS Otomatis: **bisa dipilih** bila kredensial YoBasePay terisi
+ *    (`YOBASEPAY_API_KEY` + `YOBASEPAY_WEBHOOK_SECRET`). Bila belum terisi,
+ *    opsi ini tampil ber-badge **"Ongoing"** dan tidak bisa dipilih (disabled)
+ *    agar pembeli tidak mengira tokonya rusak — mereka diarahkan ke Transfer
+ *    Manual, persis seperti sebelum integrasi QRIS dibuka.
+ *
+ * Catatan: keputusan "boleh dieksekusi server" tetap di
+ * `getAvailablePaymentMethods()`/`resolvePaymentMethod()`, jadi ketika QRIS
+ * otomatis tampil aktif di UI, server sudah pasti menerimanya (dan
+ * sebaliknya).
  */
 export async function getCheckoutPaymentMethods(): Promise<AvailablePaymentMethod[]> {
+  const env = serverEnv();
   const manual = await getManualPaymentView();
+  const autoReady = yobasepayConfigured(env);
   const list: AvailablePaymentMethod[] = [];
 
-  // 1. Opsi Manual DULU (aktif untuk proses belanja)
+  // 1. Opsi Manual DULU (aktif untuk proses belanja, jadi pilihan default)
   const manualLabel = manual.label?.trim() || "Transfer Manual";
   list.push({
     id: PAYMENT_METHOD_MANUAL,
@@ -171,15 +183,23 @@ export async function getCheckoutPaymentMethods(): Promise<AvailablePaymentMetho
     disabled: !manual.available,
   });
 
-  // 2. Opsi QRIS dibuat status ongoing
-  list.push({
-    id: PAYMENT_METHOD_AUTO,
-    label: "QRIS Otomatis",
-    note: "Metode pembayaran QRIS sedang dalam proses (status ongoing). Silakan gunakan opsi Transfer Manual terlebih dahulu.",
-    disabled: true,
-    isOngoing: true,
-    statusBadge: "Ongoing",
-  });
+  // 2. Opsi QRIS — aktif bila terkonfigurasi, selain itu status ongoing
+  list.push(
+    autoReady
+      ? {
+          id: PAYMENT_METHOD_AUTO,
+          label: "QRIS Otomatis",
+          note: "QR dibuat otomatis · nominal terisi sendiri · status lunas terdeteksi sistem (tanpa konfirmasi penjual).",
+        }
+      : {
+          id: PAYMENT_METHOD_AUTO,
+          label: "QRIS Otomatis",
+          note: "Metode pembayaran QRIS sedang dalam proses (status ongoing). Silakan gunakan opsi Transfer Manual terlebih dahulu.",
+          disabled: true,
+          isOngoing: true,
+          statusBadge: "Ongoing",
+        },
+  );
 
   return list;
 }

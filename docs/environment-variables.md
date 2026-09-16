@@ -31,7 +31,7 @@ Klasifikasi:
 | `NEXT_PUBLIC_SUPABASE_STORE_URL` | 🌐 | ✔ | Supabase #2 → Settings → API → Project URL | `https://mnopqrstuvwx.supabase.co` |
 | `SUPABASE_STORE_SERVICE_ROLE_KEY` | 🔒🖥 | ✔ | Supabase #2 → API → `service_role` | JWT panjang |
 | `NEXT_PUBLIC_SUPABASE_STORE_ANON_KEY` | 🌐 | — (opsional) | Supabase #2 → `anon`. MVP tidak membacanya dari browser (semua akses toko via server) — kosongkan kecuali nanti ingin query katalog langsung dari client | sama formatnya |
-| `DEFAULT_PAYMENT_METHOD` | 🖥 | — (default `MANUAL`) | Metode default saat order dibuat TANPA field `paymentMethod` (jalur API): `MANUAL` / `YOBASEPAY`. Toleran kapitalisasi; nilai tak dikenal → `MANUAL`. Halaman checkout sendiri selalu default ke Transfer Manual (opsi QRIS tampil "Ongoing", non-aktif) | `MANUAL` |
+| `DEFAULT_PAYMENT_METHOD` | 🖥 | — (default `MANUAL`) | Metode default saat order dibuat TANPA field `paymentMethod` (jalur API): `MANUAL` / `YOBASEPAY`. Toleran kapitalisasi; nilai tak dikenal → `MANUAL`. Halaman checkout sendiri selalu default ke Transfer Manual bila tersedia (opsi QRIS tampil "Ongoing" hanya saat env YoBasePay belum terisi) | `MANUAL` |
 | `MANUAL_PAYMENT_ENABLED` | 🖥 | — (default `true`) | Saklar global metode transfer manual (saklar kedua ada di `/admin/settings`). Nilai tak dikenal → `true` | `true` / `false` |
 | `MANUAL_PAYMENT_QR_IMAGE_URL` | 🖥 | — (opsional) | URL https gambar QR statis bila kamu host sendiri; mengalahkan gambar yang di-upload dari dashboard | `https://cdn.anda/qris.png` |
 | `YOBASEPAY_API_KEY` | 🔒🖥 | — (kosong = integrasi QRIS otomatis nonaktif) | Dashboard YoBasePay → project/API key (dipakai sebagai `apikey`) | sesuai dashboard |
@@ -49,11 +49,13 @@ Klasifikasi:
 > Bila dua-duanya mati, `/checkout` menampilkan "Pembayaran belum tersedia"
 > (bukan error). Detail: `docs/manual-payment.md`.
 >
-> Catatan status produk saat ini: di halaman checkout opsi "QRIS Otomatis"
-> selalu ditampilkan **disabled dengan badge "Ongoing"** (dibangun
-> `getCheckoutPaymentMethods()`), sehingga pembeli UI efektif hanya bisa
-> memakai Transfer Manual. Ketersediaan QRIS level server (webhook, polling,
-> `POST /api/orders`) tetap mengikuti env `YOBASEPAY_*` — lihat baris di atas.
+> Catatan tampilan checkout: opsi "QRIS Otomatis" **bisa dipilih buyer** bila
+> `YOBASEPAY_API_KEY` **dan** `YOBASEPAY_WEBHOOK_SECRET` terisi; bila salah
+> satu kosong, opsi itu ditampilkan **disabled dengan badge "Ongoing"**
+> (dibangun `getCheckoutPaymentMethods()`) dan pembeli memakai Transfer
+> Manual. Sumbernya sama dengan ketersediaan level server (webhook, polling,
+> `POST /api/orders`) — lihat baris di atas — jadi keduanya tidak pernah
+> bertentangan.
 
 ## Aturan yang ditegakkan proyek
 

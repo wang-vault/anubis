@@ -57,8 +57,8 @@ export default async function AdminPaymentSettingsPage({ searchParams }: Props) 
             label="QRIS Otomatis (YoBasePay)"
             detail={
               autoConfigured
-                ? `Terkonfigurasi · status di checkout: ONGOING (pembeli menggunakan Transfer Manual terlebih dahulu).`
-                : "Status saat ini: ONGOING (sedang disiapkan). Pembeli di checkout diarahkan menggunakan opsi Transfer Manual terlebih dahulu."
+                ? "Terkonfigurasi · dapat dipilih pembeli di halaman checkout (berdampingan dengan Transfer Manual)."
+                : "Status saat ini: ONGOING (sedang disiapkan) — di checkout tampil ber-badge “Ongoing” dan belum bisa dipilih; pembeli memakai Transfer Manual. Isi YOBASEPAY_API_KEY + YOBASEPAY_WEBHOOK_SECRET lalu redeploy untuk membukanya."
             }
           />
         </div>

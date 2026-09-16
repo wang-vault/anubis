@@ -119,10 +119,12 @@ diganti kapan pun tanpa deploy ulang.
 
 Di panel **Status saat ini** kamu akan melihat dua baris: "Transfer Manual
 (QRIS statis)" (✓ tampil di checkout / ✗ dengan alasan `no_qr`/`disabled`) dan
-"QRIS Otomatis (YoBasePay)" yang selama masa persiapan selalu berbunyi
-**ONGOING** — artinya di halaman checkout opsi QRIS ditampilkan ber-badge
-"Ongoing" tetapi tidak bisa dipilih buyer, dan semua pembelian otomatis
-mengalir ke Transfer Manual. Ini perilaku bawaan yang disengaja, bukan error.
+"QRIS Otomatis (YoBasePay)" yang mengikuti env. **Terisi** → "dapat dipilih
+pembeli di halaman checkout" (berdampingan dengan Transfer Manual, yang tetap
+jadi default). **Kosong** → **ONGOING**: di checkout opsinya ber-badge
+"Ongoing", tidak bisa dipilih buyer, dan semua pembelian mengalir ke Transfer
+Manual. Untuk membukanya: isi `YOBASEPAY_API_KEY` +
+`YOBASEPAY_WEBHOOK_SECRET` lalu redeploy — tidak ada perubahan kode.
 
 **Harian (verifikasi)**:
 1. Telegram mengirim **🧾 KLAIM TRANSFER MANUAL** (order, nominal ditagihkan,

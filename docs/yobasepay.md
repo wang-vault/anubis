@@ -39,13 +39,13 @@ dashboard akun Anda (menu Docs) dan sesuaikan HANYA file
 > pembayaran manual. Setelah aktif, isi kembali kedua variabel itu —
 > integrasinya hidup tanpa perubahan kode (webhook, cek status, order via API).
 >
-> **Catatan status produk:** sejak integrasi manual, opsi "QRIS Otomatis" di
-> halaman `/checkout` **selalu** ditampilkan dengan badge **"Ongoing"** dan
-> disabled (lihat `getCheckoutPaymentMethods()` di
-> `src/lib/payment-config.ts`) — pembeli diarahkan memakai Transfer Manual.
-> Mengisi credential YoBasePay TIDAK mengubah tampilan itu; yang aktif adalah
-> sisi server-nya. Untuk menguji alur QRIS dari sisi buyer, buat order lewat
-> `POST /api/orders` dengan `"paymentMethod": "YOBASEPAY"` (§5).
+> **Catatan tampilan checkout:** opsi "QRIS Otomatis" di halaman `/checkout`
+> mengikuti credential (lihat `getCheckoutPaymentMethods()` di
+> `src/lib/payment-config.ts`). Keduanya terisi → opsi **bisa dipilih buyer**
+> dan order QRIS lahir langsung dari UI. Salah satu kosong → opsi tampil
+> ber-badge **"Ongoing"** dan disabled; pembeli memakai Transfer Manual, dan
+> untuk uji QRIS dari sisi buyer pakai `POST /api/orders` dengan
+> `"paymentMethod": "YOBASEPAY"` (§5 — balas 409 selama env masih kosong).
 
 ## 1. Buat akun & project
 
@@ -195,8 +195,9 @@ Tiga hal yang paling sering terlewat:
 1. **Kedua secret wajib terisi.** `yobasepayConfigured()` menuntut API key **dan**
    webhook secret; bila salah satu kosong, metode QRIS **tidak tersedia** —
    `createPayment` ditolak dengan `provider_disabled` dan `POST /api/orders`
-   `paymentMethod=YOBASEPAY` balas 409 ("status ongoing"). Di UI checkout opsi
-   ini memang selalu tampil disabled ber-badge "Ongoing".
+   `paymentMethod=YOBASEPAY` balas 409 ("status ongoing"), dan di UI checkout
+   opsi ini tampil disabled ber-badge "Ongoing". Terisi keduanya → opsi itu
+   bisa dipilih buyer.
 2. **`NEXT_PUBLIC_SITE_URL` = Domain Lock.** Nilai itu yang dikirim sebagai
    header `Origin`/`Referer` ke provider (`yobasepay.ts`). Masih
    `http://localhost:3000` padahal sudah produksi → createpayment ditolak.
@@ -215,9 +216,10 @@ Tiga hal yang paling sering terlewat:
 
 ## 5. Test payment end-to-end
 
-> Karena opsi QRIS di halaman checkout saat ini tampil **"Ongoing"
-> (disabled)**, order QRIS dibuat lewat API dengan cookie session buyer uji —
-> bukan lewat form checkout:
+> Resep ini berguna untuk uji QRIS dari server, dan **wajib** dipakai bila
+> env belum terisi (saat itu opsi QRIS di checkout tampil **"Ongoing" /
+> disabled**). Bila env sudah terisi, order yang sama juga bisa dibuat lewat
+> form checkout dengan memilih "QRIS Otomatis":
 >
 > ```bash
 > curl -sS -X POST "https://tokoanda.com/api/orders" \

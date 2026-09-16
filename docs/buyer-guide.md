@@ -29,8 +29,8 @@ Menu **Produk** atau beranda. Produk dengan label **● Tersedia** bisa dibeli.
      kamu transfer sendiri lalu konfirmasi di halaman bayar. Ini opsi utama:
      selalu diurutkan pertama dan sudah terpilih secara default.
    - **QRIS Otomatis** — QR dibuat sistem, nominal terkunci, status lunas
-     otomatis. Selama masih ber-badge **"Ongoing"** opsi ini **belum bisa
-     dipilih** (sedang disiapkan penjual) — gunakan Transfer Manual.
+     otomatis. Bila opsi ini ber-badge **"Ongoing"** artinya sedang disiapkan
+     penjual dan **belum bisa dipilih** — gunakan Transfer Manual.
 4. Pastikan **nomor WhatsApp** yang tertera benar — boleh langsung diperbaiki
    di form checkout.
 5. **Buat Pesanan & Lanjut Bayar** — total dihitung otomatis oleh sistem sesuai
