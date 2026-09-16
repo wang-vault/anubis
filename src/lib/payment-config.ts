@@ -3,6 +3,7 @@ import { ErrorCodes, HttpError } from "@/lib/api";
 import { serverEnv, yobasepayConfigured } from "@/lib/env";
 import { log } from "@/lib/logger";
 import { storeDb } from "@/lib/supabase/server";
+import { MANUAL_PAYMENT_MIGRATION_FILE, checkStoreSchema } from "@/lib/store-schema";
 import {
   PAYMENT_METHOD_AUTO,
   PAYMENT_METHOD_MANUAL,
@@ -48,10 +49,12 @@ export interface ManualSettingsRow {
 
 /** Ringkasan aman untuk UI (tanpa isi gambar). */
 export interface ManualPaymentView {
-  /** Metode manual bisa dipakai buyer? (enabled + QR tersedia) */
+  /** Metode manual bisa dipakai buyer? (enabled + QR tersedia + skema siap) */
   available: boolean;
+  /** Kolom pembayaran manual ada di database (migrasi 002 sudah dijalankan). */
+  schemaReady: boolean;
   /** Kenapa tidak tersedia — untuk pesan di dashboard admin. */
-  reason: "disabled" | "no_qr" | null;
+  reason: "disabled" | "no_qr" | "schema_missing" | null;
   /** Saklar di DB (form /admin/settings). */
   isEnabled: boolean;
   /** Saklar env MANUAL_PAYMENT_ENABLED. */
@@ -87,7 +90,7 @@ export async function getManualPaymentSettings(): Promise<ManualSettingsRow | nu
 
 export async function getManualPaymentView(): Promise<ManualPaymentView> {
   const env = serverEnv();
-  const row = await getManualPaymentSettings();
+  const [row, schema] = await Promise.all([getManualPaymentSettings(), checkStoreSchema()]);
 
   const label = row?.label?.trim() || "Transfer Manual (QRIS)";
   const accountName = row?.account_name ?? "";
@@ -105,10 +108,20 @@ export async function getManualPaymentView(): Promise<ManualPaymentView> {
   const isEnabled = row?.is_enabled ?? false;
   const envEnabled = env.MANUAL_PAYMENT_ENABLED;
   const enabled = envEnabled && isEnabled;
-  const reason: ManualPaymentView["reason"] = !enabled ? "disabled" : qrSrc ? null : "no_qr";
+  // Kolom pembayaran manual (payment_method, manual_*) harus ada di database;
+  // tanpa itu order manual tidak bisa disimpan maupun diverifikasi.
+  const schemaReady = schema.ready;
+  const reason: ManualPaymentView["reason"] = !schemaReady
+    ? "schema_missing"
+    : !enabled
+      ? "disabled"
+      : qrSrc
+        ? null
+        : "no_qr";
 
   return {
-    available: enabled && qrSrc !== null,
+    available: schemaReady && enabled && qrSrc !== null,
+    schemaReady,
     reason,
     isEnabled,
     envEnabled,
@@ -179,7 +192,9 @@ export async function getCheckoutPaymentMethods(): Promise<AvailablePaymentMetho
   list.push({
     id: PAYMENT_METHOD_MANUAL,
     label: manualLabel,
-    note: "Transfer mandiri via rekening/e-wallet/QRIS statis penjual · konfirmasi di halaman pembayaran.",
+    note: manual.schemaReady
+      ? "Transfer mandiri via rekening/e-wallet/QRIS statis penjual · konfirmasi di halaman pembayaran."
+      : "Metode ini sedang tidak tersedia. Silakan hubungi penjual.",
     disabled: !manual.available,
   });
 
@@ -231,12 +246,23 @@ export async function resolvePaymentMethod(requested: unknown): Promise<PaymentM
 
   const chosen = normalizePaymentMethod(requested, fallback);
   if (!available.some((m) => m.id === chosen)) {
+    const schema = await checkStoreSchema();
+    if (!schema.ready) {
+      // Pesan untuk buyer tetap umum; detail teknis hanya ke log.
+      log.warn("payment_method_unavailable_schema_gap", {
+        chosen,
+        reason: schema.reason,
+        migration: MANUAL_PAYMENT_MIGRATION_FILE,
+      });
+    }
     throw new HttpError(
       409,
       ErrorCodes.conflict,
       chosen === PAYMENT_METHOD_AUTO
         ? "Pembayaran QRIS otomatis sedang dalam proses (status ongoing). Silakan gunakan opsi Transfer Manual terlebih dahulu."
-        : "Pembayaran manual belum dikonfigurasi penjual. Pilih metode lain.",
+        : schema.ready
+          ? "Pembayaran manual belum dikonfigurasi penjual. Pilih metode lain."
+          : "Pembayaran manual sedang tidak tersedia. Silakan hubungi penjual.",
     );
   }
   return chosen;

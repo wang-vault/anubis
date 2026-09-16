@@ -28,6 +28,11 @@ Lakukan dulu supaya punya URL + keys (di **dashboard** https://supabase.com):
 3. Di masing-masing project: **SQL Editor → New query** → paste isi file:
    - Supabase #1 (account) ← `supabase/account/001_schema.sql` → Run
    - Supabase #2 (store) ← `supabase/store/001_schema.sql` → Run
+   - Supabase #2 (store) ← `supabase/store/002_manual_payment.sql` → Run
+     (migrasi pembayaran manual; idempoten. **Wajib** bila project #2 sudah
+     pernah menjalankan `001_schema.sql` versi lama — tanpa itu aplikasi gagal
+     dengan `column orders.payment_method does not exist`, lihat
+     `docs/troubleshooting.md` §18.)
    (Penjelasan detail, konfigurasi Auth & email: `docs/supabase-account.md`,
    `docs/supabase-store.md`.)
 

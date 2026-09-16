@@ -6,6 +6,8 @@ Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 ## 0. Pra-syarat
 - [ ] `npm run typecheck`, `npm run build`, `npm test` hijau
 - [ ] 2 Supabase terpasang + SQL dijalankan (cek trigger & RLS — lihat docs masing-masing)
+- [ ] Supabase #2 sudah menjalankan `002_manual_payment.sql` (kolom `orders.payment_method` ada — bila tidak, `/admin` menampilkan banner migrasi)
+- [ ] [AUTO] Database tanpa kolom pembayaran manual tidak menjatuhkan `/admin` (`test/schema-gap-admin.test.ts`)
 - [ ] Env Vercel lengkap + sudah redeploy setelah perubahan
 
 ## 1. AUTH

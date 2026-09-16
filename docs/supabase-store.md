@@ -13,7 +13,17 @@ region Singapore. Ambil **URL**, **anon**, **service_role** →
 
 ## 2. Jalankan SQL
 
-SQL Editor → paste `supabase/store/001_schema.sql` → Run. Hasil:
+SQL Editor → paste `supabase/store/001_schema.sql` → Run, lalu paste
+`supabase/store/002_manual_payment.sql` → Run.
+
+File `002` adalah migrasi pembayaran manual (kolom `payment_method`,
+`manual_*`, tabel `manual_payment_settings`). Untuk project baru isinya sudah
+tercakup `001` sehingga `002` menjadi no-op; untuk project lama `002` inilah
+yang menambahkan kolomnya. Keduanya idempoten (aman diulang). Bila `002`
+dilewati, aplikasi gagal dengan `column orders.payment_method does not exist`
+(`docs/troubleshooting.md` §18).
+
+Hasil:
 
 ### Tabel `products`
 | Kolom | Ket |

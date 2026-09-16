@@ -204,3 +204,55 @@ tersedia — gunakan tombol Buka Halaman Pembayaran".
   ID) — kegagalan kirim TIDAK membatalkan klaim, antrian di dashboard tetap ada.
 - Order manual yang sudah diklaim sengaja **tidak** di-expire otomatis; yang
   belum diklaim tetap kadaluarsa lewat `payment_expired_at`.
+
+## 18. "Application error" di `/admin` — `column orders.payment_method does not exist`
+
+Gejala persisnya (Vercel → Logs):
+
+```json
+{"level":"error","event":"admin_order_list_failed","message":"column orders.payment_method does not exist"}
+{"level":"error","event":"admin_stats_failed","message":""}
+```
+
+…dan browser menampilkan *"Application error: a server-side exception has
+occurred (see the server logs for more information)"* saat membuka `/admin`.
+
+- **Penyebab**: database Supabase #2 **belum punya kolom pembayaran manual**
+  (`payment_method`, `manual_*`) padahal kode aplikasi sudah memakainya —
+  `supabase/store/002_manual_payment.sql` belum dijalankan di project yang
+  skemanya dibuat dari `001_schema.sql` versi lama. Error Postgres-nya
+  SQLSTATE **42703**. Varian lain: kolomnya sudah ada tetapi **schema cache
+  PostgREST basi** (kolom dihapus / database di-restore) → pesan yang sama.
+- **Kenapa ada baris `admin_stats_failed` dengan `message` kosong?** Statistik
+  dashboard memakai query `count` (`head: true`) = request **HEAD**, dan
+  respons HEAD tidak punya body, jadi `error.message` dari Supabase berupa
+  string kosong. Sejak perbaikan, log-nya menyertakan nama statistik +
+  `code` (`{"stat":"needVerification","code":"42703", …}`).
+- **Cek** (Supabase #2 → SQL Editor) — harus mengembalikan **10 baris**:
+  ```sql
+  select column_name from information_schema.columns
+  where table_schema = 'public' and table_name = 'orders'
+    and column_name in (
+      'charged_amount','payment_method','manual_claim_at','manual_claim_note',
+      'manual_claim_reference','manual_claim_notified_at','manual_reviewed_at',
+      'manual_reviewed_by','manual_review_status','manual_review_note')
+  order by column_name;
+  ```
+  Jalan pintas: buka `/admin` — bila skema belum siap, ada **banner merah**
+  berisi SQL yang tinggal disalin.
+- **Solusi** (satu langkah, tanpa deploy ulang):
+  1. Supabase #2 → **SQL Editor → New query** → paste isi
+     `supabase/store/002_manual_payment.sql` (atau SQL dari banner) → **Run**.
+     Idempoten: tidak menghapus/mengubah data yang ada.
+  2. Bila error masih muncul padahal kolom sudah ada, muat ulang schema cache:
+     `notify pgrst, 'reload schema';` (atau Dashboard → Project Settings → API
+     → *Reload schema cache*).
+  3. Tunggu maksimal ±1 menit (aplikasi memeriksa ulang skema tiap 60 detik
+     per instance) lalu muat ulang `/admin`.
+- **Selama belum diperbaiki**, aplikasi sengaja *degrade* alih-alih mati:
+  dashboard tetap tampil dengan antrian "Klaim transfer manual" kosong, kartu
+  **Perlu verifikasi** 0, checkout menolak Transfer Manual dengan pesan
+  "Pembayaran manual sedang tidak tersedia" (HTTP 503), dan order QRIS
+  Otomatis tetap bisa dibuat (kolom `payment_method` tidak dikirim saat
+  insert). Log penandanya: `store_schema_outdated`,
+  `admin_manual_queue_unavailable`, `admin_order_list_schema_gap`.

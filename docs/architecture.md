@@ -90,7 +90,8 @@ menggantung, buyer bisa order ulang.
 + trigger `handle_new_user` (isi profil saat signup), trigger anti-ubah-role,
 updated_at; RLS: select/update baris sendiri saja; anon: tidak ada akses.
 
-**Supabase #2** (lihat `supabase/store/001_schema.sql`)
+**Supabase #2** (lihat `supabase/store/001_schema.sql` +
+`supabase/store/002_manual_payment.sql`)
 - `products`: `id · name · description · price(bigint Rp) · image_url · is_active · timestamps`
 - `orders`: `id · order_code(unique) · account_id · product_id(FK) ·
   product_name_snapshot · unit_price_snapshot · quantity · total_amount ·

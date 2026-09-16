@@ -23,6 +23,15 @@ import {
 import { generateOrderCode } from "@/lib/order-code";
 import { amountWithinTolerance } from "@/lib/money";
 import { log } from "@/lib/logger";
+import {
+  BASE_ORDER_SELECT,
+  MANUAL_PAYMENT_MIGRATION_FILE,
+  describeDbError,
+  isMissingColumnError,
+  isManualPaymentSchemaReady,
+  normalizeOrderRow,
+  resetStoreSchemaCache,
+} from "@/lib/store-schema";
 import { serverEnv } from "@/lib/env";
 import type { AuthContext } from "@/lib/authz";
 import type { AdminOrderView, OrderRow, OrderStatus, ProductRow } from "@/lib/types";
@@ -45,6 +54,12 @@ const PROVIDER_CHECK_THROTTLE_MS = 10_000;
 const EXPIRY_GRACE_MS = 30_000;
 
 export type PaidSource = "webhook" | "polling" | "manual";
+
+/** Hasil query daftar orders (bentuk yang dipakai semua jalur fallback skema). */
+interface OrdersQueryResult {
+  data: OrderRow[] | null;
+  error: { message: string; code?: string } | null;
+}
 
 // ---------------------------------------------------------------------------
 // BUYER — create order + payment
@@ -99,31 +114,62 @@ export async function createOrderForBuyer(
   //     (env + pengaturan penjual), bukan nilai dari klien.
   const method = await resolvePaymentMethod(input.paymentMethod);
 
+  // 2c. Skema database: pembayaran MANUAL butuh kolom manual_* di orders.
+  //     Bila penjual belum menjalankan migrasi, tolak dengan pesan jelas —
+  //     jangan membuat order yang tidak akan pernah bisa diverifikasi.
+  const schemaReady = await isManualPaymentSchemaReady();
+  if (!schemaReady && method === PAYMENT_METHOD_MANUAL) {
+    log.error("manual_payment_schema_missing", {
+      message: "kolom pembayaran manual belum ada di database store",
+      migration: MANUAL_PAYMENT_MIGRATION_FILE,
+    });
+    throw new HttpError(
+      503,
+      ErrorCodes.paymentUnavailable,
+      "Pembayaran manual sedang tidak tersedia. Silakan hubungi penjual.",
+    );
+  }
+
   // 3. Insert order PENDING dengan kode publik unik (retry jika tabrakan).
   let order: OrderRow | null = null;
   for (let attempt = 0; attempt < 5 && !order; attempt++) {
+    const payload: Record<string, unknown> = {
+      order_code: generateOrderCode(),
+      account_id: ctx.user.id,
+      product_id: product.id,
+      product_name_snapshot: product.name,
+      unit_price_snapshot: product.price,
+      quantity: input.quantity,
+      total_amount: total,
+      payment_status: "PENDING",
+      order_status: "PENDING",
+      buyer_name_snapshot: profile.name,
+      buyer_whatsapp_snapshot: input.whatsappOverride ?? profile.whatsapp,
+      buyer_email_snapshot: ctx.user.email ?? profile.email,
+    };
+    // Kolom ini baru ada setelah migrasi 002 — jangan dikirim bila belum ada,
+    // kalau tidak insert gagal dengan 42703 dan checkout mati total.
+    if (schemaReady) payload.payment_method = method;
+
     const { data, error } = await db
       .from("orders")
-      .insert({
-        order_code: generateOrderCode(),
-        account_id: ctx.user.id,
-        product_id: product.id,
-        product_name_snapshot: product.name,
-        unit_price_snapshot: product.price,
-        quantity: input.quantity,
-        total_amount: total,
-        payment_method: method,
-        payment_status: "PENDING",
-        order_status: "PENDING",
-        buyer_name_snapshot: profile.name,
-        buyer_whatsapp_snapshot: input.whatsappOverride ?? profile.whatsapp,
-        buyer_email_snapshot: ctx.user.email ?? profile.email,
-      })
+      .insert(payload)
       .select("*")
       .single<OrderRow>();
     if (!error) {
-      order = data;
+      order = normalizeOrderRow(data);
       break;
+    }
+    if (isMissingColumnError(error)) {
+      // Probe skema ternyata basi (kolom hilang setelah dicek) → buang cache
+      // supaya permintaan berikutnya memeriksa ulang, lalu beri pesan jelas.
+      resetStoreSchemaCache();
+      log.error("order_insert_schema_gap", { message: error.message, method });
+      throw new HttpError(
+        503,
+        ErrorCodes.paymentUnavailable,
+        "Pembayaran sedang tidak tersedia. Silakan hubungi penjual.",
+      );
     }
     if (error.code !== "23505") {
       log.error("order_insert_failed", { message: error.message });
@@ -173,20 +219,21 @@ export async function createOrderForBuyer(
         "Gagal menyiapkan pembayaran manual. Silakan coba lagi.",
       );
     }
+    const manualRow = normalizeOrderRow(manualOrder);
     log.info("order_created", {
-      orderCode: manualOrder.order_code,
+      orderCode: manualRow.order_code,
       method,
       total,
-      charged: manualOrder.charged_amount,
+      charged: manualRow.charged_amount,
     });
     return {
-      order: manualOrder,
+      order: manualRow,
       paymentMethod: method,
       payment: {
         paymentId: null,
         paymentUrl: null,
         qrImageUrl: manual.qrSrc,
-        expiresAt: manualOrder.payment_expired_at,
+        expiresAt: manualRow.payment_expired_at,
       },
     };
   }
@@ -253,14 +300,15 @@ export async function createOrderForBuyer(
     );
   }
 
+  const updatedRow = normalizeOrderRow(updated);
   log.info("order_created", {
-    orderCode: updated.order_code,
+    orderCode: updatedRow.order_code,
     method,
     total,
     charged: created.chargedAmount,
   });
   return {
-    order: updated,
+    order: updatedRow,
     paymentMethod: method,
     payment: {
       paymentId: created.paymentId,
@@ -277,17 +325,35 @@ export async function createOrderForBuyer(
 
 export async function listOrdersForBuyer(accountId: string, limit = 30): Promise<OrderRow[]> {
   const db = await storeDb();
-  const { data, error } = await db
-    .from("orders")
-    .select("*")
-    .eq("account_id", accountId)
-    .order("created_at", { ascending: false })
-    .limit(limit);
+  // Catatan tipe: daftar kolom berupa variabel → supabase-js tidak bisa
+  // menebak bentuk baris (hanya literal "*" yang di-infer), jadi hasilnya
+  // di-cast eksplisit ke OrderRow.
+  const run = async (columns: string): Promise<OrdersQueryResult> => {
+    const res = await db
+      .from("orders")
+      .select(columns)
+      .eq("account_id", accountId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    return { data: res.data as unknown as OrderRow[] | null, error: res.error };
+  };
+
+  let { data, error } = await run("*");
+  // `select=*` bisa ditolak bila schema cache PostgREST menyebut kolom yang
+  // tidak ada di tabel → ulang dengan daftar kolom dasar (tanpa kolom manual).
+  if (error && isMissingColumnError(error)) {
+    resetStoreSchemaCache();
+    log.warn("order_list_schema_gap", {
+      message: describeDbError(error),
+      migration: MANUAL_PAYMENT_MIGRATION_FILE,
+    });
+    ({ data, error } = await run(BASE_ORDER_SELECT));
+  }
   if (error) {
-    log.error("order_list_failed", { message: error.message });
+    log.error("order_list_failed", { message: describeDbError(error), code: error.code ?? null });
     throw new HttpError(500, ErrorCodes.internal, "Gagal memuat daftar order.");
   }
-  return (data ?? []) as OrderRow[];
+  return ((data ?? []) as OrderRow[]).map(normalizeOrderRow);
 }
 
 export async function getOrderByCodeForBuyer(
@@ -302,7 +368,7 @@ export async function getOrderByCodeForBuyer(
     .eq("account_id", accountId)
     .maybeSingle<OrderRow>();
   if (error) log.error("order_get_failed", { message: error.message });
-  return data;
+  return data ? normalizeOrderRow(data) : null;
 }
 
 /** Perbaiki nomor WhatsApp profil (dipakai sebelum checkout). */
@@ -321,7 +387,7 @@ export async function updateBuyerWhatsapp(accountId: string, whatsapp: string) {
 
 async function loadOrderById(db: SupabaseClient, id: string): Promise<OrderRow | null> {
   const { data } = await db.from("orders").select("*").eq("id", id).maybeSingle<OrderRow>();
-  return data;
+  return data ? normalizeOrderRow(data) : null;
 }
 
 function scheduleTelegramNotify(order: OrderRow): void {
@@ -879,40 +945,76 @@ export async function listAdminOrders(filter: {
   manualClaim?: boolean;
 }): Promise<AdminOrderView[]> {
   const db = await storeDb();
-  let query = db.from("orders").select("*").order("created_at", { ascending: false }).limit(200);
-  if (filter.status) query = query.eq("order_status", filter.status);
-  if (filter.manualClaim) {
-    query = query
-      .eq("payment_method", PAYMENT_METHOD_MANUAL)
-      .eq("payment_status", "PENDING")
-      .not("manual_claim_at", "is", null)
-      .order("manual_claim_at", { ascending: true });
+
+  // Antrian verifikasi manual menyaring kolom payment_method/manual_claim_at.
+  // Bila database belum di-migrasi, kembalikan daftar kosong (dashboard tetap
+  // tampil) alih-alih melempar 500 yang membuat seluruh halaman jadi
+  // "Application error". Banner di /admin menampilkan SQL yang harus dijalankan.
+  const supportsManual = filter.manualClaim ? await isManualPaymentSchemaReady() : true;
+  if (filter.manualClaim && !supportsManual) {
+    log.warn("admin_manual_queue_unavailable", {
+      reason: "kolom pembayaran manual belum ada di database store",
+      migration: MANUAL_PAYMENT_MIGRATION_FILE,
+    });
+    return [];
   }
-  if (filter.q) {
-    const { sanitizeAdminSearchQuery } = await import("@/lib/validation");
-    const cleaned = sanitizeAdminSearchQuery(filter.q);
-    if (cleaned) {
-      // Escape sisa metakarakter LIKE; karakter filter PostgREST sudah dibuang.
-      const like = `%${cleaned.replace(/[%_]/g, "")}%`;
-      // bungkus nilai dengan kutip ganda agar koma/spasi tidak memecah .or()
-      const quoted = `"${like.replace(/"/g, "")}"`;
-      query = query.or(
-        `order_code.ilike.${quoted},buyer_name_snapshot.ilike.${quoted},product_name_snapshot.ilike.${quoted}`,
-      );
+
+  const runQuery = async (columns: string, withManualFilters: boolean): Promise<OrdersQueryResult> => {
+    let query = db.from("orders").select(columns).order("created_at", { ascending: false }).limit(200);
+    if (filter.status) query = query.eq("order_status", filter.status);
+    if (withManualFilters) {
+      query = query
+        .eq("payment_method", PAYMENT_METHOD_MANUAL)
+        .eq("payment_status", "PENDING")
+        .not("manual_claim_at", "is", null)
+        .order("manual_claim_at", { ascending: true });
     }
+    if (filter.q) {
+      const { sanitizeAdminSearchQuery } = await import("@/lib/validation");
+      const cleaned = sanitizeAdminSearchQuery(filter.q);
+      if (cleaned) {
+        // Escape sisa metakarakter LIKE; karakter filter PostgREST sudah dibuang.
+        const like = `%${cleaned.replace(/[%_]/g, "")}%`;
+        // bungkus nilai dengan kutip ganda agar koma/spasi tidak memecah .or()
+        const quoted = `"${like.replace(/"/g, "")}"`;
+        query = query.or(
+          `order_code.ilike.${quoted},buyer_name_snapshot.ilike.${quoted},product_name_snapshot.ilike.${quoted}`,
+        );
+      }
+    }
+    const res = await query;
+    return { data: res.data as unknown as OrderRow[] | null, error: res.error };
+  };
+
+  let { data, error } = await runQuery("*", supportsManual);
+
+  // Jaring pengaman kedua: skema bisa tidak cocok walau probe lolos (kolom
+  // dihapus setelah dicek, atau schema cache PostgREST basi sehingga `select=*`
+  // ikut menyebut kolom yang tidak ada). Ulangi dengan daftar kolom dasar
+  // tanpa filter manual sebelum menyerah dengan 500.
+  if (error && isMissingColumnError(error)) {
+    resetStoreSchemaCache();
+    log.warn("admin_order_list_schema_gap", {
+      message: describeDbError(error),
+      migration: MANUAL_PAYMENT_MIGRATION_FILE,
+    });
+    ({ data, error } = await runQuery(BASE_ORDER_SELECT, false));
   }
-  const { data, error } = await query;
+
   if (error) {
-    log.error("admin_order_list_failed", { message: error.message });
+    log.error("admin_order_list_failed", {
+      message: describeDbError(error),
+      code: error.code ?? null,
+    });
     throw new HttpError(500, ErrorCodes.internal, "Gagal memuat daftar order.");
   }
-  return (data ?? []) as AdminOrderView[];
+  return ((data ?? []) as AdminOrderView[]).map(normalizeOrderRow);
 }
 
 export async function getAdminOrder(orderId: string): Promise<AdminOrderView | null> {
   const db = await storeDb();
   const { data } = await db.from("orders").select("*").eq("id", orderId).maybeSingle<AdminOrderView>();
-  return data;
+  return data ? normalizeOrderRow(data) : null;
 }
 
 /** Cari order via UUID internal ATAU order_code publik (untuk admin). */
@@ -925,7 +1027,7 @@ export async function findOrderByCodeOrId(codeOrId: string): Promise<AdminOrderV
     .select("*")
     .eq(column, codeOrId)
     .maybeSingle<AdminOrderView>();
-  return data;
+  return data ? normalizeOrderRow(data) : null;
 }
 
 export async function adminTransition(
@@ -990,6 +1092,18 @@ export async function getAdminStats(): Promise<AdminStats> {
   const dayStart = jakartaDayStartISO();
   const monthStart = jakartaMonthStartISO();
 
+  // Statistik "perlu verifikasi" menyaring kolom pembayaran manual: dilewati
+  // (dianggap 0) bila database belum di-migrasi, supaya dashboard tetap tampil.
+  const supportsManual = await isManualPaymentSchemaReady();
+  const manualQueueQuery = supportsManual
+    ? db
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .eq("payment_method", PAYMENT_METHOD_MANUAL)
+        .eq("payment_status", "PENDING")
+        .not("manual_claim_at", "is", null)
+    : null;
+
   const [a, b, c, d, e, f, g] = await Promise.all([
     db.from("orders").select("id", { count: "exact", head: true }).gte("created_at", dayStart),
     db.from("orders").select("id", { count: "exact", head: true }).eq("order_status", "PAID"),
@@ -997,15 +1111,26 @@ export async function getAdminStats(): Promise<AdminStats> {
     db.from("orders").select("id", { count: "exact", head: true }).eq("order_status", "PENDING"),
     db.from("orders").select("id", { count: "exact", head: true }).eq("order_status", "DONE").gte("updated_at", dayStart),
     db.from("orders").select("total_amount").in("payment_status", ["PAID"]).gte("paid_at", monthStart),
-    db
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .eq("payment_method", PAYMENT_METHOD_MANUAL)
-      .eq("payment_status", "PENDING")
-      .not("manual_claim_at", "is", null),
+    manualQueueQuery,
   ]);
-  for (const r of [a, b, c, d, e, f, g]) {
-    if (r.error) log.error("admin_stats_failed", { message: r.error.message });
+  // Query `count` memakai HEAD → body error kosong, jadi `message` bisa "".
+  // Sertakan nama statistik + kode error agar log tetap bisa dipakai.
+  for (const [stat, r] of [
+    ["ordersToday", a],
+    ["needProcessing", b],
+    ["processing", c],
+    ["pendingPayment", d],
+    ["doneToday", e],
+    ["revenueMonth", f],
+    ["needVerification", g],
+  ] as const) {
+    if (r?.error) {
+      log.error("admin_stats_failed", {
+        stat,
+        message: describeDbError(r.error),
+        code: r.error.code ?? null,
+      });
+    }
   }
   const revenue = ((f.data ?? []) as { total_amount: number }[]).reduce(
     (s, row) => s + Number(row.total_amount),
@@ -1016,7 +1141,7 @@ export async function getAdminStats(): Promise<AdminStats> {
     needProcessing: b.count ?? 0,
     processing: c.count ?? 0,
     pendingPayment: d.count ?? 0,
-    needVerification: g.count ?? 0,
+    needVerification: g?.count ?? 0,
     doneToday: e.count ?? 0,
     revenueMonth: revenue,
   };

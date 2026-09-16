@@ -25,9 +25,42 @@ export interface FakeDb {
   tables: Record<string, Row[]>;
   /** Log ringkas operasi (untuk assert urutan/perilaku). */
   calls: string[];
+  /**
+   * Kolom yang TIDAK ADA di tabel DAN tidak dikenal schema cache PostgREST
+   * (meniru database yang belum di-migrasi) → error PGRST204.
+   */
+  missingColumns: Record<string, string[]>;
+  /**
+   * Kolom yang DIKENAL schema cache PostgREST tetapi tidak ada di tabel
+   * (cache basi: database di-restore / kolom dihapus setelah migrasi).
+   * `select=*` ikut menyebutnya → Postgres menolak: SQLSTATE 42703
+   * "column orders.payment_method does not exist" (error di log produksi).
+   */
+  phantomColumns: Record<string, string[]>;
+}
+
+export interface FakeDbOptions {
+  /** Kolom yang tidak dikenal schema cache, mis. { orders: ["payment_method"] }. */
+  missingColumns?: Record<string, string[]>;
+  /** Kolom "hantu": ada di schema cache, tidak ada di tabel (cache basi). */
+  phantomColumns?: Record<string, string[]>;
+  /** Tabel yang tidak ada sama sekali (meniru schema belum dijalankan). */
+  missingTables?: string[];
 }
 
 type Filter = (row: Row) => boolean;
+
+/**
+ * Bandingkan nilai untuk .gte()/.lte(): angka dibandingkan sebagai angka,
+ * timestamp ISO sebagai waktu (Number("2026-09-16T…") = NaN, jadi harus lewat
+ * Date.parse — tanpa ini filter tanggal diam-diam selalu false).
+ */
+function asComparable(value: unknown): number {
+  const n = Number(value);
+  if (value !== null && value !== "" && !Number.isNaN(n)) return n;
+  const t = Date.parse(String(value));
+  return Number.isNaN(t) ? NaN : t;
+}
 
 const DEFAULTS: Record<string, Row> = {
   orders: {
@@ -94,17 +127,87 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
     return t;
   }
 
-  select(_cols?: string, opts?: { count?: "exact" | "planned"; head?: boolean }): this {
+  /** Kolom yang tidak dikenal schema cache (database belum di-migrasi). */
+  private get missing(): Set<string> {
+    return new Set(this.db.missingColumns[this.tableName] ?? []);
+  }
+
+  /** Kolom hantu: dikenal cache, tidak ada di tabel (cache PostgREST basi). */
+  private get phantom(): Set<string> {
+    return new Set(this.db.phantomColumns[this.tableName] ?? []);
+  }
+
+  /** Kolom yang tidak boleh muncul di SQL (tidak ada di tabel). */
+  private absent(col: string): boolean {
+    return this.missing.has(col) || this.phantom.has(col);
+  }
+
+  /**
+   * Daftar kolom pada `select=`: PostgREST menolaknya SEBELUM query jalan bila
+   * kolom tidak dikenal cache → `PGRST204 Could not find the 'x' column of 'y'
+   * in the schema cache`. Kolom hantu lolos dari cache lalu ditolak Postgres.
+   */
+  private failUnknownColumn(col: string): void {
+    if (this.forcedError) return;
+    if (this.phantom.has(col)) this.failPhantomColumn(col);
+    else if (this.missing.has(col)) {
+      this.forcedError = {
+        message: `Could not find the '${col}' column of '${this.tableName}' in the schema cache`,
+        code: "PGRST204",
+      };
+    }
+  }
+
+  /** Postgres menolak SQL yang menyebut kolom tak ada: `42703 … does not exist`. */
+  private failPhantomColumn(col: string): void {
+    if (this.forcedError) return;
+    this.forcedError = {
+      message: `column ${this.tableName}.${col} does not exist`,
+      code: "42703",
+    };
+  }
+
+  /**
+   * Kolom dipakai sebagai filter/urutan. Kolom tak dikenal cache → PGRST204;
+   * kolom hantu → 42703 (persis error di log produksi saat /admin memuat
+   * antrian verifikasi manual).
+   */
+  private failUnknownColumnFilter(col: string): void {
+    if (this.forcedError) return;
+    if (this.phantom.has(col)) this.failPhantomColumn(col);
+    else if (this.missing.has(col)) this.failUnknownColumn(col);
+  }
+
+  /** Buang kolom yang tidak ada dari baris hasil query (efek `select=*`). */
+  private project<T>(row: Row): T {
+    if (this.missing.size === 0 && this.phantom.size === 0) return row as T;
+    const out: Row = {};
+    for (const [k, v] of Object.entries(row)) {
+      if (!this.absent(k)) out[k] = v;
+    }
+    return out as T;
+  }
+
+  select(cols?: string, opts?: { count?: "exact" | "planned"; head?: boolean }): this {
     if (opts?.count) this.wantsCount = true;
+    if (!cols || cols.trim() === "*") {
+      // `select=*` di-resolve PostgREST dari schema cache → kolom hantu ikut
+      // terpilih dan Postgres menolak seluruh query.
+      for (const col of this.phantom) this.failPhantomColumn(col);
+    } else {
+      for (const col of cols.split(",")) this.failUnknownColumn(col.trim());
+    }
     return this;
   }
 
   eq(col: string, value: unknown): this {
+    this.failUnknownColumnFilter(col);
     this.filters.push((r) => String(r[col]) === String(value));
     return this;
   }
 
   in(col: string, values: unknown[]): this {
+    this.failUnknownColumnFilter(col);
     const set = values.map((v) => String(v));
     this.filters.push((r) => set.includes(String(r[col])));
     return this;
@@ -119,6 +222,7 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
    * (dulu diam-diam lolos karena dianggap perbandingan biasa).
    */
   is(col: string, value: unknown): this {
+    this.failUnknownColumnFilter(col);
     if (value !== null && typeof value !== "boolean") {
       this.forcedError = {
         message: `invalid input syntax for type boolean: "${String(value)}"`,
@@ -133,6 +237,7 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
   }
 
   not(col: string, op: string, value: unknown): this {
+    this.failUnknownColumnFilter(col);
     if (op === "is" && value === null) {
       this.filters.push((r) => r[col] !== null && r[col] !== undefined);
     } else if (op === "eq") {
@@ -142,16 +247,19 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
   }
 
   gte(col: string, value: unknown): this {
-    this.filters.push((r) => Number(r[col]) >= Number(value));
+    this.failUnknownColumnFilter(col);
+    this.filters.push((r) => asComparable(r[col]) >= asComparable(value));
     return this;
   }
 
   lte(col: string, value: unknown): this {
-    this.filters.push((r) => Number(r[col]) <= Number(value));
+    this.failUnknownColumnFilter(col);
+    this.filters.push((r) => asComparable(r[col]) <= asComparable(value));
     return this;
   }
 
   order(col: string, opts?: { ascending?: boolean }): this {
+    this.failUnknownColumnFilter(col);
     this.orderSpec = { col, asc: opts?.ascending ?? true };
     return this;
   }
@@ -186,9 +294,21 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
   private run(): FakeResult {
     const calls = this.db.calls;
 
+    // Payload insert/update menyebut kolom yang tidak ada di tabel.
+    if (this.payload && (this.op === "insert" || this.op === "update" || this.op === "upsert")) {
+      const rows = Array.isArray(this.payload) ? this.payload : [this.payload];
+      for (const row of rows) {
+        for (const col of Object.keys(row)) {
+          this.failUnknownColumn(col);
+          if (this.forcedError) break;
+        }
+        if (this.forcedError) break;
+      }
+    }
+
     // Filter tidak valid → PostgREST membalas error, bukan hasil kosong.
     if (this.forcedError) {
-      calls.push(`${this.op}(${this.tableName}) → ${this.forcedError.code}`);
+      calls.push(`${this.op}(${this.tableName}) → ${this.forcedError.code ?? "error"}`);
       return { data: null, error: this.forcedError };
     }
 
@@ -208,7 +328,9 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
         this.rows.push(full);
         inserted.push(full);
       }
-      calls.push(`insert(${this.tableName}) → ok`);
+      calls.push(
+        `insert(${this.tableName}) fields=${Object.keys(incoming[0] ?? {}).join(",")} → ok`,
+      );
       return { data: inserted.length === 1 ? (inserted[0] ?? null) : inserted, error: null };
     }
 
@@ -244,7 +366,11 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
     }
     if (this.limitN !== null) result = result.slice(0, this.limitN);
     calls.push(`select(${this.tableName}) matched=${result.length}`);
-    return { data: result, error: null, count: this.wantsCount ? result.length : null };
+    return {
+      data: result.map((r) => this.project<Row>(r)),
+      error: null,
+      count: this.wantsCount ? result.length : null,
+    };
   }
 
   /** Supabase builder = thenable. */
@@ -253,6 +379,11 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
     onrejected?: ((reason: unknown) => T2 | PromiseLike<T2>) | null,
   ): PromiseLike<T1 | T2> {
     return Promise.resolve(this.run()).then(onfulfilled, onrejected);
+  }
+
+  /** Paksa query ini membalas error tertentu (dipakai fake untuk 42P01). */
+  forceError(error: { message: string; code?: string }): void {
+    this.forcedError = error;
   }
 
   /** Insert/update menghasilkan object atau array — samakan jadi array. */
@@ -276,7 +407,7 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
         },
       };
     }
-    return { data: rows[0] as T, error: null };
+    return { data: this.project<T>(rows[0] as Row), error: null };
   }
 
   async maybeSingle<T = Row>(): Promise<FakeResult<T | null>> {
@@ -287,15 +418,29 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
     if (rows.length > 1) {
       return { data: null, error: { message: "multiple rows", code: "PGRST116" } };
     }
-    return { data: rows[0] as T, error: null };
+    return { data: this.project<T>(rows[0] as Row), error: null };
   }
 }
 
-export function createFakeDb(tables: Record<string, Row[]> = {}): FakeDb {
+export function createFakeDb(
+  tables: Record<string, Row[]> = {},
+  opts: FakeDbOptions = {},
+): FakeDb {
   const db: FakeDb = {
     tables,
     calls: [],
+    missingColumns: opts.missingColumns ?? {},
+    phantomColumns: opts.phantomColumns ?? {},
     from(table: string) {
+      if (opts.missingTables?.includes(table)) {
+        // Meniru tabel yang belum dibuat: Postgres 42P01 lewat PostgREST.
+        const builder = new FakeBuilder(table, db);
+        builder.forceError({
+          message: `relation 'public.${table}' does not exist`,
+          code: "42P01",
+        });
+        return builder;
+      }
       if (!tables[table]) tables[table] = [];
       return new FakeBuilder(table, db);
     },
