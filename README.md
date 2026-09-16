@@ -123,6 +123,7 @@ src/
 supabase/
 ├── account/001_schema.sql   ▶ jalankan di Supabase #1
 └── store/001_schema.sql     ▶ jalankan di Supabase #2
+    store/002_manual_payment.sql ▶ jalankan JUGA di Supabase #2 (migrasi idempoten)
 ```
 
 ## Mulai Cepat
@@ -134,6 +135,8 @@ npm install
 # 2. Siapkan 2 project Supabase + jalankan SQL (Lengkap: docs/deployment.md)
 #    - salin supabase/account/001_schema.sql ke SQL Editor Supabase #1
 #    - salin supabase/store/001_schema.sql  ke SQL Editor Supabase #2
+#    - salin supabase/store/002_manual_payment.sql ke SQL Editor Supabase #2
+#      (wajib untuk project lama; aman dijalankan berulang)
 
 # 3. Konfigurasi env
 cp .env.example .env.local       # isi URL + keys (tanpa ini app tidak jalan)

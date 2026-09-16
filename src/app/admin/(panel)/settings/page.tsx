@@ -43,13 +43,15 @@ export default async function AdminPaymentSettingsPage({ searchParams }: Props) 
             ok={manualVisibleToBuyer}
             label="Transfer Manual (QRIS statis)"
             detail={
-              !env.MANUAL_PAYMENT_ENABLED
-                ? "Dimatikan lewat env MANUAL_PAYMENT_ENABLED=false."
-                : view.reason === "no_qr"
-                  ? "Aktif, tetapi gambar QR belum diunggah → buyer belum bisa memilihnya."
-                  : view.reason === "disabled"
-                    ? "Saklar di form bawah sedang mati."
-                    : "Tampil di halaman checkout."
+              view.reason === "schema_missing"
+                ? "Kolom pembayaran manual belum ada di database — jalankan migrasi (lihat banner merah di atas)."
+                : !env.MANUAL_PAYMENT_ENABLED
+                  ? "Dimatikan lewat env MANUAL_PAYMENT_ENABLED=false."
+                  : view.reason === "no_qr"
+                    ? "Aktif, tetapi gambar QR belum diunggah → buyer belum bisa memilihnya."
+                    : view.reason === "disabled"
+                      ? "Saklar di form bawah sedang mati."
+                      : "Tampil di halaman checkout."
             }
           />
           <StatusRow

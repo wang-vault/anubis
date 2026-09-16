@@ -218,74 +218,24 @@ create policy "products_read_active"
 --   select id, is_enabled, label from public.manual_payment_settings;  -- 1 baris
 -- ============================================================================
 
--- ---------------------------------------------------------------------------
--- 5. MIGRASI RINGAN (aman dijalankan ulang) — kolom charged_amount
---    Untuk project yang sudah menjalankan schema versi sebelumnya.
--- ---------------------------------------------------------------------------
-alter table public.orders
-  add column if not exists charged_amount bigint;
-
-comment on column public.orders.charged_amount is
-  'Nominal final provider (total + kode unik). Sumber tampilan "Total transfer" di halaman bayar.';
-
--- ---------------------------------------------------------------------------
--- 6. MIGRASI RINGAN (aman dijalankan ulang) — pembayaran MANUAL
---    Untuk project yang sudah menjalankan schema versi sebelumnya:
---    tambah kolom metode/klaim manual + tabel konfigurasi QR statis.
---    Jalankan blok ini bila bagian 1–4 di atas sudah pernah dijalankan.
--- ---------------------------------------------------------------------------
-alter table public.orders
-  add column if not exists payment_method text not null default 'YOBASEPAY';
-
-alter table public.orders
-  add column if not exists manual_claim_at timestamptz;
-
-alter table public.orders
-  add column if not exists manual_claim_note text not null default '';
-
-alter table public.orders
-  add column if not exists manual_claim_reference text not null default '';
-
-alter table public.orders
-  add column if not exists manual_claim_notified_at timestamptz;
-
-alter table public.orders
-  add column if not exists manual_reviewed_at timestamptz;
-
-alter table public.orders
-  add column if not exists manual_reviewed_by uuid;
-
-alter table public.orders
-  add column if not exists manual_review_status text;
-
-alter table public.orders
-  add column if not exists manual_review_note text not null default '';
-
-comment on column public.orders.payment_method is
-  'YOBASEPAY = QRIS dinamis otomatis. MANUAL = QRIS statis penjual, diverifikasi manual dari mutasi.';
-
--- Constraint hanya ditambah bila belum ada (DO block agar idempotent).
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint
-    where conname = 'orders_payment_method_check' and conrelid = 'public.orders'::regclass
-  ) then
-    alter table public.orders
-      add constraint orders_payment_method_check
-      check (payment_method in ('YOBASEPAY', 'MANUAL'));
-  end if;
-
-  if not exists (
-    select 1 from pg_constraint
-    where conname = 'orders_manual_review_status_check' and conrelid = 'public.orders'::regclass
-  ) then
-    alter table public.orders
-      add constraint orders_manual_review_status_check
-      check (manual_review_status is null or manual_review_status in ('APPROVED', 'REJECTED'));
-  end if;
-end
-$$;
-
-create index if not exists orders_manual_claim_idx on public.orders (manual_claim_at asc)
-  where manual_claim_at is not null and payment_status = 'PENDING';
+-- ============================================================================
+-- 5. MIGRASI LANJUTAN — SETELAH FILE INI, JALANKAN 002_manual_payment.sql
+-- ============================================================================
+-- Untuk project BARU, kolom pembayaran manual (payment_method, manual_*) dan
+-- tabel manual_payment_settings sudah termasuk di CREATE TABLE di atas, jadi
+-- tidak ada yang hilang.
+--
+-- Tetapi bila project #2 kamu PERNAH menjalankan 001_schema.sql VERSI LAMA
+-- (sebelum fitur pembayaran manual ada), kolom-kolom itu BELUM ADA di database
+-- dan aplikasi akan gagal dengan error Postgres 42703:
+--     column orders.payment_method does not exist
+-- Gejala di situs: dashboard /admin berubah jadi "Application error: a
+-- server-side exception has occurred", dan checkout gagal membuat order.
+--
+-- Perbaikannya satu langkah: jalankan
+--     supabase/store/002_manual_payment.sql
+-- (idempotent — aman dijalankan berulang, tidak menghapus data), lalu muat
+-- ulang schema cache PostgREST: `notify pgrst, 'reload schema';`
+--
+-- Urutan yang benar selalu: 001_schema.sql → 002_manual_payment.sql.
+-- ============================================================================

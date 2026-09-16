@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { getAuthContext } from "@/lib/authz";
 import { signOutAction } from "@/app/auth/actions";
 import { ActionButton } from "@/components/ActionButton";
+import { SchemaMigrationNotice } from "@/components/admin/SchemaMigrationNotice";
+import { checkStoreSchema } from "@/lib/store-schema";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,11 @@ export default async function AdminPanelLayout({ children }: { children: React.R
   const ctx = await getAuthContext();
   if (!ctx) redirect("/admin/login");
   if (ctx.profile?.role !== "admin") redirect("/auth/login?error=not_admin");
+
+  // Kolom pembayaran manual ada di database? Kalau tidak, dashboard tetap
+  // tampil (query terkait sudah di-fallback) + banner berisi SQL perbaikannya.
+  // Gagal memeriksa (mis. env rusak) tidak boleh menambah kegagalan baru.
+  const schema = await checkStoreSchema().catch(() => null);
 
   const siteName = process.env.NEXT_PUBLIC_SITE_NAME ?? "Toko Saya";
 
@@ -50,7 +57,10 @@ export default async function AdminPanelLayout({ children }: { children: React.R
           </div>
         </div>
       </div>
-      <div className="container-x py-6">{children}</div>
+      <div className="container-x space-y-4 py-6">
+        {schema && !schema.ready && <SchemaMigrationNotice check={schema} />}
+        {children}
+      </div>
     </div>
   );
 }

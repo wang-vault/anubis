@@ -30,12 +30,23 @@ Biarkan dulu (schema dijalankan di langkah C).
 1. Supabase #1 → **SQL Editor → New query** → paste **seluruh isi**
    `supabase/account/001_schema.sql` → **Run**.
 2. Supabase #2 → **SQL Editor → New query** → paste `supabase/store/001_schema.sql` → **Run**.
+3. Supabase #2 → **SQL Editor → New query** → paste
+   `supabase/store/002_manual_payment.sql` → **Run** (migrasi pembayaran
+   manual: kolom `payment_method` + `manual_*` + tabel
+   `manual_payment_settings`). Idempoten, dan **wajib** untuk project yang
+   sudah menjalankan `001_schema.sql` versi lama.
+
+> Melewatkan langkah 3 adalah penyebab error produksi
+> `column orders.payment_method does not exist` — dashboard `/admin` lalu
+> menolak menampilkan order. Lihat `docs/troubleshooting.md` §18.
 
 ✅ Tanda berhasil:
 - #1 → **Table Editor** muncul tabel `profiles`; di **Database → Triggers** ada
   `on_auth_user_created`, `profiles_guard_role_change`, `profiles_set_updated_at`.
-- #2 → tabel `products`, `orders`; di **Auth → Policies (RLS)** kedua tabel
-  "Restricted" — products hanya SELECT publik, orders tanpa policy (deny-all).
+- #2 → tabel `products`, `orders`, `manual_payment_settings`; di
+  **Auth → Policies (RLS)** semuanya "Restricted" — products hanya SELECT
+  publik, orders & manual_payment_settings tanpa policy (deny-all).
+  Kolom `orders.payment_method` ada (cek di Table Editor).
 - Cek manual di SQL Editor (project #2):
   ```sql
   select relname, relrowsecurity from pg_class where relname in ('products','orders');
