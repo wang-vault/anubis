@@ -3,6 +3,7 @@ import "./globals.css";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { parseSiteUrl } from "@/lib/next-url";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 // Semua halaman bersifat dinamis (header menampilkan state login per-user).
 // Kecepatan tetap terjaga lewat unstable_cache pada query katalog (60 dtk)
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Header />
         <main className="newspaper-main flex-1 py-6">{children}</main>
         <Footer />
+        <SpeedInsights />
       </body>
     </html>
   );
