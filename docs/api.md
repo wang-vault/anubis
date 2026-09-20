@@ -18,12 +18,15 @@ Buat order + pembayaran.
 ```jsonc
 // request
 { "productId": "uuid", "quantity": 1,        // 1..20
-  "paymentMethod": "MANUAL" }                // opsional: MANUAL | YOBASEPAY
+  "paymentMethod": "MANUAL" }                // opsional: MANUAL | STENLY
 // 201 response (QRIS otomatis)
 { "ok": true,
   "order":   { "order_code":"ORD-20260911-AB7K2M","total_amount":25000,
                "order_status":"PENDING","payment_status":"PENDING" },
-  "payment": { "paymentId":"YO-ABC123","paymentUrl":"https://…","qrImageUrl":"https://…png","expiresAt":"2026-09-11T05:30:00.000Z" } }
+  "payment": { "paymentId":"ORD-20260911-AB7K2M",        // = order_code (order_id di Stenly)
+               "paymentUrl":"https://stenly.id/pay/ORD-…",
+               "qrImageUrl":"data:image/png;base64,…",    // dirender lokal dari qr_string
+               "expiresAt":"2026-09-11T05:30:00.000Z" } }
 // 201 response (transfer manual) — tidak ada transaksi provider
 { "ok": true,
   "order":   { "order_code":"ORD-20260912-MANU4L","total_amount":50000, … },
@@ -42,9 +45,9 @@ Gagal provider → 503 (order ditandai FAILED/EXPIRED agar tidak menggantung).
 > **Tampilan checkout mengikuti ketersediaan API.** Halaman `/checkout`
 > menampilkan kedua opsi lewat `getCheckoutPaymentMethods()`: Transfer Manual
 > (aktif, default) dan QRIS Otomatis — yang terakhir **bisa dipilih** bila env
-> YoBasePay terisi, dan ber-badge **"Ongoing"** (disabled) bila belum. Daftar
+> Stenly terisi, dan ber-badge **"Ongoing"** (disabled) bila belum. Daftar
 > itu membaca sumber yang sama dengan `getAvailablePaymentMethods()` (env
-> YoBasePay + pengaturan manual penjual) yang dipakai
+> Stenly + pengaturan manual penjual) yang dipakai
 > `resolvePaymentMethod()`, jadi nilai yang dikirim UI selalu valid. Endpoint
 > ini tetap jalur utama untuk uji end-to-end QRis tanpa browser.
 
@@ -75,25 +78,34 @@ rate limit 10/10 menit/user; 409 bila order bukan manual / sudah lunas / sudah d
 ### GET /api/payments/status?order=ORD-...
 Sinkronisasi + polling endpoint untuk halaman bayar:
 - membaca DB, dan bila masih PENDING (maks 1x/10 detik per order) menanyakan
-  `action=checkstatus` ke YoBasePay dengan API KEY SERVER, lalu menyimpan hasil
+  `GET /api/v1/status/:order_id` ke Stenly dengan API KEY SERVER, lalu menyimpan hasil
   (termasuk transisi PAID/EXPIRED + notifikasi Telegram).
 - Batas 30 req/menit/user (429).
 Response: seperti status di atas + `checked_provider: boolean`.
 
 ## Webhook
 
-### POST /api/webhooks/yobasepay
-Raw body JSON dari YoBasePay + header `X-YoBasePay-Signature`
-(HMAC-SHA256 hex atas raw body, secret = `YOBASEPAY_WEBHOOK_SECRET`).
+### POST /api/webhooks/stenly
+Raw body JSON dari Stenly + header `X-Stenly-Signature`
+(HMAC-SHA256 hex atas raw body, secret = `STENLY_WEBHOOK_SECRET`).
+Header pendamping: `X-Stenly-Timestamp` (epoch ms), `X-Stenly-Event`
+(`payment.status_updated`). Body: `{ event, data:{ order_id, gross_amount,
+status, paid_at?, journal_id? }, timestamp }`.
+
+Balasan sukses memakai format yang diminta Stenly: **`{"received": true, …}`**
+dalam <10 detik (bila tidak, delivery ditandai `failed` dan diretry 6×:
+1m, 5m, 30m, 2j, 6j). Body dibatasi 64 KB; JSON di-parse **setelah** signature
+terverifikasi.
 
 | Situasi | HTTP | Body |
 |---|---|---|
+| Body kosong / >64 KB / bukan JSON | 400 | `{"error":{"code":"BAD_PAYLOAD"\|"BAD_JSON",…}}` |
 | Signature salah/hilang | 403 | `{"error":{"code":"INVALID_SIGNATURE",…}}` |
-| Order lunas OK | 200 | `{"ok":true,"handled":"paid"}` |
-| Webhook sama datang lagi | 200 | `{"ok":true,"handled":"paid","reason":"already_processed"}` |
-| Nominal tidak sah / hilang | 200* | `{"ok":true,"handled":"ignored","reason":"amount_mismatch"}` |
-| Order tidak ditemukan | 200* | `{"ok":true,"handled":"ignored","reason":"order_not_found"}` |
-| Transisi EXPIRED provider | 200 | `{"ok":true,"handled":"expired"}` |
+| Order lunas OK | 200 | `{"received":true,"handled":"paid","reason":null}` |
+| Webhook sama datang lagi | 200 | `{"received":true,"handled":"paid","reason":"already_processed"}` |
+| Nominal tidak sah / hilang | 200* | `{"received":true,"handled":"ignored","reason":"amount_mismatch"\|"amount_missing"}` |
+| Order tidak ditemukan | 200* | `{"received":true,"handled":"ignored","reason":"order_not_found"}` |
+| Transisi EXPIRED provider | 200 | `{"received":true,"handled":"expired"}` |
 | Error DB tak terduga | 500 | provider akan retry — idempoten, aman |
 
 \*200 disengaja agar provider berhenti retry untuk event yang memang tidak bisa
@@ -124,18 +136,18 @@ idempoten + cek `payment_status=PAID`). Salah kondisi → 409 CONFLICT.
 `src/app/admin/actions.ts`.)
 
 ### GET /api/admin/payments/diagnose
-Diagnosa koneksi YoBasePay **tanpa efek samping**: memanggil `checkstatus`
-dengan trxid karangan (`YO-DIAGNOSTIK-000000`) sehingga tidak membuat
-transaksi dan tidak memotong saldo, lalu menerjemahkan jawaban provider
-menjadi vonis + langkah perbaikan.
-→ `{ok, diagnostics:{verdict, verdictLabel, hints[], env[], domainLock,
-webhookUrl, baseUrl, amountTolerance, qrRenderConfigured, probe, checkedAt}}`
-Vonis: `OK_KEY_VALID` | `NOT_CONFIGURED` | `INVALID_API_KEY` | `DOMAIN_LOCK` |
-`INSUFFICIENT_BALANCE` | `PLAN_MISMATCH` | `PROVIDER_UNREACHABLE` |
-`BAD_RESPONSE` | `UNKNOWN`. Nilai env **disamarkan** (`maskSecret`) — rahasia
-tidak pernah dikembalikan utuh. Rate limit 10/10 menit per admin.
-Dipakai panel "Diagnosa QRIS Otomatis" di `/admin/settings`
-(`src/components/admin/PaymentDiagnostics.tsx`). Detail: `docs/yobasepay.md` §4b.
+Diagnosa koneksi Stenly **tanpa efek samping**: memanggil
+`GET /api/v1/status/:order_id` dengan order_id karangan
+(`ANUBIS-DIAGNOSTIK-000000`) sehingga tidak membuat transaksi apa pun, lalu
+menerjemahkan jawaban provider menjadi vonis + langkah perbaikan.
+→ `{ok, diagnostics:{verdict, verdictLabel, hints[], env[], provider, configured,
+sandbox, webhookUrl, baseUrl, expiryMinutes, probe, checkedAt}}`
+Vonis: `OK_KEY_VALID` | `NOT_CONFIGURED` | `INVALID_API_KEY` | `IP_NOT_ALLOWED` |
+`GATEWAY_NOT_READY` | `PROVIDER_UNREACHABLE` | `BAD_RESPONSE` | `UNKNOWN`.
+Nilai env **disamarkan** (`maskSecret`) — API key & webhook secret tidak pernah
+dikembalikan utuh. `webhookUrl` = Callback URL siap salin. Rate limit 10/10
+menit per admin. Dipakai panel diagnosa di `/admin/settings`
+(`src/components/admin/PaymentDiagnostics.tsx`). Detail: `docs/stenly.md` §8.
 
 ### Verifikasi pembayaran manual (server action admin)
 `src/app/admin/actions.ts`:

@@ -10,10 +10,10 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/payments/status?order=ORD-...
  *
- * Sinkronisasi status: server menanyakan status ke YoBasePay (API privat,
- * pakai service/API key di server) lalu menyimpan hasilnya. Ini jalan di
- * SAMPING webhook — bukan pengganti. Browser TIDAK pernah bisa menandai
- * order lunas lewat endpoint ini; sumber kebenaran hanya jawaban provider.
+ * Sinkronisasi status: server menanyakan status ke Stenly (API privat, pakai
+ * secret key di server) lalu menyimpan hasilnya. Ini FALLBACK yang jalan di
+ * SAMPING webhook — bukan pengganti. Browser TIDAK pernah bisa menandai order
+ * lunas lewat endpoint ini; sumber kebenaran hanya jawaban provider.
  *
  * Throttle 2 lapis:
  *  - 30 req/menit per user (limiter)

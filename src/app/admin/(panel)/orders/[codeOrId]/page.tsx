@@ -8,6 +8,7 @@ import { OrderStatusBadge, PaymentStatusBadge } from "@/components/StatusBadge";
 import { OrderActions } from "@/components/admin/OrderActions";
 import { OrderTimeline } from "@/components/OrderTimeline";
 import { ManualVerificationForm } from "@/components/admin/ManualVerificationForm";
+import { LEGACY_PAYMENT_METHOD_AUTO } from "@/lib/payment-methods";
 
 export const metadata: Metadata = { title: "Detail Order — Admin" };
 
@@ -22,6 +23,10 @@ export default async function AdminOrderDetailPage({ params, searchParams }: Pro
   const order = await findOrderByCodeOrId(decodeURIComponent(codeOrId));
   if (!order) notFound();
   const isManual = order.payment_method === "MANUAL";
+  // Order lama (provider otomatis sebelumnya) tetap ditampilkan apa adanya —
+  // histori transaksi tidak dimigrasikan, hanya dibaca.
+  const providerLabel =
+    order.payment_method === LEGACY_PAYMENT_METHOD_AUTO ? "YoBasePay · QRIS (arsip)" : "Stenly · QRIS";
 
   const profile = await getProfileForAdmin(order.account_id);
 
@@ -59,7 +64,7 @@ export default async function AdminOrderDetailPage({ params, searchParams }: Pro
             <h2 className="paper-heading-kicker mb-2">Pembayaran</h2>
             <KV
               k="Metode"
-              v={isManual ? "Transfer manual · QRIS penjual" : "QRIS otomatis · YoBasePay"}
+              v={isManual ? "Transfer manual · QRIS penjual" : "QRIS otomatis"}
             />
             {isManual ? (
               <>
@@ -77,10 +82,10 @@ export default async function AdminOrderDetailPage({ params, searchParams }: Pro
                 />
               </>
             ) : (
-              <KV k="Provider" v="YoBasePay · QRIS" />
+              <KV k="Provider" v={providerLabel} />
             )}
             {!isManual && (
-              <KV k="Trx ID" v={<span className="break-all font-mono text-xs">{order.payment_id ?? "-"}</span>} />
+              <KV k="ID transaksi" v={<span className="break-all font-mono text-xs">{order.payment_id ?? "-"}</span>} />
             )}
             <KV k="Batas bayar" v={formatDateTimeId(order.payment_expired_at)} />
             <KV k="Lunas pukul" v={formatDateTimeId(order.paid_at)} />

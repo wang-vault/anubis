@@ -15,13 +15,13 @@ import type { OrderRow } from "@/lib/types";
 const h = vi.hoisted(() => ({
   db: null as unknown as ReturnType<typeof createFakeDb>,
   env: {
-    YOBASEPAY_AMOUNT_TOLERANCE: 999,
+    STENLY_EXPIRY_MINUTES: 15,
     MANUAL_PAYMENT_ENABLED: true,
     DEFAULT_PAYMENT_METHOD: "MANUAL",
     MANUAL_PAYMENT_QR_IMAGE_URL: null,
   } as Record<string, unknown>,
   telegram: true,
-  yobasepay: false,
+  stenly: false,
   notifier: {
     notifyOrderPaid: vi.fn(async () => ({ ok: true as const })),
     notifyManualPaymentClaim: vi.fn(async () => ({ ok: true as const })),
@@ -37,7 +37,7 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/env", () => ({
   serverEnv: () => h.env,
   telegramConfigured: () => h.telegram,
-  yobasepayConfigured: () => h.yobasepay,
+  stenlyConfigured: () => h.stenly,
 }));
 
 vi.mock("@/lib/integrations/telegram", () => ({
@@ -172,7 +172,7 @@ async function tick(): Promise<void> {
 
 beforeEach(() => {
   h.telegram = true;
-  h.yobasepay = false;
+  h.stenly = false;
   h.env.MANUAL_PAYMENT_ENABLED = true;
   h.env.DEFAULT_PAYMENT_METHOD = "MANUAL";
   h.notifier.notifyOrderPaid.mockClear();
@@ -218,10 +218,10 @@ describe("createOrderForBuyer — metode manual", () => {
 
   it("menolak QRIS otomatis bila provider tidak dikonfigurasi (409, tanpa order yatim)", async () => {
     const db = setup();
-    h.yobasepay = false;
+    h.stenly = false;
 
     await expect(
-      createOrderForBuyer(buyerCtx, { productId: PRODUCT_ID, quantity: 1, paymentMethod: "YOBASEPAY" }),
+      createOrderForBuyer(buyerCtx, { productId: PRODUCT_ID, quantity: 1, paymentMethod: "STENLY" }),
     ).rejects.toMatchObject({ status: 409 });
     // ditolak SEBELUM insert → tidak ada order yatim yang menggantung
     expect(table(db, "orders")).toHaveLength(0);
@@ -238,7 +238,7 @@ describe("createOrderForBuyer — metode manual", () => {
 
   it("menolak MANUAL yang di-request eksplisit saat metode manual dimatikan penjual (409)", async () => {
     const db = setup({ settings: settingsRow({ is_enabled: false }) });
-    h.yobasepay = true; // provider aktif → hanya YOBASEPAY yang tersedia
+    h.stenly = true; // provider aktif → hanya STENLY yang tersedia
 
     await expect(
       createOrderForBuyer(buyerCtx, { productId: PRODUCT_ID, quantity: 1, paymentMethod: "MANUAL" }),
@@ -294,7 +294,7 @@ describe("claimManualPayment (buyer menekan 'Saya sudah transfer')", () => {
   });
 
   it("menolak order QRIS otomatis, order sudah lunas, dan order kadaluarsa (409)", async () => {
-    setup({ orders: [orderRow({ payment_method: "YOBASEPAY" })] });
+    setup({ orders: [orderRow({ payment_method: "STENLY" })] });
     await expect(claimManualPayment(onlyOrder(h.db), {})).rejects.toMatchObject({ status: 409 });
 
     setup({ orders: [orderRow({ payment_status: "PAID" })] });
@@ -360,7 +360,7 @@ describe("adminConfirmManualPayment (verifikasi penjual)", () => {
 
   it("menolak order yang bukan pembayaran manual (409)", async () => {
     const db = setup({
-      orders: [orderRow({ payment_method: "YOBASEPAY", payment_id: "YO-ABC123" })],
+      orders: [orderRow({ payment_method: "STENLY", payment_id: "YO-ABC123" })],
     });
 
     await expect(
@@ -506,22 +506,22 @@ describe("konfigurasi pembayaran manual (lib/payment-config)", () => {
     setup();
     const { getAvailablePaymentMethods } = await import("@/lib/payment-config");
 
-    h.yobasepay = false;
+    h.stenly = false;
     expect((await getAvailablePaymentMethods()).map((m) => m.id)).toEqual(["MANUAL"]);
 
-    h.yobasepay = true;
-    expect((await getAvailablePaymentMethods()).map((m) => m.id)).toEqual(["YOBASEPAY", "MANUAL"]);
+    h.stenly = true;
+    expect((await getAvailablePaymentMethods()).map((m) => m.id)).toEqual(["STENLY", "MANUAL"]);
   });
 
   it("resolvePaymentMethod: default env dipakai, metode tak tersedia ditolak 409", async () => {
     setup();
     const { resolvePaymentMethod } = await import("@/lib/payment-config");
     h.env.DEFAULT_PAYMENT_METHOD = "MANUAL";
-    h.yobasepay = false;
+    h.stenly = false;
 
     expect(await resolvePaymentMethod(undefined)).toBe("MANUAL");
     expect(await resolvePaymentMethod("manual")).toBe("MANUAL");
-    await expect(resolvePaymentMethod("YOBASEPAY")).rejects.toMatchObject({ status: 409 });
+    await expect(resolvePaymentMethod("STENLY")).rejects.toMatchObject({ status: 409 });
     // nilai ngawur dari klien → fallback default, bukan error
     expect(await resolvePaymentMethod("GOPAY")).toBe("MANUAL");
   });
@@ -565,9 +565,9 @@ describe("konfigurasi pembayaran manual (lib/payment-config)", () => {
     expect(view.reason).toBe("disabled");
   });
 
-  it("getCheckoutPaymentMethods menaruh opsi manual pertama (aktif) dan QRIS berstatus ongoing (disabled) saat YoBasePay belum terkonfigurasi", async () => {
+  it("getCheckoutPaymentMethods menaruh opsi manual pertama (aktif) dan QRIS berstatus ongoing (disabled) saat Stenly belum terkonfigurasi", async () => {
     setup();
-    h.yobasepay = false;
+    h.stenly = false;
     const { getCheckoutPaymentMethods } = await import("@/lib/payment-config");
 
     const checkoutMethods = await getCheckoutPaymentMethods();
@@ -578,7 +578,7 @@ describe("konfigurasi pembayaran manual (lib/payment-config)", () => {
     expect(manualMethod?.disabled).toBe(false);
     expect(manualMethod?.label).toContain("Transfer Manual");
 
-    expect(qrisMethod?.id).toBe("YOBASEPAY");
+    expect(qrisMethod?.id).toBe("STENLY");
     expect(qrisMethod?.disabled).toBe(true);
     expect(qrisMethod?.isOngoing).toBe(true);
     expect(qrisMethod?.statusBadge).toBe("Ongoing");
@@ -586,7 +586,7 @@ describe("konfigurasi pembayaran manual (lib/payment-config)", () => {
 
   it("getCheckoutPaymentMethods membuka opsi QRIS otomatis (bisa dipilih) saat kredensial terisi", async () => {
     setup();
-    h.yobasepay = true;
+    h.stenly = true;
     const { getCheckoutPaymentMethods } = await import("@/lib/payment-config");
 
     const checkoutMethods = await getCheckoutPaymentMethods();
@@ -597,7 +597,7 @@ describe("konfigurasi pembayaran manual (lib/payment-config)", () => {
     expect(manualMethod?.id).toBe("MANUAL");
     expect(manualMethod?.disabled).toBe(false);
 
-    expect(qrisMethod?.id).toBe("YOBASEPAY");
+    expect(qrisMethod?.id).toBe("STENLY");
     expect(qrisMethod?.disabled).toBeFalsy();
     expect(qrisMethod?.isOngoing).toBeFalsy();
     expect(qrisMethod?.statusBadge).toBeUndefined();
@@ -605,7 +605,7 @@ describe("konfigurasi pembayaran manual (lib/payment-config)", () => {
 
   it("getCheckoutPaymentMethods tetap menampilkan QRIS ongoing walau manual sedang aktif & terkonfigurasi", async () => {
     setup();
-    h.yobasepay = false;
+    h.stenly = false;
     const { getCheckoutPaymentMethods, getAvailablePaymentMethods } = await import(
       "@/lib/payment-config"
     );
@@ -615,7 +615,7 @@ describe("konfigurasi pembayaran manual (lib/payment-config)", () => {
       expect.objectContaining({ id: "MANUAL" }),
     ]);
 
-    const qris = (await getCheckoutPaymentMethods()).find((m) => m.id === "YOBASEPAY");
+    const qris = (await getCheckoutPaymentMethods()).find((m) => m.id === "STENLY");
     expect(qris?.disabled).toBe(true);
     expect(qris?.statusBadge).toBe("Ongoing");
   });

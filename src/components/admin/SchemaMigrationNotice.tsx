@@ -1,6 +1,8 @@
 import {
   MANUAL_PAYMENT_MIGRATION_FILE,
   MANUAL_PAYMENT_MIGRATION_SQL,
+  STENLY_MIGRATION_FILE,
+  STENLY_MIGRATION_SQL,
   type StoreSchemaCheck,
 } from "@/lib/store-schema";
 
@@ -32,8 +34,8 @@ export function SchemaMigrationNotice({ check }: { check: StoreSchemaCheck }) {
         {missingTable ? (
           <>
             Supabase #2 belum memiliki tabel <code>orders</code>. Jalankan{" "}
-            <code>supabase/store/001_schema.sql</code> lalu{" "}
-            <code>{MANUAL_PAYMENT_MIGRATION_FILE}</code> di SQL Editor.
+            <code>supabase/store/001_schema.sql</code>, <code>{MANUAL_PAYMENT_MIGRATION_FILE}</code>,
+            lalu <code>{STENLY_MIGRATION_FILE}</code> di SQL Editor.
           </>
         ) : (
           <>
@@ -66,6 +68,15 @@ export function SchemaMigrationNotice({ check }: { check: StoreSchemaCheck }) {
 
       <pre className="mt-3 max-h-72 overflow-auto border border-red-900/30 bg-white/70 p-3 text-[11px] leading-5">
         {MANUAL_PAYMENT_MIGRATION_SQL}
+      </pre>
+
+      <p className="mt-3 text-sm leading-6">
+        Sekalian jalankan <code>{STENLY_MIGRATION_FILE}</code> di bawah ini. Migrasi ini mengizinkan
+        nilai <code>payment_method = &apos;STENLY&apos;</code> (provider QRIS otomatis yang sekarang)
+        tanpa mengubah satu pun order lama — order YoBasePay arsip tetap terbaca.
+      </p>
+      <pre className="mt-2 max-h-72 overflow-auto border border-red-900/30 bg-white/70 p-3 text-[11px] leading-5">
+        {STENLY_MIGRATION_SQL}
       </pre>
     </div>
   );

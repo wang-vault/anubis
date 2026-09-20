@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/orders/[code]/status — polling RINGAN (hanya baca DB, tanpa
  * memanggil provider). Halaman pembayaran memakai endpoint ini tiap 8 detik;
- * sinkronisasi ke YoBasePay terpisah via /api/payments/status (throttled).
+ * sinkronisasi ke provider terpisah via /api/payments/status (throttled).
  */
 export async function GET(
   _request: NextRequest,

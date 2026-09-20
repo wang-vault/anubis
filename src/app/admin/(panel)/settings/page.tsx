@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { MANUAL_QR_MAX_BYTES, getManualPaymentView } from "@/lib/payment-config";
-import { serverEnv, yobasepayConfigured } from "@/lib/env";
+import { serverEnv, stenlyConfigured } from "@/lib/env";
 import { ManualPaymentSettingsForm } from "@/components/admin/ManualPaymentSettingsForm";
 import { PaymentDiagnostics } from "@/components/admin/PaymentDiagnostics";
 
@@ -21,7 +21,7 @@ export default async function AdminPaymentSettingsPage({ searchParams }: Props) 
   const sp = await searchParams;
   const view = await getManualPaymentView();
   const env = serverEnv();
-  const autoConfigured = yobasepayConfigured(env);
+  const autoConfigured = stenlyConfigured(env);
   const manualVisibleToBuyer = view.available;
 
   return (
@@ -56,11 +56,11 @@ export default async function AdminPaymentSettingsPage({ searchParams }: Props) 
           />
           <StatusRow
             ok={autoConfigured}
-            label="QRIS Otomatis (YoBasePay)"
+            label="QRIS Otomatis (Stenly)"
             detail={
               autoConfigured
                 ? "Terkonfigurasi · dapat dipilih pembeli di halaman checkout (berdampingan dengan Transfer Manual)."
-                : "Status saat ini: ONGOING (sedang disiapkan) — di checkout tampil ber-badge “Ongoing” dan belum bisa dipilih; pembeli memakai Transfer Manual. Isi YOBASEPAY_API_KEY + YOBASEPAY_WEBHOOK_SECRET lalu redeploy untuk membukanya."
+                : "Status saat ini: ONGOING (sedang disiapkan) — di checkout tampil ber-badge “Ongoing” dan belum bisa dipilih; pembeli memakai Transfer Manual. Isi STENLY_API_KEY + STENLY_WEBHOOK_SECRET lalu redeploy untuk membukanya."
             }
           />
         </div>

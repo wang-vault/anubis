@@ -16,6 +16,13 @@
 -- `on conflict do nothing` / `create or replace`, jadi tidak ada data yang
 -- hilang bila file ini dijalankan dua kali.
 --
+-- CATATAN PROVIDER (2026-09): nilai 'YOBASEPAY' di bawah adalah nama provider
+-- QRIS otomatis yang LAMA. File ini sengaja TIDAK diubah agar tetap setara
+-- dengan riwayat migrasi yang sudah pernah dijalankan penjual. Provider
+-- sekarang adalah Stenly: jalankan 003_stenly_payment.sql SETELAH file ini —
+-- migrasi itu melonggarkan constraint menjadi ('STENLY','MANUAL','YOBASEPAY')
+-- dan mengubah default kolom menjadi 'STENLY', tanpa menyentuh order lama.
+--
 -- SETELAH MENJALANKAN: muat ulang schema cache PostgREST agar API langsung
 -- melihat kolom baru (biasanya otomatis, tapi jangan mengandalkan itu):
 --   notify pgrst, 'reload schema';
@@ -24,7 +31,8 @@
 
 -- ---------------------------------------------------------------------------
 -- 1. Kolom tambahan di public.orders
---    payment_method : 'YOBASEPAY' = QRIS dinamis otomatis,
+--    payment_method : 'YOBASEPAY' = QRIS dinamis otomatis (provider lama;
+--                                    diganti 'STENLY' oleh migrasi 003),
 --                     'MANUAL'    = QRIS statis penjual, diverifikasi manual.
 --    manual_*       : klaim buyer + hasil verifikasi penjual (server-side saja).
 -- ---------------------------------------------------------------------------

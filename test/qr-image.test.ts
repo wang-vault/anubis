@@ -3,7 +3,7 @@ import { isRenderableQrSrc } from "@/lib/qr-image";
 
 describe("isRenderableQrSrc — apa yang boleh masuk atribut src <img>", () => {
   it("menerima URL https (QR dinamis provider & QR eksternal penjual)", () => {
-    expect(isRenderableQrSrc("https://yobasepay.net/qr/a.png")).toBe(true);
+    expect(isRenderableQrSrc("https://stenly.id/qr/a.png")).toBe(true);
     expect(isRenderableQrSrc("https://cdn.toko/qris.png")).toBe(true);
   });
 
@@ -20,7 +20,7 @@ describe("isRenderableQrSrc — apa yang boleh masuk atribut src <img>", () => {
   it("menerima http hanya untuk pengembangan lokal", () => {
     expect(isRenderableQrSrc("http://localhost:3000/qr.png")).toBe(true);
     expect(isRenderableQrSrc("http://127.0.0.1:3000/qr.png")).toBe(true);
-    expect(isRenderableQrSrc("http://yobasepay.net/qr.png")).toBe(false);
+    expect(isRenderableQrSrc("http://stenly.id/qr.png")).toBe(false);
   });
 
   it("menolak skema berbahaya & data URI non-gambar", () => {

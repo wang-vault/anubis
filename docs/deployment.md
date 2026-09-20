@@ -125,23 +125,27 @@ Deployments tab pantau build (~1 menit). ✅ berhasil = status *Ready* dan
      (abu-abu) untuk CNAME Vercel, atau proxy oranye + mengikuti instruksi Vercel (dua-duanya jalan; lihat `docs/cloudflare.md`).
    - Tanpa Cloudflare: cukup arahkan sesuai instruksi Vercel (atau pakai nameserver Vercel).
 2. Setelah domain aktif: **ganti `NEXT_PUBLIC_SITE_URL`** + Redirect URL Supabase
-   (D1) + Domain lock YoBasePay + webhook URL (J) ke domain baru → **Redeploy** di Vercel.
+   (D1) + Callback URL Stenly (J) ke domain baru → **Redeploy** di Vercel.
 
 ✅ `https://tokoanda.com` hijau di Vercel (SSL otomatis).
 
-## I. Konfigurasi YoBasePay (akun & API key) — OPSIONAL
+## I. Konfigurasi Stenly (akun & API key) — OPSIONAL
 
 > **Lewati bagian I & J bila kamu memakai mode "manual saja".**
-> Biarkan `YOBASEPAY_API_KEY` & `YOBASEPAY_WEBHOOK_SECRET` kosong: integrasi
-> QRIS Otomatis mati (webhook ditolak, order QRIS via API balas 409), opsi
+> Biarkan `STENLY_API_KEY` & `STENLY_WEBHOOK_SECRET` kosong: integrasi
+> QRIS Otomatis mati (webhook ditolak, order QRIS via API ditolak), opsi
 > "QRIS Otomatis" di checkout tetap tampil namun ber-badge **"Ongoing"** dan
 > tidak bisa dipilih, dan toko berjalan penuh dengan **Transfer Manual**. Yang
 > wajib dilakukan hanya **upload gambar QR di `/admin/settings`** (lihat §I-alt
 > di bawah). Setelah kedua var itu diisi + redeploy, opsi QRIS Otomatis
 > otomatis bisa dipilih buyer di halaman checkout.
 
-Ikuti **`docs/yobasepay.md`** bagian 1–4 (registrasi, buat project, API key,
-domain lock, saldo/aktif). Setelah credential masuk Vercel → **Redeploy**.
+Ikuti **`docs/stenly.md`** bagian 1–4 (registrasi, buat project, Secret Key
+`sk_live_…`, Webhook Secret `whsec_…`, Callback URL). Masukkan
+`STENLY_API_KEY` + `STENLY_WEBHOOK_SECRET` ke Vercel → **Redeploy**.
+
+> **IP whitelist Stenly: biarkan kosong.** Vercel tidak memberi IP keluar tetap
+> pada paket umum, jadi whitelist yang aktif akan membuat `charge` dibalas 403.
 
 ### I-alt. Mode "manual saja" (tanpa provider)
 
@@ -151,30 +155,57 @@ domain lock, saldo/aktif). Setelah credential masuk Vercel → **Redeploy**.
 4. Isi *Nama penerima* & *Batas waktu bayar* → **Simpan**.
 5. Cek panel **Status saat ini**: "Transfer Manual" harus hijau/"Tampil di
    halaman checkout". Bila tertulis `no_qr`, gambar QR belum tersimpan. Baris
-   "QRIS Otomatis (YoBasePay)" berbunyi **ONGOING** — normal pada tahap ini
-   (env `YOBASEPAY_*` belum terisi).
+   "QRIS Otomatis (Stenly)" berbunyi **ONGOING** — normal pada tahap ini
+   (env `STENLY_*` belum terisi).
 
 ✅ Buka `/checkout?product=…` sebagai buyer → "Transfer Manual" terpilih
 (default); "QRIS Otomatis" ber-badge **"Ongoing"** dan tidak bisa dipilih
-selama env `YOBASEPAY_*` belum terisi (bisa dipilih setelah env terisi +
+selama env `STENLY_*` belum terisi (bisa dipilih setelah env terisi +
 redeploy).
 
 > Tanpa langkah 3, checkout menampilkan **"Pembayaran belum tersedia"** karena
 > tidak ada satu pun metode yang siap.
 
-Uji cepat create-payment dari server (bukan browser!):
+Uji cepat create charge dari server (bukan browser!):
 ```bash
-# jalan di laptop, nilai dari env Vercel tidak perlu — cukup key-nya
-curl "https://yobasepay.net/api?action=createpayment&apikey=<API_KEY>&amount=10000"
-# sukses: {"status":true,"data":{"trx_id":"YO-…","payment_url":"…","qr_image":"…","expired_at":"…"}}
+# jalan di laptop; cukup Secret Key project-nya
+curl -X POST https://stenly.id/api/v1/charge \
+  -H "x-api-key: <SECRET_KEY>" -H "Content-Type: application/json" \
+  -d '{"order_id":"UJI-001","gross_amount":1000}'
+# sukses (201): {"status":"success","data":{"qr_string":"0002010102122667…",
+#   "payment_url":"https://stenly.id/pay/UJI-001","expires_at":"…Z", …}}
 ```
 
-## J. Konfigurasi webhook YoBasePay
+Cara termudah tanpa curl: buka **/admin/settings** di situsmu — panel diagnosa
+menampilkan status tiap env (disamarkan), menandai sandbox vs produksi, dan
+memberi satu kesimpulan beserta langkah perbaikannya.
 
-- URL tujuan: `https://tokoanda.com/api/webhooks/yobasepay`
-- Secret: salin ke `YOBASEPAY_WEBHOOK_SECRET` → Redeploy.
-- Test: bayar transaksi kecil (lihat `docs/yobasepay.md` §6 untuk resep curl +
-  cara baca log). ✅ = order di Supabase #2 menjadi `payment_status=PAID`.
+## J. Konfigurasi webhook Stenly
+
+- URL tujuan (Callback URL di detail project Stenly):
+  `https://tokoanda.com/api/webhooks/stenly` — salin persis dari
+  **/admin/settings** (panel diagnosa) agar tidak salah ketik.
+- Secret: salin `whsec_…` ke `STENLY_WEBHOOK_SECRET` → Redeploy.
+- **Vercel Deployment Protection harus MATI untuk Production**, kalau tidak
+  Stenly menerima halaman login SSO dan webhook tidak pernah sampai.
+- Test: bayar transaksi kecil, atau kirim webhook bertanda tangan sendiri
+  (resep curl di `docs/stenly.md` §7.3). ✅ = order di Supabase #2 menjadi
+  `payment_status=PAID`. Riwayat pengiriman ada di **Webhook Logs** dashboard
+  Stenly (lengkap dengan tombol resend).
+
+## J-2. Migrasi database untuk Stenly (WAJIB untuk project lama)
+
+Skema lama membatasi `orders.payment_method` ke `('YOBASEPAY','MANUAL')`,
+sehingga order QRIS otomatis yang baru ditolak database.
+
+1. Supabase **#2 (store)** → **SQL Editor** → **New query**.
+2. Tempel isi `supabase/store/003_stenly_payment.sql` → **Run**.
+3. Idempoten & non-destruktif: tidak ada baris order yang diubah, dan nilai
+   `'YOBASEPAY'` tetap sah sehingga transaksi lama tetap terbaca.
+
+Bila langkah ini terlewat, checkout QRIS otomatis membalas **503** dengan
+arahan memakai Transfer Manual (bukan 500), dan banner di `/admin` menampilkan
+SQL yang harus dijalankan.
 
 ## K–M. Telegram Bot (notifikasi penjual)
 
@@ -193,7 +224,8 @@ register buyer → verif email → tambah produk (admin) → checkout → QRIS b
 - [ ] Repo privat / tidak ada `.env` ter-commit (`git log -p --all -S service_role`)
 - [ ] Semua env terisi & **Redeploy** setelah perubahan apa pun
 - [ ] Supabase: Autoconfirm **OFF**, SMTP dikirim sendiri, backup harian aktif (Settings → Database → Pitr)
-- [ ] Domain final = `NEXT_PUBLIC_SITE_URL` = Supabase Site URL (+ bila pakai YoBasePay: = Domain lock = webhook URL)
+- [ ] Domain final = `NEXT_PUBLIC_SITE_URL` = Supabase Site URL (+ bila pakai Stenly: = Callback URL project)
+- [ ] `supabase/store/003_stenly_payment.sql` sudah dijalankan di Supabase #2 (project lama)
 - [ ] Akun admin tes sudah login `/admin/login`
 - [ ] Produk nyata dibuat; produk dummy tidak ada (memang tidak pernah dibuat)
 - [ ] **Minimal satu metode bayar siap** — cek `/admin/settings` → panel "Status saat ini":
@@ -201,10 +233,11 @@ register buyer → verif email → tambah produk (admin) → checkout → QRIS b
     "QRIS Otomatis" ber-badge ONGOING — itu disengaja
   - mode QRIS otomatis → webhook live **dan** opsi "QRIS Otomatis" bisa
     dipilih buyer di halaman checkout (badge "Ongoing" hilang). Uji lewat UI
-    checkout atau `POST /api/orders {"paymentMethod":"YOBASEPAY"}` (lihat
-    `docs/yobasepay.md` §5)
+    checkout atau `POST /api/orders {"paymentMethod":"STENLY"}` (lihat
+    `docs/stenly.md` §7)
 - [ ] Telegram tes masuk saat PAID
 - [ ] Rate limit Cloudflare aktif (opsional disarankan — `docs/cloudflare.md`)
-- [ ] Nominal transfer unik buyer terverifikasi oleh tolerance check (cek log 1x)
+- [ ] Nominal transfer unik buyer (metode manual) terverifikasi oleh tolerance
+      check (cek log 1x). QRIS Stenly menagih nominal persis → toleransi 0.
 
 Selesai — sistem siap dikelola manual dari dashboard (lihat `docs/admin-guide.md`).

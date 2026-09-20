@@ -44,7 +44,7 @@ buyer + WA, waktu, status notifikasi Telegram, tombol aksi.
 = order dibuat, **belum ada pembayaran terverifikasi**.
 - Bukan berarti buyer tidak bayar — webhook bisa telat beberapa menit.
 - Order **QRIS otomatis**: tekan **⟳ Cek Pembayaran** (menanyakan status
-  langsung ke YoBasePay; maks 1x/10 detik). Bila ternyata lunas → otomatis PAID.
+  langsung ke Stenly; maks 1x/10 detik). Bila ternyata lunas → otomatis PAID.
 - Order **transfer manual**: tombol cek provider tidak ada (memang tidak ada
   provider). Order baru berubah setelah kamu memverifikasi mutasi — lihat §P.
 - Order tak terbayar kedaluwarsa sendiri pada `payment_expired_at` → menjadi
@@ -74,7 +74,7 @@ ditampilkan detail order (ada penanda ⚠ bila berbeda).
 Manual: transfer barang/isi pesan digital via chat. Sistem dengan sengaja TIDAK
 mengirim otomatis (tidak ada WhatsApp API di sini) — Anda yang pegang kendali.
 Bila buyer mengirim bukti transfer: jangan ubah status — status sudah PAID dari
-sistem sejak uang masuk (cek mutasi YoBasePay bila ragu).
+sistem sejak uang masuk (cek Transactions di dashboard Stenly bila ragu).
 
 ## K. Menandai DONE
 Klik **✓ Tandai Selesai** (di list atau detail). Pembatalan status DONE tidak
@@ -88,9 +88,9 @@ Order expired dibiarkan sebagai histori (bisa dicari). Tidak ada biaya.
 ## M. Pembayaran bermasalah (QRIS otomatis)
 | Gejala | Langkah |
 |---|---|
-| Buyer yakin sudah bayar, order masih PENDING | Tekan **⟳ Cek Pembayaran**. Kalau tetap PENDING: cek mutasi/saldo YoBasePay (dashboard) — apakah dana masuk? Nomor trx buyer → cocok dengan `payment_id` order di detail? |
-| Nominal beda (kurang/lebih) | Sistem TIDAK akan melunaskan sendiri (validasi toleransi). Dana kurang → minta buyer top-up order baru / Anda koreksi manual. Dana lebih → atur via YoBasePay/refund manual. Catatan: `webhook_amount_invalid` di log. |
-| Webhook YoBasePay gagal total | Pembayaran tetap bisa sinkron lewat tombol cek (API privat). Tanyakan status kirim ke YoBasePay; cek log `webhook_received`. |
+| Buyer yakin sudah bayar, order masih PENDING | Tekan **⟳ Cek Pembayaran**. Kalau tetap PENDING: buka dashboard Stenly → **Transactions**, cari `order_id` = `order_code` order tsb (itu juga isi `payment_id`) — statusnya `paid`? |
+| Nominal beda (kurang/lebih) | Sistem TIDAK akan melunaskan sendiri. QRIS Stenly menagih nominal persis, jadi selisih apa pun ditolak. Dana kurang → minta buyer order ulang. Dana lebih → urus refund lewat dashboard Stenly. Catatan: `webhook_amount_invalid` di log. |
+| Webhook Stenly gagal total | Pembayaran tetap bisa sinkron lewat tombol cek (API privat). Cek **Webhook Logs** di dashboard Stenly (ada tombol resend); cek log `webhook_received`. |
 | Dana masuk tapi order dibatalkan (telat) | Webhook PAID akan menyalakan lagi order EXPIRED→PAID; kirim pesan ke buyer. |
 
 ## N. Mengecek log
@@ -119,12 +119,13 @@ diganti kapan pun tanpa deploy ulang.
 
 Di panel **Status saat ini** kamu akan melihat dua baris: "Transfer Manual
 (QRIS statis)" (✓ tampil di checkout / ✗ dengan alasan `no_qr`/`disabled`) dan
-"QRIS Otomatis (YoBasePay)" yang mengikuti env. **Terisi** → "dapat dipilih
+"QRIS Otomatis (Stenly)" yang mengikuti env. **Terisi** → "dapat dipilih
 pembeli di halaman checkout" (berdampingan dengan Transfer Manual, yang tetap
 jadi default). **Kosong** → **ONGOING**: di checkout opsinya ber-badge
 "Ongoing", tidak bisa dipilih buyer, dan semua pembelian mengalir ke Transfer
-Manual. Untuk membukanya: isi `YOBASEPAY_API_KEY` +
-`YOBASEPAY_WEBHOOK_SECRET` lalu redeploy — tidak ada perubahan kode.
+Manual. Untuk membukanya: isi `STENLY_API_KEY` +
+`STENLY_WEBHOOK_SECRET` lalu redeploy — tidak ada perubahan kode
+(panduan lengkap: `docs/stenly.md`).
 
 **Harian (verifikasi)**:
 1. Telegram mengirim **🧾 KLAIM TRANSFER MANUAL** (order, nominal ditagihkan,
@@ -148,5 +149,5 @@ Ringkasan menampilkan jumlah antrian.
   manual) lalu "Perlu diproses"; balas chat buyer.
 - Mingguan: cek stok vs produk (nonaktifkan yang habis), cek revenue bulan ini.
 - Bulanan: rekap Supabase (Table Editor → export orders), pastikan backup,
-  rotasi API key bila perlu (YoBasePay/Supabase/Telegram — update env, redeploy),
+  rotasi API key bila perlu (Stenly/Supabase/Telegram — update env, redeploy),
   jalankan ulang `docs/testing.md` setelah upgrade dependensi.

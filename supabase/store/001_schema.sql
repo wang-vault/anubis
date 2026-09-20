@@ -52,8 +52,9 @@ create table if not exists public.orders (
   unit_price_snapshot   bigint not null,               -- Rupiah, disalin saat order dibuat
   quantity              int not null check (quantity between 1 and 999),
   total_amount          bigint not null check (total_amount > 0),
-  -- Nominal final dari provider (total + kode unik YoBasePay, bila ada).
-  -- Diisi saat createpayment / webhook / polling. Nullable untuk kompatibilitas.
+  -- Nominal final yang ditagihkan. QRIS otomatis (Stenly) = sama dengan
+  -- total_amount; MANUAL = total + kode unik. Diisi saat create payment /
+  -- webhook / polling. Nullable untuk kompatibilitas.
   charged_amount        bigint check (charged_amount is null or charged_amount > 0),
 
   payment_status        text not null default 'PENDING'
@@ -61,10 +62,13 @@ create table if not exists public.orders (
   order_status          text not null default 'PENDING'
     check (order_status in ('PENDING', 'PAID', 'PROCESSING', 'DONE', 'EXPIRED')),
 
-  -- Metode bayar: 'YOBASEPAY' = QRIS dinamis otomatis, 'MANUAL' = QRIS statis
-  -- milik penjual yang diverifikasi manual dari mutasi (lihat bagian 6).
-  payment_method        text not null default 'YOBASEPAY'
-    check (payment_method in ('YOBASEPAY', 'MANUAL')),
+  -- Metode bayar: 'STENLY' = QRIS dinamis otomatis (provider aktif),
+  -- 'MANUAL' = QRIS statis milik penjual yang diverifikasi manual dari mutasi
+  -- (lihat bagian 6). 'YOBASEPAY' = provider otomatis LAMA: tetap diizinkan
+  -- constraint agar histori transaksi lama tidak rusak, tetapi tidak pernah
+  -- ditulis lagi oleh aplikasi.
+  payment_method        text not null default 'STENLY'
+    check (payment_method in ('STENLY', 'MANUAL', 'YOBASEPAY')),
 
   -- Pembayaran MANUAL: klaim buyer ("saya sudah transfer") + hasil verifikasi
   -- penjual. Semua kolom ini HANYA ditulis server-side.
@@ -78,8 +82,8 @@ create table if not exists public.orders (
     or manual_review_status in ('APPROVED', 'REJECTED')),
   manual_review_note       text not null default '',
 
-  -- Informasi pembayaran (diisi server-side dari YoBasePay)
-  payment_id            text,                          -- trx_id dari YoBasePay, mis. YO-ABC12345
+  -- Informasi pembayaran (diisi server-side dari provider QRIS otomatis)
+  payment_id            text,                          -- ID transaksi provider (Stenly: order_id yang kita kirim)
   payment_url           text,                          -- halaman/URL QRIS dari provider
   qr_image_url          text,                          -- gambar QR untuk ditampilkan
   payment_expired_at    timestamptz,                   -- batas waktu bayar (countdown)

@@ -40,13 +40,15 @@ Snapshot (`product_name_snapshot`, `unit_price_snapshot`,
 `buyer_*_snapshot`) dibuat **saat order dibuat** → edit produk tidak mengubah
 histori. Status: `payment_status` ∈ PENDING/PAID/FAILED/EXPIRED,
 `order_status` ∈ PENDING/PAID/PROCESSING/DONE/EXPIRED (check constraints —
-status liar ditolak DB). `payment_id` (trx YoBasePay) **unique partial** —
+status liar ditolak DB). `payment_id` (= `order_id` di Stenly, yaitu
+`order_code` kita) **unique partial** —
 satu transaksi provider hanya untuk satu order. `telegram_notified_at` =
 kunci anti-notifikasi-ganda. Indexes untuk katalog, riwayat per-buyer, antrian
 kerja admin, lookup webhook, scan expiry, dan antrian klaim manual.
 
-Kolom **metode pembayaran**: `payment_method` ∈ `YOBASEPAY` / `MANUAL`
-(check constraint). Untuk order `MANUAL`: `charged_amount` = total + kode unik,
+Kolom **metode pembayaran**: `payment_method` ∈ `STENLY` / `MANUAL`
+(check constraint; `YOBASEPAY` tetap diizinkan untuk order arsip provider lama
+— lihat `supabase/store/003_stenly_payment.sql`). Untuk order `MANUAL`: `charged_amount` = total + kode unik,
 `payment_id` selalu NULL, dan kolom `manual_claim_at`, `manual_claim_note`,
 `manual_claim_reference`, `manual_claim_notified_at` (klaim buyer) serta
 `manual_reviewed_at`, `manual_reviewed_by`, `manual_review_status`

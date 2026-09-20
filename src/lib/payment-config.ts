@@ -1,6 +1,6 @@
 import "server-only";
 import { ErrorCodes, HttpError } from "@/lib/api";
-import { serverEnv, yobasepayConfigured } from "@/lib/env";
+import { serverEnv, stenlyConfigured } from "@/lib/env";
 import { log } from "@/lib/logger";
 import { storeDb } from "@/lib/supabase/server";
 import { MANUAL_PAYMENT_MIGRATION_FILE, checkStoreSchema } from "@/lib/store-schema";
@@ -147,7 +147,7 @@ export async function getAvailablePaymentMethods(): Promise<AvailablePaymentMeth
   const manual = await getManualPaymentView();
   const list: AvailablePaymentMethod[] = [];
 
-  if (yobasepayConfigured(env)) {
+  if (stenlyConfigured(env)) {
     list.push({
       id: PAYMENT_METHOD_AUTO,
       label: "QRIS Otomatis",
@@ -170,8 +170,8 @@ export async function getAvailablePaymentMethods(): Promise<AvailablePaymentMeth
  * Kedua opsi SELALU ditampilkan supaya pembeli tahu metode apa yang tersedia:
  *  - Pembayaran manual: opsi utama & default (aktif bila penjual sudah
  *    mengaktifkan saklar + mengunggah QR).
- *  - QRIS Otomatis: **bisa dipilih** bila kredensial YoBasePay terisi
- *    (`YOBASEPAY_API_KEY` + `YOBASEPAY_WEBHOOK_SECRET`). Bila belum terisi,
+ *  - QRIS Otomatis: **bisa dipilih** bila kredensial Stenly terisi
+ *    (`STENLY_API_KEY` + `STENLY_WEBHOOK_SECRET`). Bila belum terisi,
  *    opsi ini tampil ber-badge **"Ongoing"** dan tidak bisa dipilih (disabled)
  *    agar pembeli tidak mengira tokonya rusak — mereka diarahkan ke Transfer
  *    Manual, persis seperti sebelum integrasi QRIS dibuka.
@@ -184,7 +184,7 @@ export async function getAvailablePaymentMethods(): Promise<AvailablePaymentMeth
 export async function getCheckoutPaymentMethods(): Promise<AvailablePaymentMethod[]> {
   const env = serverEnv();
   const manual = await getManualPaymentView();
-  const autoReady = yobasepayConfigured(env);
+  const autoReady = stenlyConfigured(env);
   const list: AvailablePaymentMethod[] = [];
 
   // 1. Opsi Manual DULU (aktif untuk proses belanja, jadi pilihan default)

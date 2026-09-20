@@ -35,34 +35,43 @@ dicantumkan di bawah).
 
 ## 4. "QRIS tidak muncul / halaman pembayaran kosong"
 
-**Langkah pertama: `/admin/settings` → "Diagnosa QRIS Otomatis" → Jalankan
-diagnosa.** Tombol ini menguji kredensial ke provider tanpa membuat transaksi
-(`yobasepay.md` §4b) dan langsung menyebut penyebabnya: API key salah, Domain
-Lock menolak, saldo YC kurang, paket tidak mengaktifkan V1, atau provider tak
+**Langkah pertama: buka `/admin/settings` → panel “Diagnosa QRIS Otomatis” → Jalankan diagnosa.** Panel ini
+menguji kredensial ke Stenly tanpa membuat transaksi (`stenly.md` §8) dan
+langsung menyebut penyebabnya: env belum terisi, Secret Key salah/project lain,
+IP tidak masuk whitelist, gateway QRIS project belum siap, atau provider tak
 terjangkau.
 
 Lalu bedakan dua kasus lewat Supabase #2 → `orders` (baris order tes):
 
 **4a. `payment_id` NULL, `payment_status=FAILED`** → transaksi gagal DIBUAT.
-- Penyebab: key salah/kosong, Domain Lock ≠ `NEXT_PUBLIC_SITE_URL`, saldo YC 0,
-  paket tidak mengaktifkan API V1, provider down, base URL salah.
+- Penyebab: key salah/kosong (401/403), IP whitelist project aktif sementara
+  Vercel tidak punya IP tetap (403), gateway QRIS project belum siap (422),
+  nominal di luar Rp1.000–Rp10.000.000 (400), provider down, base URL salah.
 - Cek: log `payment_create_failed` (field `detail` = pesan asli provider);
   buyer melihat "Gerbang pembayaran sedang tidak tersedia."
 - Solusi: ikuti vonis panel diagnosa → perbaiki env/dashboard → **Redeploy**
   bila yang diubah env. Order gagal → buyer order ulang.
 
-**4b. `payment_id` TERISI (`YO-…`) tapi QR tak tampil** → transaksi berhasil,
+**4b. `payment_id` TERISI (= `order_code`) tapi QR tak tampil** → transaksi berhasil,
 gambarnya yang tidak bisa dirender. Halaman bayar menampilkan "QR tidak
 tersedia — gunakan tombol Buka Halaman Pembayaran".
-- Penyebab: provider mengirim QR dalam bentuk yang tak terduga — payload QRIS
-  (string EMVCo) alih-alih gambar, base64, atau nama field di luar daftar.
-- Cek: log `yobasepay_qr_payload_only` atau `yobasepay_qr_missing` — keduanya
-  mencetak **daftar nama field** yang dikirim provider. Kolom `qr_image_url`
-  di DB: null / bukan https / `data:` URI.
-- Solusi: payload QRIS → isi `YOBASEPAY_QR_RENDER_URL` (`yobasepay.md` §2.5);
-  nama field baru → tambahkan ke konstanta `QR_IMAGE_KEYS`/`QR_PAYLOAD_KEYS` di
-  `src/lib/integrations/payment/normalize.ts` (modul murni, ada unit test);
-  sementara itu buyer tetap bisa bayar lewat tombol "Buka Halaman Pembayaran".
+- Penyebab: respons charge tidak memuat `qr_string`, payloadnya ditolak
+  validator, atau render QR lokal gagal.
+- Cek log (masing-masing mencetak konteksnya):
+  * `stenly_qr_string_missing` — respons tanpa `qr_string`; log memuat **daftar
+    nama field** yang dikirim provider;
+  * `stenly_qr_payload_rejected` — payload bukan QRIS EMVCo yang valid;
+  * `stenly_qr_too_large` / `stenly_qr_render_failed` — render lokal gagal;
+  * `stenly_qr_unavailable` — kesimpulan akhir: tidak ada QR yang aman dirender.
+  Kolom `qr_image_url` di DB seharusnya berupa `data:image/png;base64,…`.
+- Solusi: cocokkan Transaction Detail di dashboard Stenly; bila nama field
+  berubah, tambahkan ke konstanta `STENLY_QR_PAYLOAD_KEYS`/`STENLY_QR_IMAGE_KEYS`
+  di `src/lib/integrations/payment/normalize.ts` (modul murni, ada unit test);
+  sementara itu buyer tetap bisa bayar lewat tombol "Buka Halaman Pembayaran"
+  (`payment_url`).
+- **Catatan keamanan:** `qr_image_url` milik Stenly membawa `api_key` di query
+  string, jadi aplikasi sengaja TIDAK memakainya dan merender QR sendiri dari
+  `qr_string`. Jangan "memperbaiki" ini dengan menaruh URL provider di `<img>`.
 
 ## 5. "Pembayaran sudah dilakukan tapi order masih PENDING"
 - Penyebab umum: webhook telat/belum dikonfigurasi; nominal tidak cocok
@@ -71,7 +80,8 @@ tersedia — gunakan tombol Buka Halaman Pembayaran".
 - Cek (berurutan):
   1. Supabase #2 → orders baris tsb: `payment_id` terisi? status? `last_payment_checked_at`?
   2. Vercel logs: `webhook_received` ada? → `webhook_amount_invalid` / `order_not_found`?
-  3. Dashboard YoBasePay: transaksi SUCCESS di sisi mereka?
+  3. Dashboard Stenly → Transactions: status `paid` di sisi mereka? →
+     Webhook Logs: delivery-nya `success` atau `failed`? (ada tombol resend)
 - Solusi cepat untuk penjual: tombol **⟳ Cek Pembayaran** (pakai API privat —
   tidak butuh webhook) → harusnya jadi PAID. Bila webhook mati total: cocokkan
   manual + perbaiki webhook URL/secret; jangan tandai PAID dari DB manual kecuali
@@ -82,19 +92,20 @@ tersedia — gunakan tombol Buka Halaman Pembayaran".
 - Penyebab: URL webhook salah/berubah setelah pindah domain; provider menahan
   kirim (URL tidak terjangkau — port/firewall?); Vercel Deployment Protection
   memblokir bot (HTTP 401 dari `vercel` header!).
-- Cek: curl dari internet → `curl -X POST https://domain/api/webhooks/yobasepay -d '{}'`
+- Cek: curl dari internet → `curl -X POST https://domain/api/webhooks/stenly -d '{}'`
   harus **400/403** (sampai app), bukan 401/405. Di Vercel: Settings →
   **Deployment Protection** → matikan untuk Production ATAU (lebih aman) aktifkan
   "Vercel Authentication" *only for Preview*.
-- Solusi: daftarkan ulang URL final di YoBasePay; pastikan pakai https domain
-  produksi; kirim test lagi.
+- Solusi: daftarkan ulang Callback URL final di dashboard Stenly (salin dari
+  `/admin/settings`); pastikan pakai https domain produksi; kirim ulang dari
+  **Webhook Logs → resend**.
 
 ## 7. "Webhook signature invalid" (403 tercatat di log)
-- Penyebab: `YOBASEPAY_WEBHOOK_SECRET` tidak sama dengan di dashboard (sering
-  lupa redeploy setelah ganti!); provider mengirim header berbeda nama;
-  proxy mengubah body (mis. re-write JSON).
-- Cek: log `webhook_signature_invalid`; env value di Vercel vs dashboard YoBasePay;
-  `curl` test signature dari laptop (yobasepay.md §6) → kalau curl lolos berarti
+- Penyebab: `STENLY_WEBHOOK_SECRET` tidak sama dengan Webhook Secret project
+  (sering lupa redeploy setelah ganti!); secret milik project lain; proxy
+  mengubah body (mis. re-write JSON) sehingga HMAC atas raw body tidak cocok.
+- Cek: log `webhook_signature_invalid`; env value di Vercel vs dashboard Stenly;
+  `curl` test signature dari laptop (`stenly.md` §7.3) → kalau curl lolos berarti
   masalah di sisi kirim provider/proxy.
 - Solusi: samakan secret → Redeploy; verifikasi provider mengirim HMAC ke
   raw body — bila provider memakai format lain (mis. `sha256=hex…`) parser kita
@@ -172,18 +183,18 @@ tersedia — gunakan tombol Buka Halaman Pembayaran".
 
 ## 15b. "QRIS Otomatis" tidak bisa diklik / badge "Ongoing"
 - **Artinya kredensialnya belum terbaca server.** Opsi QRIS Otomatis di
-  checkout hanya bisa dipilih bila `YOBASEPAY_API_KEY` **dan**
-  `YOBASEPAY_WEBHOOK_SECRET` terisi di environment (Vercel) dan sudah
+  checkout hanya bisa dipilih bila `STENLY_API_KEY` **dan**
+  `STENLY_WEBHOOK_SECRET` terisi di environment (Vercel) dan sudah
   **diredeploy**. Salah satu kosong → opsi tampil `disabled` + badge
   **"Ongoing"** ("sedang dalam proses") supaya buyer tahu metode itu belum
   dibuka dan memakai Transfer Manual.
 - Cek cepat: `/admin/settings` → panel **Status saat ini** → baris "QRIS
-  Otomatis (YoBasePay)". Tertulis *dapat dipilih pembeli di halaman checkout*
+  Otomatis (Stenly)". Tertulis *dapat dipilih pembeli di halaman checkout*
   = sudah aktif; *ONGOING (sedang disiapkan)* = env belum terbaca (nilai
   kosong, salah project/environment Vercel, atau belum redeploy setelah
   disimpan).
 - Saat env belum terisi, sisi server-nya ikut mati: webhook ditolak 403 dan
-  `POST /api/orders {"paymentMethod":"YOBASEPAY"}` balas 409 ("status
+  `POST /api/orders {"paymentMethod":"STENLY"}` balas 409 ("status
   ongoing"). Setelah env terisi + redeploy, semuanya hidup bersamaan: webhook,
   `⟳ Cek Pembayaran` admin, order via API, dan pilihan di UI checkout.
 
@@ -256,3 +267,24 @@ occurred (see the server logs for more information)"* saat membuka `/admin`.
   Otomatis tetap bisa dibuat (kolom `payment_method` tidak dikirim saat
   insert). Log penandanya: `store_schema_outdated`,
   `admin_manual_queue_unavailable`, `admin_order_list_schema_gap`.
+
+## 19. Checkout "QRIS Otomatis" gagal — `new row … violates check constraint "orders_payment_method_check"`
+
+- **Gejala.** Buyer memilih QRIS Otomatis dan mendapat **503** "Pembayaran QRIS
+  otomatis sedang tidak tersedia. Silakan gunakan Transfer Manual…". Di Vercel
+  Runtime Logs muncul `order_insert_payment_method_rejected` (SQLSTATE `23514`)
+  beserta nama file migrasinya. Transfer Manual tetap normal.
+- **Penyebab.** Database masih memakai CHECK constraint lama dari skema
+  YoBasePay yang hanya mengizinkan `payment_method in ('YOBASEPAY','MANUAL')`,
+  sedangkan aplikasi sekarang menulis `'STENLY'`.
+- **Solusi** (satu langkah, tanpa deploy ulang):
+  1. Supabase #2 → **SQL Editor → New query** → paste isi
+     `supabase/store/003_stenly_payment.sql` (atau SQL dari banner `/admin`) →
+     **Run**.
+  2. Idempoten & non-destruktif: constraint dilonggarkan menjadi
+     `('STENLY','MANUAL','YOBASEPAY')`, default kolom menjadi `'STENLY'`, dan
+     **tidak ada satu pun baris order yang diubah**.
+  3. Muat ulang `/checkout`. Tidak perlu redeploy.
+- **Order YoBasePay lama tetap aman.** Nilai `'YOBASEPAY'` masih diizinkan
+  constraint baru, jadi seluruh histori transaksi tetap valid dan tetap terbaca
+  di `/admin/orders` (ditandai sebagai arsip provider lama).

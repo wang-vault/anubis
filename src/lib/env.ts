@@ -5,7 +5,7 @@ import { z } from "zod";
  *
  * Public  : NEXT_PUBLIC_* → ikut ter-bundle ke browser, JANGAN isi rahasia.
  * Server  : tanpa prefix NEXT_PUBLIC → hanya bisa dibaca di server/Vercel.
- * Secret  : service role key, API key YoBasePay, webhook secret, bot token.
+ * Secret  : service role key, secret key Stenly, webhook secret, bot token.
  *
  * Nilai tidak pernah dicetak ke output user; error hanya menyebut NAMA variabel.
  */
@@ -35,12 +35,17 @@ const looseBool = (fallback: boolean) =>
  * Nilai tak dikenal jatuh ke default, dengan alasan yang sama seperti looseBool:
  * ini preferensi, bukan kredensial — tidak boleh menjatuhkan situs.
  */
-const loosePaymentMethod = (fallback: "YOBASEPAY" | "MANUAL") =>
+const loosePaymentMethod = (fallback: "STENLY" | "MANUAL") =>
   z.preprocess((v) => {
     if (typeof v !== "string") return fallback;
     const s = v.trim().toUpperCase();
-    return s === "YOBASEPAY" || s === "MANUAL" ? s : fallback;
-  }, z.enum(["YOBASEPAY", "MANUAL"]));
+    if (s === "STENLY" || s === "MANUAL") return s;
+    // Kompatibilitas konfigurasi lama: nilai env YOBASEPAY (provider otomatis
+    // sebelumnya) tetap diartikan "QRIS otomatis" agar deployment yang belum
+    // memperbarui env tidak tiba-tiba berpindah ke pembayaran manual.
+    if (s === "YOBASEPAY" || s === "AUTO") return "STENLY";
+    return fallback;
+  }, z.enum(["STENLY", "MANUAL"]));
 
 const schema = z.object({
   // --- Aplikasi ---
@@ -62,40 +67,22 @@ const schema = z.object({
   NEXT_PUBLIC_SUPABASE_STORE_ANON_KEY: z.string().optional().default(""),
   SUPABASE_STORE_SERVICE_ROLE_KEY: z.string().min(10),
 
-  // --- YoBasePay (Payment Engine QRIS) ---
-  // OPSIONAL: kosongkan bila QRIS otomatis belum aktif di akun YoBasePay.
-  // Bila salah satu kosong → metode YOBASEPAY otomatis disembunyikan & webhook
-  // ditolak (lihat yobasepayConfigured()). Pembayaran manual tetap jalan.
-  YOBASEPAY_API_KEY: z.string().default(""),
-  YOBASEPAY_WEBHOOK_SECRET: z.string().default(""),
-  // Sesuai dokumentasi resmi: https://yobasepay.net/index.php?page=docs_public
-  YOBASEPAY_BASE_URL: z.string().url().default("https://yobasepay.net/api"),
-  // YoBasePay menambah "kode unik" (1–99 / 100–999) ke nominal agar mutasi
-  // mudah dicocokkan. Toleransi validasi webhook terhadap nominal order.
-  YOBASEPAY_AMOUNT_TOLERANCE: z.coerce.number().int().min(0).max(999).default(999),
-  // expired_at dari YoBasePay berupa datetime tanpa zona waktu; diasumsikan WIB.
-  YOBASEPAY_EXPIRY_TZ_OFFSET: z.string().default("+07:00"),
-  // OPSIONAL: sebagian paket/versi API YoBasePay mengembalikan PAYLOAD QRIS
-  // (string EMVCo) alih-alih gambar QR. Isi dengan template layanan pembuat
-  // gambar QR yang kamu percaya — WAJIB https dan memuat placeholder {payload}:
-  //   https://api.qrserver.com/v1/create-qr-code/?size=320x320&data={payload}
-  // Kosongkan (default) bila provider mengirim gambar: nilai ini tidak dipakai.
-  // Catatan: payload QRIS memuat nama merchant & nominal, jadi pertimbangkan
-  // memakai layanan yang kamu host sendiri bila tidak ingin mengirimnya keluar.
-  YOBASEPAY_QR_RENDER_URL: z.preprocess(
-    (v) => (typeof v === "string" ? (v.trim().length === 0 ? null : v.trim()) : (v ?? null)),
-    z
-      .union([
-        z.null(),
-        z
-          .string()
-          .url("URL renderer QR tidak valid")
-          .startsWith("https://", "Renderer QR harus https")
-          .max(500)
-          .refine((v) => v.includes("{payload}"), "Template renderer QR harus memuat {payload}"),
-      ])
-      .default(null),
-  ),
+  // --- STENLY (StenlyPay — payment gateway QRIS otomatis) ---
+  // OPSIONAL: kosongkan bila QRIS otomatis belum aktif di akun Stenly.
+  // Bila salah satu kosong → metode STENLY otomatis disembunyikan & webhook
+  // ditolak (lihat stenlyConfigured()). Pembayaran manual tetap jalan.
+  //
+  // Dokumentasi resmi: https://stenly.id/docs
+  //   Secret key  : sk_live_… / sk_test_…  (header `x-api-key`, server-only)
+  //   Webhook sec.: whsec_…                (HMAC-SHA256 atas raw body)
+  STENLY_API_KEY: z.string().default(""),
+  STENLY_WEBHOOK_SECRET: z.string().default(""),
+  // Base URL REST API. Endpoint yang dipakai: POST {BASE}/api/v1/charge,
+  // GET {BASE}/api/v1/status/:order_id (lihat docs §Autentikasi & Endpoint).
+  STENLY_BASE_URL: z.string().url().default("https://stenly.id"),
+  // Masa aktif QRIS dalam menit (docs: parameter opsional `expiry_minutes`,
+  // default provider 15 menit). Dipakai apa adanya saat create charge.
+  STENLY_EXPIRY_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
 
   // --- Pembayaran MANUAL (QRIS statis milik penjual, mis. QR GoPay Merchant) ---
   // Metode ini tidak butuh provider: buyer scan QR statis, transfer, lalu
@@ -143,12 +130,17 @@ export function serverEnv(): Env {
 }
 
 /**
- * Helper: apakah QRIS otomatis (YoBasePay) bisa dipakai?
- * Butuh API key DAN webhook secret — tanpa secret, signature tidak bisa
- * diverifikasi sehingga webhook tidak boleh dipercaya sama sekali.
+ * Helper: apakah QRIS otomatis (Stenly) bisa dipakai?
+ * Butuh secret key DAN webhook secret — tanpa webhook secret, signature tidak
+ * bisa diverifikasi sehingga webhook tidak boleh dipercaya sama sekali.
  */
-export function yobasepayConfigured(env: Env = serverEnv()): boolean {
-  return env.YOBASEPAY_API_KEY.length > 0 && env.YOBASEPAY_WEBHOOK_SECRET.length > 0;
+export function stenlyConfigured(env: Env = serverEnv()): boolean {
+  return env.STENLY_API_KEY.length > 0 && env.STENLY_WEBHOOK_SECRET.length > 0;
+}
+
+/** true bila kredensial Stenly memakai key sandbox (`sk_test_…`). */
+export function stenlyIsSandbox(env: Env = serverEnv()): boolean {
+  return env.STENLY_API_KEY.startsWith("sk_test_");
 }
 
 /** Helper: apakah kredensial Telegram terisi? */
