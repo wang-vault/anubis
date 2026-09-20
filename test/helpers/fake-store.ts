@@ -37,6 +37,11 @@ export interface FakeDb {
    * "column orders.payment_method does not exist" (error di log produksi).
    */
   phantomColumns: Record<string, string[]>;
+  /**
+   * CHECK constraint per kolom, mis. { orders: { payment_method: ["YOBASEPAY","MANUAL"] } }
+   * — meniru database yang belum menjalankan migrasi 003 (Stenly).
+   */
+  checkConstraints: Record<string, Record<string, string[]>>;
 }
 
 export interface FakeDbOptions {
@@ -46,6 +51,12 @@ export interface FakeDbOptions {
   phantomColumns?: Record<string, string[]>;
   /** Tabel yang tidak ada sama sekali (meniru schema belum dijalankan). */
   missingTables?: string[];
+  /**
+   * Nilai yang DIIZINKAN CHECK constraint, mis.
+   * `{ orders: { payment_method: ["YOBASEPAY", "MANUAL"] } }` untuk meniru
+   * database lama yang menolak `payment_method = 'STENLY'` (SQLSTATE 23514).
+   */
+  checkConstraints?: Record<string, Record<string, string[]>>;
 }
 
 type Filter = (row: Row) => boolean;
@@ -67,7 +78,7 @@ const DEFAULTS: Record<string, Row> = {
     id: "",
     order_code: "",
     charged_amount: null,
-    payment_method: "YOBASEPAY",
+    payment_method: "STENLY",
     payment_status: "PENDING",
     order_status: "PENDING",
     payment_id: null,
@@ -135,6 +146,28 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
   /** Kolom hantu: dikenal cache, tidak ada di tabel (cache PostgREST basi). */
   private get phantom(): Set<string> {
     return new Set(this.db.phantomColumns[this.tableName] ?? []);
+  }
+
+  /**
+   * Nilai yang ditolak CHECK constraint → Postgres 23514. Dipakai untuk meniru
+   * skema lama yang belum mengenal `payment_method = 'STENLY'`.
+   */
+  private failCheckConstraint(row: Row): void {
+    if (this.forcedError) return;
+    const constraints = this.db.checkConstraints[this.tableName];
+    if (!constraints) return;
+    for (const [col, allowed] of Object.entries(constraints)) {
+      const value = row[col];
+      if (value === undefined || value === null) continue;
+      if (allowed.includes(String(value))) continue;
+      this.forcedError = {
+        message:
+          `new row for relation "${this.tableName}" violates check constraint ` +
+          `"${this.tableName}_${col}_check"`,
+        code: "23514",
+      };
+      return;
+    }
   }
 
   /** Kolom yang tidak boleh muncul di SQL (tidak ada di tabel). */
@@ -302,6 +335,7 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
           this.failUnknownColumn(col);
           if (this.forcedError) break;
         }
+        if (!this.forcedError) this.failCheckConstraint(row);
         if (this.forcedError) break;
       }
     }
@@ -431,6 +465,7 @@ export function createFakeDb(
     calls: [],
     missingColumns: opts.missingColumns ?? {},
     phantomColumns: opts.phantomColumns ?? {},
+    checkConstraints: opts.checkConstraints ?? {},
     from(table: string) {
       if (opts.missingTables?.includes(table)) {
         // Meniru tabel yang belum dibuat: Postgres 42P01 lewat PostgREST.

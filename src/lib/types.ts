@@ -3,8 +3,12 @@
 export type PaymentStatus = "PENDING" | "PAID" | "FAILED" | "EXPIRED";
 export type OrderStatus = "PENDING" | "PAID" | "PROCESSING" | "DONE" | "EXPIRED";
 export type ProfileRole = "buyer" | "admin";
-/** Metode bayar order — lihat lib/payment-methods.ts. */
-export type PaymentMethodId = "YOBASEPAY" | "MANUAL";
+/**
+ * Metode bayar order — lihat lib/payment-methods.ts.
+ * "YOBASEPAY" hanya muncul pada order LAMA (provider otomatis sebelumnya) dan
+ * dipertahankan agar histori transaksi tetap terbaca; order baru = "STENLY".
+ */
+export type PaymentMethodId = "STENLY" | "MANUAL" | "YOBASEPAY";
 /** Hasil verifikasi penjual atas klaim transfer manual. */
 export type ManualReviewStatus = "APPROVED" | "REJECTED";
 
@@ -46,7 +50,7 @@ export interface OrderRow {
   charged_amount: number | null;
   payment_status: PaymentStatus;
   order_status: OrderStatus;
-  /** YOBASEPAY (QRIS otomatis) atau MANUAL (QRIS statis penjual). */
+  /** STENLY (QRIS otomatis) atau MANUAL (QRIS statis penjual). Order lama bisa berisi YOBASEPAY. */
   payment_method: PaymentMethodId;
   payment_id: string | null;
   payment_url: string | null;

@@ -165,7 +165,7 @@ export async function orderTransitionAction(formData: FormData): Promise<void> {
   redirect(sanitizeBack(formData.get("back")));
 }
 
-/** Tombol "Cek status ke YoBasePay" — sinkron manual, sumber = provider. */
+/** Tombol "Cek status ke Stenly" — sinkron manual, sumber = provider. */
 export async function refreshOrderPaymentAction(formData: FormData): Promise<void> {
   await requireAdminGuard();
   const orderId = String(formData.get("orderId") ?? "");

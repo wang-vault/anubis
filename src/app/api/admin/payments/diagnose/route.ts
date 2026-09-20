@@ -8,11 +8,11 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * GET /api/admin/payments/diagnose — diagnosa koneksi YoBasePay (admin only).
+ * GET /api/admin/payments/diagnose — diagnosa koneksi Stenly (admin only).
  *
- * Memanggil `checkstatus` dengan trxid karangan: TANPA efek samping (tidak
- * membuat transaksi, tidak memotong saldo), tetapi cukup untuk mengetahui
- * apakah API key / domain lock / saldo / paket diterima provider.
+ * Memanggil GET /api/v1/status dengan order_id karangan: TANPA efek samping
+ * (tidak membuat transaksi), tetapi cukup untuk mengetahui apakah secret key /
+ * project / IP whitelist diterima provider.
  *
  * Respons memuat vonis + langkah perbaikan + pratinjau env yang DISAMARKAN.
  * Tidak ada nilai rahasia yang dikembalikan utuh.

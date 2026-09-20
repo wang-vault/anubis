@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  *
  * Alur (sesuai requirement §8/§10): validasi session → email verified →
  * ambil produk & harga dari DB store → hitung total server-side → insert
- * order PENDING → create payment YoBasePay → simpan payment ref.
+ * order PENDING → create payment Stenly → simpan payment ref.
  * Data yang dipakai untuk harga TIDAK PERNAH berasal dari body client.
  */
 export async function POST(request: NextRequest) {

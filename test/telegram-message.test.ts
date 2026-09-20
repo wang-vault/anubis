@@ -19,7 +19,7 @@ const sample: OrderRow = {
   charged_amount: 85042,
   payment_status: "PAID",
   order_status: "PAID",
-  payment_method: "YOBASEPAY",
+  payment_method: "STENLY",
   payment_id: "YO-ABC12345",
   payment_url: null,
   qr_image_url: null,

@@ -10,7 +10,7 @@ Semua uang & status hidup di server. Tiga pintu masuk publik: **halaman/SSR**,
 | Halaman `/checkout`, `/orders`, `/pay` | Middleware: ada session → **server action/halaman tetap cek ulang** session + `email_confirmed_at` + kepemilikan |
 | `/api/orders*` | `requireVerifiedUser()`: `getUser()` ke Supabase (verifikasi token, bukan decode) + profil |
 | `/api/admin*` | `requireAdmin()`: `profiles.role='admin'` dibaca dari DB via service role di SETIAP request — bukan dari frontend, bukan dari email hardcoded |
-| `/api/webhooks/yobasepay` | HMAC-SHA256 raw-body constant-time + validasi nominal + idempotensi |
+| `/api/webhooks/stenly` | HMAC-SHA256 raw-body constant-time (`X-Stenly-Signature`) + validasi nominal + idempotensi; JSON di-parse setelah signature sah; body dibatasi 64 KB |
 
 ## 2. RLS Supabase (baris pertahanan ke-2, di database)
 
@@ -42,7 +42,8 @@ jalan ke orders adalah server aplikasi (yang sudah memfilter kepemilikan).
    pun; klaim "saya sudah transfer" dari buyer hanya mencatat
    `manual_claim_at` (antrian verifikasi), bukan melunasi order.
 4. Webhook validasi nominal: `total ≤ charged ≤ total + toleransi` (kode unik
-   YoBasePay). Amount absen/salah → diabaikan + log, tidak ada auto-PAID.
+   Stenly). Amount absen/salah → diabaikan + log, tidak ada auto-PAID.
+   QRIS Stenly menagih nominal persis → toleransi 0 untuk metode otomatis.
 5. Update PAID idempoten (`WHERE payment_status IN ('PENDING','EXPIRED')`) →
    replay/dobel = no-op; order tidak "dibayar dua kali"; Telegram sekali
    (`telegram_notified_at` claim-before-send).
@@ -63,7 +64,7 @@ jalan ke orders adalah server aplikasi (yang sudah memfilter kepemilikan).
 - In-memory limiter (login 8/5mnt per email+ip, signup 5/10mnt, order 10/10mnt
   per user, status 30/mnt) — **best-effort** di serverless (per instance).
 - Lapisan nyata: Cloudflare WAF/rate-limit untuk `/auth/*`, `/api/orders`,
-  `/api/webhooks/yobasepay` (lihat `docs/cloudflare.md`).
+  `/api/webhooks/stenly` (lihat `docs/cloudflare.md`).
 - Timeout 15 dtk ke provider, 6 dtk ke Telegram → thread tidak digantung
   server jahat.
 
@@ -78,7 +79,7 @@ jalan ke orders adalah server aplikasi (yang sudah memfilter kepemilikan).
   npm run build && grep -RE "eyJ.+\..+\..+" .next/static | head  # JWT bocor?
   ```
 - Vercel env: simpan sebagai Secret (bukan committed `.env`); rotasi bila
-  pernah terekspos (BotFather `/revoke`, Supabase API keys, YoBasePay
+  pernah terekspos (BotFather `/revoke`, Supabase API keys, Stenly
   regenerate, ganti webhook secret + redeploy).
 - Admin TIDAK pernah menerima service key; anon key hanya sekuat RLS.
 
@@ -100,6 +101,7 @@ jalan ke orders adalah server aplikasi (yang sudah memfilter kepemilikan).
 - [ ] Tidak ada policy tulis untuk anon/authenticated di #2
 - [ ] Trigger role-guard masih ada (DROP oleh iseng = lubang privilege)
 - [ ] Akses dashboard Supabase [ ] Email admin login terakhir tercatat; akun tak terpakai dihapus di Supabase Vercel hanya untuk owner; 2FA aktif di keduanya
-- [ ] YoBasePay webhook URL hanya endpoint `/api/webhooks/yobasepay` (bukan dengan secret lama)
+- [ ] Callback URL Stenly hanya endpoint `/api/webhooks/stenly` (bukan dengan secret lama)
+- [ ] Tidak ada env `NEXT_PUBLIC_STENLY_*`; `qr_image_url` yang tersimpan berupa data URI (bukan URL provider yang memuat `api_key`)
 - [ ] Backup DB hidup (restore test sekali/kuartal)
 - [ ] Dependabot/`npm outdated` dipantau (Next/Supabase JS = jalur auth)

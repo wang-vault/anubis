@@ -3,13 +3,13 @@
 import { useCallback, useState } from "react";
 
 /**
- * Panel diagnosa QRIS Otomatis (YoBasePay) — dipakai di /admin/settings.
+ * Panel diagnosa QRIS Otomatis (Stenly) — dipakai di /admin/settings.
  *
  * Tujuan: penjual bisa mengetahui PENYEBAB "QR gagal" tanpa membuka Vercel
  * Runtime Logs atau menjalankan curl. Tombol ini memanggil
  * GET /api/admin/payments/diagnose yang menguji kredensial ke provider
- * memakai `checkstatus` + trxid karangan → tidak membuat transaksi nyata dan
- * tidak memotong saldo.
+ * memakai GET /api/v1/status + order_id karangan → tidak membuat transaksi
+ * nyata dan tidak menagih apa pun.
  *
  * Nilai env ditampilkan tersamar (maskSecret di server) — komponen ini tidak
  * pernah menerima rahasia utuh.
@@ -18,9 +18,9 @@ import { useCallback, useState } from "react";
 type Verdict =
   | "NOT_CONFIGURED"
   | "INVALID_API_KEY"
-  | "DOMAIN_LOCK"
-  | "INSUFFICIENT_BALANCE"
-  | "PLAN_MISMATCH"
+  | "IP_NOT_ALLOWED"
+  | "PROJECT_INACTIVE"
+  | "GATEWAY_NOT_READY"
   | "PROVIDER_UNREACHABLE"
   | "BAD_RESPONSE"
   | "OK_KEY_VALID"
@@ -37,12 +37,11 @@ interface Diagnostics {
   checkedAt: string;
   provider: string;
   configured: boolean;
+  sandbox: boolean;
   env: EnvCheck[];
-  domainLock: string;
   webhookUrl: string;
   baseUrl: string;
-  amountTolerance: number;
-  qrRenderConfigured: boolean;
+  expiryMinutes: number;
   probe: { attempted: boolean; ok: boolean; message: string | null };
   verdict: Verdict;
   verdictLabel: string;
@@ -87,9 +86,9 @@ export function PaymentDiagnostics() {
         Kenapa QR gagal dibuat?
       </h2>
       <p className="mt-1 text-sm leading-6 text-slate-500">
-        Tombol ini menguji API key, Domain Lock, saldo, dan paket akunmu langsung ke
-        YoBasePay memakai <span className="font-mono">checkstatus</span> dengan ID
-        karangan — <strong>tidak membuat transaksi dan tidak memotong saldo</strong>.
+        Tombol ini menguji secret key, status project, dan IP whitelist langsung ke
+        Stenly memakai <span className="font-mono">GET /api/v1/status</span> dengan
+        order ID karangan — <strong>tidak membuat transaksi dan tidak menagih apa pun</strong>.
       </p>
 
       <button
@@ -113,6 +112,13 @@ export function PaymentDiagnostics() {
             <p className="font-bold">
               {good ? "✓ " : "! "}
               {data.verdictLabel}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              Payment Provider: <strong>Stenly</strong> · API:{" "}
+              <strong>{data.probe.ok ? "Connected" : data.configured ? "Error" : "Belum dikonfigurasi"}</strong>{" "}
+              · Webhook:{" "}
+              <strong>{data.configured ? "Configured" : "Belum dikonfigurasi"}</strong>
+              {data.sandbox && " · Mode: SANDBOX (sk_test_…)"}
             </p>
             <p className="mt-1 text-xs leading-5 text-slate-600">
               Kode vonis: <span className="font-mono">{data.verdict}</span>
@@ -172,17 +178,13 @@ export function PaymentDiagnostics() {
 
           <div className="paper-inset p-3 text-xs leading-5 text-slate-600">
             <p>
-              <strong>Domain Lock</strong> yang harus didaftarkan di dashboard YoBasePay:{" "}
-              <span className="font-mono">{data.domainLock}</span>
-            </p>
-            <p className="mt-1">
-              <strong>Webhook URL</strong> yang harus diisi di dashboard:{" "}
-              <span className="font-mono">{data.webhookUrl}</span>
+              <strong>Callback URL</strong> yang harus diisi di dashboard Stenly (detail
+              project): <span className="font-mono">{data.webhookUrl}</span>
             </p>
             <p className="mt-1">
               <strong>Base URL API</strong>: <span className="font-mono">{data.baseUrl}</span> ·{" "}
-              <strong>toleransi kode unik</strong>: Rp{data.amountTolerance} ·{" "}
-              <strong>renderer QR</strong>: {data.qrRenderConfigured ? "aktif" : "tidak dipakai"}
+              <strong>masa aktif QRIS</strong>: {data.expiryMinutes} menit ·{" "}
+              <strong>QR</strong>: dirender lokal dari qr_string
             </p>
             <p className="mt-2 text-slate-500">
               Webhook tidak memengaruhi munculnya QR — ia menentukan apakah order berubah

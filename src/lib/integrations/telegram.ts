@@ -86,7 +86,7 @@ export function formatPaidMessage(order: PaidOrderInfo): string {
     `Total: ${formatRupiah(order.totalAmount)}`,
     order.paymentMethod === "MANUAL"
       ? "Metode: Transfer manual (sudah kamu verifikasi) 🧾"
-      : `Metode: ${PAYMENT_METHOD_LABELS.YOBASEPAY}`,
+      : `Metode: ${PAYMENT_METHOD_LABELS.STENLY}`,
     "Status: LUNAS ✅",
     "",
     "Silakan proses pesanan.",

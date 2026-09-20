@@ -46,14 +46,14 @@ Isi `.env.local` dengan nilai asli dari Supabase dashboard (lihat
 `docs/environment-variables.md` untuk arti & lokasi tiap variabel).
 
 Yang **wajib** hanya kredensial Supabase (URL + keys kedua project): app
-sengaja **fail-fast** bila salah satu belum diisi. `YOBASEPAY_*` dan
+sengaja **fail-fast** bila salah satu belum diisi. `STENLY_*` dan
 `TELEGRAM_*` boleh dibiarkan kosong.
 
-> **Default file ini = mode "manual saja".** Dengan `YOBASEPAY_API_KEY` &
-> `YOBASEPAY_WEBHOOK_SECRET` kosong, integrasi QRIS Otomatis nonaktif — di
+> **Default file ini = mode "manual saja".** Dengan `STENLY_API_KEY` &
+> `STENLY_WEBHOOK_SECRET` kosong, integrasi QRIS Otomatis nonaktif — di
 > halaman checkout opsinya tetap tampil namun ber-badge **"Ongoing"** (tidak
 > bisa dipilih), dan toko berjalan penuh memakai **Transfer Manual** (QRIS
-> statis milikmu). Checkout **tidak** menunggu YoBasePay. Begitu kedua var
+> statis milikmu). Checkout **tidak** menunggu Stenly. Begitu kedua var
 > terisi + redeploy, opsi QRIS Otomatis otomatis ikut bisa dipilih buyer
 > (badge "Ongoing"-nya hilang).
 >
@@ -90,10 +90,12 @@ npm run build       # build produksi
 
 Ikuti checklist di **`docs/testing.md`** (auth → produk → order → bayar →
 webhook test → admin). Untuk menguji pembayaran QRIS asli diperlukan akun
-YoBasePay (lihat `docs/yobasepay.md`) dan untuk webhook dari internet kamu perlu
+Stenly (lihat `docs/stenly.md`) dan untuk webhook dari internet kamu perlu
 URL publik — dev lokal tidak menerima webhook; gunakan tunnel (opsional:
-`npx ngrok http 3000` + daftarkan URL ngrok sebagai webhook sementara) atau
-test webhook dengan curl bertanda tangan (resep ada di `docs/yobasepay.md` §6).
+`npx ngrok http 3000` / `cloudflared tunnel --url http://localhost:3000` +
+daftarkan URL-nya sebagai Callback URL sementara) atau test webhook dengan curl
+bertanda tangan (resep ada di `docs/stenly.md` §7.3). Untuk uji tanpa uang
+sungguhan pakai project sandbox (`sk_test_…`) + `POST /api/v1/simulate-pay`.
 
 ## Troubleshooting awal
 

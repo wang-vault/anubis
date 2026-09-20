@@ -35,25 +35,29 @@
         → tentukan metode (resolvePaymentMethod: env + pengaturan penjual)
            Catatan UI: halaman checkout MERENDER kedua opsi lewat
            getCheckoutPaymentMethods() — manual pertama & default; QRIS otomatis
-           bisa dipilih bila env YOBASEPAY_* terisi, dan disabled ber-badge
-           "Ongoing" bila belum (order YOBASEPAY juga bisa dibuat via
+           bisa dipilih bila env STENLY_* terisi, dan disabled ber-badge
+           "Ongoing" bila belum (order STENLY juga bisa dibuat via
            POST /api/orders)
         → INSERT orders (PENDING/PENDING, order_code ORD-YYYYMMDD-XXXXXX, snapshot, payment_method)
-        ├─ YOBASEPAY: GET action=createpayment&amount=TOTAL → { trx_id, payment_url, qr_image, expired_at }
-        │             → UPDATE orders (payment_id, payment_url, qr_image_url, payment_expired_at)
+        ├─ STENLY   : POST /api/v1/charge { order_id=order_code, gross_amount=TOTAL,
+        │             customer_*, expiry_minutes } → { qr_string, payment_url, expires_at }
+        │             → qr_string dirender jadi PNG data-URI di server (paket qrcode)
+        │             → UPDATE orders (payment_id=order_code, payment_url, qr_image_url,
+        │               payment_expired_at, charged_amount=gross_amount)
         └─ MANUAL   : tanpa provider → charged_amount = total + kode unik(order_code)
                       payment_expired_at = now + expiry_minutes (pengaturan penjual)
         → redirect /pay/[order_code]
-6  Buyer scan QRIS. YoBasePay memantau mutasi.
+6  Buyer scan QRIS. Stenly memantau pembayaran QRIS dinamis tersebut.
 6b (MANUAL) Buyer scan QR statis penjual → transfer nominal persis → tekan
         "Saya sudah transfer" → UPDATE manual_claim_at + catatan (+ Telegram
         "🧾 KLAIM TRANSFER MANUAL"). Status MASIH PENDING.
         Penjual cek mutasi → [✓ Konfirmasi Lunas] → applyPaid(source="manual")
         → PAID + Telegram "🔔 PESANAN BARU" ; atau [✕ Tolak Klaim] → buyer
         boleh konfirmasi ulang. Halaman buyer menangkap perubahan via polling.
-7  Saat lunas (QRIS otomatis): YoBasePay POST /api/webhooks/yobasepay
+7  Saat lunas (QRIS otomatis): Stenly POST /api/webhooks/stenly
+        (X-Stenly-Signature = hex HMAC-SHA256 raw body; balas 200 {"received":true})
         verifikasi HMAC (raw body, constant-time) → cari order via payment_id
-        → validasi nominal (total ≤ amount ≤ total + toleransi kode unik)
+        → validasi nominal (Stenly menagih persis → toleransi 0)
         → UPDATE … WHERE payment_status IN ('PENDING','EXPIRED')   ← idempoten
         → order_status: PENDING → PAID ; paid_at ; klaim telegram_notified_at
         → setelah respons 200: kirim Telegram ke penjual (after())
@@ -96,7 +100,8 @@ updated_at; RLS: select/update baris sendiri saja; anon: tidak ada akses.
 - `orders`: `id · order_code(unique) · account_id · product_id(FK) ·
   product_name_snapshot · unit_price_snapshot · quantity · total_amount ·
   charged_amount(nominal final termasuk kode unik) · payment_status ·
-  order_status · payment_method('YOBASEPAY'|'MANUAL') · payment_id(unique) ·
+  order_status · payment_method('STENLY'|'MANUAL'; 'YOBASEPAY' = order arsip
+  provider lama, tetap valid & terbaca) · payment_id(unique) ·
   payment_url · qr_image_url · payment_expired_at · last_payment_checked_at ·
   paid_at · telegram_notified_at · buyer_name/whatsapp/email_snapshot ·
   timestamps` + kolom jejak pembayaran manual: `manual_claim_at/note/
@@ -133,7 +138,7 @@ produk diedit nanti. Indexes: katalog aktif, order per-account, antrian
   pembayaran (polling 8 dtk). First Load JS ±106 kB.
 - Katalog di-cache via `unstable_cache` (60 detik, tag `products`); mutation
   admin memanggil `revalidateTag('products')` → perubahan instan tanpa rebuild.
-- Polling status tidak membanjiri YoBasePay: throttle server 1 cek/10 dtk/order
+- Polling status tidak membanjiri Stenly: throttle server 1 cek/10 dtk/order
   (`last_payment_checked_at`) + limiter 30/menit/user.
 - Gambar: `<img loading="lazy">` (tanpa runtime optimizer — lihat catatan di
   admin-guide soal hosting gambar; bisa ditingkatkan ke next/image bila host
@@ -143,18 +148,20 @@ produk diedit nanti. Indexes: katalog aktif, order per-account, antrian
 
 - `src/lib/integrations/payment/types.ts` — interface `PaymentProvider`
   (createPayment/checkStatus/verifyWebhookSignature/normalizeWebhook).
-  `yobasepay.ts` satu-satunya yang tahu API YoBasePay → ganti provider =
-  implementasi baru + daftarkan di `payment/index.ts`.
+  `stenly.ts` satu-satunya yang tahu API Stenly (pemetaan nama field tinggal di
+  situ + `normalize.ts`) → ganti provider = implementasi baru + daftarkan di
+  `payment/index.ts` + route webhook baru. `orders.ts` tidak ikut berubah.
 - `src/lib/integrations/telegram.ts` — interface `Notifier`
   (`notifyOrderPaid`). Bila Telegram tidak diisi: `DisabledNotifier`
   (log, tidak mengirim, tidak mengganggu pembayaran). Ini bukan "mock
   payment" — tidak ada jalur palsu yang menandai order lunas.
-- Env `YOBASEPAY_BASE_URL` & `YOBASEPAY_AMOUNT_TOLERANCE` memisahkan asumsi
-  provider (kode unik, endpoint) dari kode bisnis.
+- Env `STENLY_BASE_URL` & `STENLY_EXPIRY_MINUTES` memisahkan asumsi provider
+  (endpoint, masa aktif QR) dari kode bisnis. Toleransi nominal QRIS otomatis
+  adalah konstanta 0 (Stenly menagih persis); kode unik hanya milik metode manual.
 - `src/lib/payment-config.ts` memisahkan **ketersediaan** (apa yang boleh
   dieksekusi server: `getAvailablePaymentMethods()`/`resolvePaymentMethod()`)
   dari **daftar tampilan checkout** (`getCheckoutPaymentMethods()`), tetapi
-  keduanya membaca sumber yang sama (`yobasepayConfigured()` + pengaturan
+  keduanya membaca sumber yang sama (`stenlyConfigured()` + pengaturan
   manual penjual): QRIS otomatis tampil & bisa dipilih bila kredensial terisi,
   dan jatuh ke badge "Ongoing" (disabled) bila belum — tanpa menyentuh state
   machine order.

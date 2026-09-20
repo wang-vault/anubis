@@ -11,10 +11,12 @@ export function formatRupiah(amount: number | string): string {
 }
 
 /**
- * Validasi nominal webhook terhadap nominal order.
- * YoBasePay (V1/V2) menambahkan kode unik +1..99 / +100..999 ke nominal agar
- * mudah dicocokkan dari mutasi, jadi jumlah yang dibayar = total + kode unik.
- * V3 (no unique code) = nominal pas → set YOBASEPAY_AMOUNT_TOLERANCE=0.
+ * Validasi nominal webhook/status terhadap nominal order.
+ *
+ * Stenly menagih nominal PERSIS seperti yang dikirim saat create charge
+ * (`gross_amount`), jadi toleransi yang dipakai untuk QRIS otomatis = 0.
+ * Parameter `tolerance` tetap ada karena pembayaran MANUAL memakai kode unik
+ * (total + 1..999) agar mutasi mudah dicocokkan penjual.
  */
 export function amountWithinTolerance(
   charged: number,

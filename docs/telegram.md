@@ -59,7 +59,7 @@ Gagal `chat not found` → bot belum di-start / chat ID salah.
 ## 5. Test notifikasi "order PAID"
 
 1. Pastikan env terisi + deploy selesai.
-2. Buat order uji → bayar (atau tembak webhook sah per `docs/yobasepay.md` §6).
+2. Buat order uji → bayar (atau tembak webhook sah per `docs/stenly.md` §7.3).
 3. ✅ Pesan masuk ke chat penjual:
    ```
    🔔 PESANAN BARU
@@ -84,7 +84,8 @@ Gagal `chat not found` → bot belum di-start / chat ID salah.
   otomatis; order `telegram_notified_at` sudah terisi → tidak spam.
 - Penjual tetap bisa lihat order di dashboard (itu sumber datanya).
 - Kirim ulang manual: SQL → `update orders set telegram_notified_at=null where
-  order_code='…';` lalu picu ulang webhook dari YoBasePay / tombol cek status.
+  order_code='…';` lalu kirim ulang webhook dari dashboard Stenly (Webhook
+  Logs → resend) / tekan tombol cek status.
   (Boleh juga tidak apa-apa — order sudah terlihat di dashboard.)
 
 ## 7. Keamanan

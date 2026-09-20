@@ -28,11 +28,12 @@ import {
   MANUAL_PAYMENT_MIGRATION_FILE,
   describeDbError,
   isMissingColumnError,
+  isPaymentMethodConstraintError,
   isManualPaymentSchemaReady,
+  STENLY_MIGRATION_FILE,
   normalizeOrderRow,
   resetStoreSchemaCache,
 } from "@/lib/store-schema";
-import { serverEnv } from "@/lib/env";
 import type { AuthContext } from "@/lib/authz";
 import type { AdminOrderView, OrderRow, OrderStatus, ProductRow } from "@/lib/types";
 
@@ -43,7 +44,7 @@ import type { AdminOrderView, OrderRow, OrderStatus, ProductRow } from "@/lib/ty
  * Prinsip:
  *  - Harga & total SELALU dihitung server-side dari DB store (client tidak dipercaya).
  *  - Pembayaran menjadi PAID hanya lewat webhook terverifikasi ATAU cek status
- *    server-side ke YoBasePay — tidak pernah dari klaim frontend.
+ *    server-side ke provider (Stenly) — tidak pernah dari klaim frontend.
  *  - Semua transisi status idempotent (guard `where` di query update).
  *  - Notifikasi Telegram diklaim sekali per order (telegram_notified_at).
  */
@@ -171,6 +172,22 @@ export async function createOrderForBuyer(
         "Pembayaran sedang tidak tersedia. Silakan hubungi penjual.",
       );
     }
+    if (isPaymentMethodConstraintError(error)) {
+      // Database masih memakai CHECK constraint lama yang hanya mengenal
+      // provider otomatis sebelumnya, sehingga nilai 'STENLY' ditolak. Jangan
+      // balas 500 tanpa penjelasan: sebutkan migrasinya di log agar penjual
+      // tahu satu langkah perbaikannya (banner /admin memuat SQL-nya).
+      log.error("order_insert_payment_method_rejected", {
+        message: error.message,
+        method,
+        migration: STENLY_MIGRATION_FILE,
+      });
+      throw new HttpError(
+        503,
+        ErrorCodes.paymentUnavailable,
+        "Pembayaran QRIS otomatis sedang tidak tersedia. Silakan gunakan Transfer Manual atau hubungi penjual.",
+      );
+    }
     if (error.code !== "23505") {
       log.error("order_insert_failed", { message: error.message });
       throw new HttpError(500, ErrorCodes.internal, "Gagal membuat order.");
@@ -238,7 +255,8 @@ export async function createOrderForBuyer(
     };
   }
 
-  // 4b. Buat pembayaran di YoBasePay (server-side; API key tak pernah ke browser).
+  // 4b. Buat pembayaran di provider QRIS otomatis (server-side; API key tak
+  //     pernah ke browser). Nominal = total hasil hitungan DB, bukan dari klien.
   const provider = getPaymentProvider();
   let created;
   try {
@@ -246,6 +264,9 @@ export async function createOrderForBuyer(
       amount: total,
       orderCode: order.order_code,
       description: `Order ${order.order_code} - ${product.name}`,
+      customerName: order.buyer_name_snapshot || null,
+      customerEmail: order.buyer_email_snapshot || null,
+      customerPhone: order.buyer_whatsapp_snapshot || null,
     });
   } catch (err) {
     const detail = err instanceof PaymentProviderError ? String(err.detail ?? err.message) : "";
@@ -510,8 +531,18 @@ export async function applyExpired(db: SupabaseClient, order: OrderRow): Promise
 }
 
 /**
+ * Toleransi nominal untuk order MANUAL: buyer mengetik sendiri nominal
+ * (total + kode unik 1..999) karena QRIS statis tidak bisa mengisi angka.
+ */
+const MANUAL_AMOUNT_TOLERANCE = 999;
+
+/**
  * Webhook/polling memberitahu "berhasil bayar" dengan nominal: validasi
- * terhadap total order + toleransi kode unik YoBasePay sebelum menandai lunas.
+ * terhadap total order sebelum menandai lunas.
+ *
+ * QRIS otomatis (Stenly) menagih nominal PERSIS `gross_amount` yang kita kirim
+ * (= total order), jadi toleransinya 0 — nominal yang berbeda sedikit pun
+ * ditolak. Pembayaran manual tetap memakai toleransi kode unik.
  */
 export function validateWebhookAmount(
   charged: number | null,
@@ -520,8 +551,8 @@ export function validateWebhookAmount(
   if (charged === null) {
     return { ok: false, reason: "amount_missing" };
   }
-  const env = serverEnv();
-  if (!amountWithinTolerance(charged, order.total_amount, env.YOBASEPAY_AMOUNT_TOLERANCE)) {
+  const tolerance = isManualMethod(order.payment_method) ? MANUAL_AMOUNT_TOLERANCE : 0;
+  if (!amountWithinTolerance(charged, order.total_amount, tolerance)) {
     return { ok: false, reason: "amount_mismatch" };
   }
   return { ok: true };
@@ -539,8 +570,9 @@ export interface RefreshResult {
 /**
  * Sinkronkan status satu order.
  *  - Dibatasi 1x/10 detik per order (throttle) agar tidak membanjiri provider.
- *  - Sumber kebenaran: jawaban check-status YoBasePay (private API), BUKAN
- *    klaim browser.
+ *  - Sumber kebenaran: jawaban endpoint status provider (dipanggil server-side
+ *    dengan secret key), BUKAN klaim browser.
+ *  - Ini FALLBACK: webhook Stenly tetap jalur utama perubahan status.
  */
 export async function refreshOrderStatus(order: OrderRow): Promise<RefreshResult> {
   const db = await storeDb();
@@ -986,7 +1018,12 @@ export async function listAdminOrders(filter: {
     return { data: res.data as unknown as OrderRow[] | null, error: res.error };
   };
 
-  let { data, error } = await runQuery("*", supportsManual);
+  // Filter antrian manual HANYA untuk permintaan antrian manual. `supportsManual`
+  // sekadar menandai "kolom manual ada di database" — memakainya langsung di sini
+  // membuat SEMUA daftar order (mis. /admin/orders tanpa filter) ikut disaring
+  // `payment_method = MANUAL and manual_claim_at is not null`, sehingga daftar
+  // order tampil kosong pada database yang justru sudah di-migrasi.
+  let { data, error } = await runQuery("*", Boolean(filter.manualClaim) && supportsManual);
 
   // Jaring pengaman kedua: skema bisa tidak cocok walau probe lolos (kolom
   // dihapus setelah dicek, atau schema cache PostgREST basi sehingga `select=*`

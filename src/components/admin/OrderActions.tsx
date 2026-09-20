@@ -111,7 +111,7 @@ export function OrderActions({
             className={cls}
             type="submit"
             pendingText="Mengecek…"
-            title="Tanya status ke YoBasePay (maks 1x/10 dtk)"
+            title="Tanya status ke Stenly (maks 1x/10 dtk)"
           >
             ⟳ Cek Pembayaran
           </ActionButton>

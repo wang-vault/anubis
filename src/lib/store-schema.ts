@@ -32,6 +32,8 @@ import type { OrderRow } from "@/lib/types";
 
 /** SQLSTATE Postgres: kolom tidak ada. */
 export const PG_UNDEFINED_COLUMN = "42703";
+/** SQLSTATE Postgres: baris melanggar CHECK constraint. */
+export const PG_CHECK_VIOLATION = "23514";
 /** SQLSTATE Postgres: tabel tidak ada. */
 export const PG_UNDEFINED_TABLE = "42P01";
 /** Kode PostgREST: kolom tidak ada di schema cache. */
@@ -61,6 +63,41 @@ export const MANUAL_ORDER_COLUMNS = [
 
 /** Nama file migrasi yang harus dijalankan penjual (disebut di log & banner). */
 export const MANUAL_PAYMENT_MIGRATION_FILE = "supabase/store/002_manual_payment.sql";
+
+/**
+ * Migrasi provider pembayaran otomatis YoBasePay → Stenly.
+ *
+ * Skema lama membatasi `orders.payment_method` ke ('YOBASEPAY','MANUAL'),
+ * sehingga order QRIS otomatis yang baru (nilai 'STENLY') ditolak database
+ * dengan SQLSTATE 23514. File ini melonggarkan constraint tersebut TANPA
+ * mengubah satu pun baris order lama.
+ */
+export const STENLY_MIGRATION_FILE = "supabase/store/003_stenly_payment.sql";
+
+/**
+ * SQL minimal migrasi Stenly — ditampilkan apa adanya ke penjual bila checkout
+ * QRIS otomatis ditolak constraint lama. Setara dengan STENLY_MIGRATION_FILE
+ * (dijaga test/schema-migration.test.ts).
+ */
+export const STENLY_MIGRATION_SQL = `do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+    where conname = 'orders_payment_method_check' and conrelid = 'public.orders'::regclass
+  ) then
+    alter table public.orders drop constraint orders_payment_method_check;
+  end if;
+
+  alter table public.orders
+    add constraint orders_payment_method_check
+    check (payment_method in ('STENLY', 'MANUAL', 'YOBASEPAY'));
+end
+$$;
+
+alter table public.orders
+  alter column payment_method set default 'STENLY';
+
+notify pgrst, 'reload schema';`;
 
 /**
  * Kolom `orders` yang sudah ada sejak skema awal (SEBELUM migrasi 002).
@@ -163,6 +200,18 @@ export function isMissingColumnError(err: PostgrestErrorLike | null | undefined)
   if (code === PG_UNDEFINED_COLUMN || code === PGRST_MISSING_COLUMN) return true;
   return matches(err.message ?? "", /column .*does not exist/i)
     || matches(err.message ?? "", /could not find the .* column/i);
+}
+
+/**
+ * Error "nilai payment_method ditolak CHECK constraint" — penanda database
+ * masih memakai constraint lama yang belum mengenal 'STENLY'.
+ */
+export function isPaymentMethodConstraintError(
+  err: PostgrestErrorLike | null | undefined,
+): boolean {
+  if (!err) return false;
+  if ((err.code ?? "") !== PG_CHECK_VIOLATION) return false;
+  return matches(err.message ?? "", /orders_payment_method_check|payment_method/i);
 }
 
 /** Error "tabel tidak ada" (schema #2 belum dijalankan sama sekali). */

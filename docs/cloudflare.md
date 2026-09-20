@@ -25,12 +25,12 @@ validasi server-side, limiter in-app). Tambahkan bila butuh:
 ## Konfigurasi yang direkomendasikan (bila proxy aktif)
 
 - **Rate Limiting Rules** (Security → WAF → Rate Limiting rules):
-  1. `uri_path starts_with "/api/webhooks/yobasepay"` → 200 req/10s/IP (longgarkan
-     bila YoBasePay punya IP publik tetap — whitelist di WAF lebih tepat).
+  1. `uri_path starts_with "/api/webhooks/stenly"` → 200 req/10s/IP (longgarkan
+     bila Stenly punya IP publik tetap — whitelist di WAF lebih tepat).
   2. `uri_path starts_with "/auth"` → 10 req/60s per IP (brute force login).
   3. `uri_path eq "/api/orders" and http.request.method eq "POST"` → 20/5m/IP.
 - **Security Level: High** opsional; Bot Fight Mode ON (bisa menghambat
-  webhook YoBasePay? webhook YoBasePay bukan browser — biasanya lolos; pantau
+  webhook Stenly? webhook Stenly bukan browser — biasanya lolos; pantau
   log 403 `cf-ray` setelah nyalakan).
 - Cache **OFF** untuk `/api/*` dan halaman login/checkout (default: dynamic
   HTML tidak di-cache — jangan tambahkan Cache Rule bodoh ke seluruh situs;

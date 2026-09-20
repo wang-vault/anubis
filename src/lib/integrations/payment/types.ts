@@ -1,21 +1,29 @@
 /**
  * Kontrak PaymentProvider — abstraction layer pembayaran.
  *
- * Implementasi aktif: YoBasePay (Payment Engine QRIS). Untuk mengganti
- * provider di masa depan, cukup buat implementasi interface ini dan
+ * Implementasi aktif: Stenly (StenlyPay — payment gateway QRIS). Untuk
+ * mengganti provider di masa depan, cukup buat implementasi interface ini dan
  * daftarkan di ./index.ts — kode bisnis (orders.ts, webhook) tidak berubah.
  */
 
 export interface CreatePaymentInput {
-  /** Nominal dalam Rupiah (integer). Provider boleh menambah kode unik. */
+  /** Nominal dalam Rupiah (integer). Sumbernya SELALU database, bukan browser. */
   amount: number;
   /** Kode order kita (ORD-YYYYMMDD-XXXXXX) — dipakai utk pelacakan internal. */
   orderCode: string;
   description?: string;
+  /** Snapshot kontak buyer (opsional; provider memakainya untuk kwitansi). */
+  customerName?: string | null;
+  customerEmail?: string | null;
+  customerPhone?: string | null;
 }
 
 export interface CreatedPayment {
-  /** ID transaksi dari provider (YoBasePay: trx_id, mis. "YO-ABC12345"). */
+  /**
+   * ID transaksi dari provider, disimpan ke `orders.payment_id`.
+   * Pada Stenly kunci transaksi adalah `order_id` yang KITA kirim (= order_code),
+   * karena endpoint status & webhook memakai nilai itu.
+   */
   paymentId: string;
   paymentUrl: string | null;
   /**
@@ -25,16 +33,16 @@ export interface CreatedPayment {
    */
   qrImageUrl: string | null;
   /**
-   * Payload QRIS mentah (string EMVCo/BRCode) bila provider TIDAK mengirim
-   * gambar. Berguna untuk diagnostik & (opsional) dirender sendiri lewat
-   * `YOBASEPAY_QR_RENDER_URL`. Null bila provider mengirim gambar.
+   * Payload QRIS mentah (string EMVCo/BRCode) bila tersedia. Adapter Stenly
+   * merendernya menjadi gambar SECARA LOKAL (package `qrcode`) sehingga payload
+   * pembayaran tidak pernah dikirim ke layanan QR pihak ketiga.
    */
   qrPayload?: string | null;
   /** ISO string, boleh null bila provider tidak memberi. */
   expiresAt: string | null;
   /**
-   * Nominal yang diminta provider (bisa total + kode unik YoBasePay).
-   * null bila provider tidak mengembalikan amount di createpayment.
+   * Nominal yang diminta provider. Stenly menagih persis `gross_amount` yang
+   * kita kirim; null bila provider tidak mengembalikannya.
    */
   chargedAmount: number | null;
 }

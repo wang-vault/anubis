@@ -1,6 +1,6 @@
 # Pembayaran Manual (QRIS statis penjual)
 
-Metode pembayaran kedua selain **QRIS Otomatis (YoBasePay)**. Dipakai ketika:
+Metode pembayaran kedua selain **QRIS Otomatis (Stenly)**. Dipakai ketika:
 
 - akun QRIS otomatis belum aktif / masih menunggu verifikasi provider,
 - kamu lebih nyaman dana masuk langsung ke QRIS merchant sendiri
@@ -34,7 +34,7 @@ Kolom yang terlibat (tabel `orders`, Supabase #2):
 
 | Kolom | Diisi oleh | Arti |
 |---|---|---|
-| `payment_method` | server saat order dibuat | `MANUAL` atau `YOBASEPAY` |
+| `payment_method` | server saat order dibuat | `MANUAL` atau `STENLY` (`YOBASEPAY` = order arsip provider lama) |
 | `charged_amount` | server | total + kode unik → nominal yang harus ditransfer |
 | `payment_expired_at` | server | `now + expiry_minutes` (dari pengaturan) |
 | `manual_claim_at` | buyer (tombol konfirmasi) | waktu buyer mengklaim sudah transfer |
@@ -42,7 +42,7 @@ Kolom yang terlibat (tabel `orders`, Supabase #2):
 | `manual_review_status` | penjual | `APPROVED` (lunas) atau `REJECTED` (klaim ditolak) |
 | `manual_reviewed_at` / `manual_reviewed_by` / `manual_review_note` | penjual | jejak verifikasi |
 
-Order manual **tidak pernah** punya `payment_id`, jadi webhook YoBasePay tidak
+Order manual **tidak pernah** punya `payment_id`, jadi webhook Stenly tidak
 akan pernah menyentuhnya (pencocokan webhook lewat `payment_id`).
 
 ---
@@ -83,7 +83,7 @@ Halaman `/checkout` **selalu** menampilkan dua opsi bayar (dibangun oleh
 | Opsi di checkout | Perilaku |
 |---|---|
 | **Transfer Manual** | diurutkan **pertama** dan jadi pilihan default; aktif begitu QR kamu terunggah (disabled/greyed bila belum) |
-| **QRIS Otomatis** | **bisa dipilih** bila `YOBASEPAY_API_KEY` **dan** `YOBASEPAY_WEBHOOK_SECRET` terisi. Bila salah satu kosong → badge amber **"Ongoing"** + catatan "sedang dalam proses" dan **tidak dapat dipilih** (radio & klik pada kartu dinonaktifkan) |
+| **QRIS Otomatis** | **bisa dipilih** bila `STENLY_API_KEY` **dan** `STENLY_WEBHOOK_SECRET` terisi. Bila salah satu kosong → badge amber **"Ongoing"** + catatan "sedang dalam proses" dan **tidak dapat dipilih** (radio & klik pada kartu dinonaktifkan) |
 
 Jadi selama akun QRIS-mu belum aktif, buyer tetap melihat bahwa metode itu
 sedang disiapkan (alih-alih mengira tokonya rusak) dan otomatis memakai
@@ -91,16 +91,16 @@ Transfer Manual; begitu kedua env terisi + redeploy, opsi QRIS Otomatis ikut
 terbuka tanpa perubahan kode. Tombol submit mengikuti pilihan buyer:
 "Buat Pesanan & Lanjut Bayar (Transfer Manual)" / "… (QRIS Otomatis)".
 
-Bila akun YoBasePay belum aktif, cukup kosongkan kedua env-nya:
+Bila akun Stenly belum aktif, cukup kosongkan kedua env-nya:
 
 ```
-YOBASEPAY_API_KEY=
-YOBASEPAY_WEBHOOK_SECRET=
+STENLY_API_KEY=
+STENLY_WEBHOOK_SECRET=
 ```
 
-Keduanya kosong → integrasi YoBasePay mati di level server: `createPayment`
+Keduanya kosong → integrasi Stenly mati di level server: `createPayment`
 ditolak (`provider_disabled`), `POST /api/orders` dengan
-`paymentMethod=YOBASEPAY` balas **409** ("sedang dalam proses, status
+`paymentMethod=STENLY` balas **409** ("sedang dalam proses, status
 ongoing"), **semua webhook ditolak 403** (tanpa secret, signature tidak bisa
 diverifikasi), dan di checkout opsi QRIS Otomatis kembali tampil ber-badge
 "Ongoing" (tidak bisa dipilih). Toko tetap jalan penuh dengan pembayaran
@@ -165,7 +165,7 @@ sebenarnya belum penuh.
 | Buyer spam tombol konfirmasi | Klaim pertama yang tercatat (guard `manual_claim_at IS NULL`), klaim berikutnya no-op + rate limit 10/10 menit/user |
 | Buyer mengubah nominal/harga | Tidak mungkin — harga & `charged_amount` dihitung server dari DB |
 | Order manual kadaluarsa saat penjual belum cek | Selama `manual_claim_at` terisi, order **tidak** di-expire otomatis — keputusan ada di penjual |
-| Order manual + webhook YoBasePay | Tidak mungkin cocok: order manual tidak punya `payment_id` |
+| Order manual + webhook Stenly | Tidak mungkin cocok: order manual tidak punya `payment_id` |
 | Endpoint gambar QR | `GET /api/manual-qr` publik (QRIS statis memang untuk dibagikan), di-cache 5 menit |
 | Ukuran gambar | maks 900 KB, hanya `image/png`/`jpeg`/`webp`; body server action dibatasi 2 MB |
 
@@ -181,9 +181,9 @@ melihat mutasi. Karena itu metode ini paling cocok untuk volume kecil-menengah.
 | Variabel | Default | Fungsi |
 |---|---|---|
 | `MANUAL_PAYMENT_ENABLED` | `true` | saklar global metode manual (di luar saklar dashboard) |
-| `DEFAULT_PAYMENT_METHOD` | `MANUAL` | metode terpilih default di checkout (`MANUAL`/`YOBASEPAY`) |
+| `DEFAULT_PAYMENT_METHOD` | `MANUAL` | metode terpilih default di checkout (`MANUAL`/`STENLY`) |
 | `MANUAL_PAYMENT_QR_IMAGE_URL` | kosong | opsional: URL https gambar QR (mengalahkan upload dashboard) |
-| `YOBASEPAY_API_KEY` + `YOBASEPAY_WEBHOOK_SECRET` | kosong | kosong = QRIS otomatis nonaktif |
+| `STENLY_API_KEY` + `STENLY_WEBHOOK_SECRET` | kosong | kosong = QRIS otomatis nonaktif (lihat `docs/stenly.md`) |
 
 Detail lengkap: `docs/environment-variables.md`.
 
@@ -191,9 +191,9 @@ Detail lengkap: `docs/environment-variables.md`.
 
 1. `/admin/settings` → unggah QR → **Simpan** → pratinjau muncul; baris
    "QRIS Otomatis" di panel *Status saat ini* berbunyi **ONGOING** selama env
-   YoBasePay belum terisi.
+   Stenly belum terisi.
 2. Buka `/checkout?product=<id>` → **Transfer Manual** tampil pertama dan
-   terpilih. **QRIS Otomatis**: bisa dipilih bila env YoBasePay terisi; bila
+   terpilih. **QRIS Otomatis**: bisa dipilih bila env Stenly terisi; bila
    belum → ber-badge **"Ongoing"** dan tidak bisa diklik. Buat order.
 3. `/pay/ORD-…` menampilkan QR + nominal `total + kode unik` + tombol salin.
 4. Tekan **Saya sudah transfer** → muncul "Konfirmasi kamu sudah kami terima";
