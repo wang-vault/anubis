@@ -38,8 +38,8 @@ export interface FakeDb {
    */
   phantomColumns: Record<string, string[]>;
   /**
-   * CHECK constraint per kolom, mis. { orders: { payment_method: ["YOBASEPAY","MANUAL"] } }
-   * — meniru database yang belum menjalankan migrasi 003 (Stenly).
+   * CHECK constraint per kolom, mis. { orders: { payment_method: ["MANUAL"] } }
+   * — meniru database dengan constraint versi tertentu.
    */
   checkConstraints: Record<string, Record<string, string[]>>;
 }
@@ -53,8 +53,8 @@ export interface FakeDbOptions {
   missingTables?: string[];
   /**
    * Nilai yang DIIZINKAN CHECK constraint, mis.
-   * `{ orders: { payment_method: ["YOBASEPAY", "MANUAL"] } }` untuk meniru
-   * database lama yang menolak `payment_method = 'STENLY'` (SQLSTATE 23514).
+   * `{ orders: { payment_method: ["MANUAL"] } }` → order bernilai 'STENLY'
+   * ditolak database (SQLSTATE 23514).
    */
   checkConstraints?: Record<string, Record<string, string[]>>;
 }
@@ -78,7 +78,7 @@ const DEFAULTS: Record<string, Row> = {
     id: "",
     order_code: "",
     charged_amount: null,
-    payment_method: "STENLY",
+    payment_method: "MANUAL",
     payment_status: "PENDING",
     order_status: "PENDING",
     payment_id: null,
@@ -100,10 +100,12 @@ const DEFAULTS: Record<string, Row> = {
   manual_payment_settings: {
     id: 1,
     is_enabled: true,
-    label: "Transfer Manual (QRIS)",
+    label: "Transfer Manual (WhatsApp)",
     account_name: "",
     instructions: "",
     expiry_minutes: 120,
+    whatsapp_number: "",
+    whatsapp_message_template: "",
     qr_image_mime: "image/png",
     qr_image_base64: null,
     qr_image_size: 0,
@@ -149,8 +151,7 @@ export class FakeBuilder implements PromiseLike<FakeResult> {
   }
 
   /**
-   * Nilai yang ditolak CHECK constraint → Postgres 23514. Dipakai untuk meniru
-   * skema lama yang belum mengenal `payment_method = 'STENLY'`.
+   * Nilai yang ditolak CHECK constraint → Postgres 23514.
    */
   private failCheckConstraint(row: Row): void {
     if (this.forcedError) return;

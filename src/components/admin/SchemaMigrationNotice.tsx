@@ -1,8 +1,8 @@
 import {
   MANUAL_PAYMENT_MIGRATION_FILE,
   MANUAL_PAYMENT_MIGRATION_SQL,
-  STENLY_MIGRATION_FILE,
-  STENLY_MIGRATION_SQL,
+  WHATSAPP_PAYMENT_MIGRATION_FILE,
+  WHATSAPP_PAYMENT_MIGRATION_SQL,
   type StoreSchemaCheck,
 } from "@/lib/store-schema";
 
@@ -35,14 +35,14 @@ export function SchemaMigrationNotice({ check }: { check: StoreSchemaCheck }) {
           <>
             Supabase #2 belum memiliki tabel <code>orders</code>. Jalankan{" "}
             <code>supabase/store/001_schema.sql</code>, <code>{MANUAL_PAYMENT_MIGRATION_FILE}</code>,
-            lalu <code>{STENLY_MIGRATION_FILE}</code> di SQL Editor.
+            lalu <code>{WHATSAPP_PAYMENT_MIGRATION_FILE}</code> di SQL Editor.
           </>
         ) : (
           <>
-            Kolom pembayaran manual (<code>payment_method</code>, <code>manual_*</code>) belum ada di
-            database, padahal aplikasi sudah memakainya. Tanpa perbaikan ini, antrian verifikasi
-            transfer manual kosong dan order manual tidak bisa dibuat. Situs tetap berjalan —
-            perbaikannya satu langkah di bawah.
+            Kolom pembayaran manual (<code>payment_method</code>, <code>manual_*</code>) atau kolom
+            nomor WhatsApp penjual belum ada di database, padahal aplikasi sudah memakainya. Tanpa
+            perbaikan ini, antrian verifikasi transfer kosong dan order tidak bisa dibuat. Situs
+            tetap berjalan — perbaikannya satu langkah di bawah.
           </>
         )}
       </p>
@@ -71,12 +71,13 @@ export function SchemaMigrationNotice({ check }: { check: StoreSchemaCheck }) {
       </pre>
 
       <p className="mt-3 text-sm leading-6">
-        Sekalian jalankan <code>{STENLY_MIGRATION_FILE}</code> di bawah ini. Migrasi ini mengizinkan
-        nilai <code>payment_method = &apos;STENLY&apos;</code> (provider QRIS otomatis yang sekarang)
-        tanpa mengubah satu pun order lama — order YoBasePay arsip tetap terbaca.
+        Lanjutkan dengan <code>{WHATSAPP_PAYMENT_MIGRATION_FILE}</code> di bawah ini. Migrasi ini
+        menambah kolom nomor WhatsApp &amp; template pesan penjual, serta menjadikan{" "}
+        <code>payment_method = &apos;MANUAL&apos;</code> sebagai default order baru — tanpa mengubah
+        satu pun order lama (order QRIS otomatis arsip tetap terbaca).
       </p>
       <pre className="mt-2 max-h-72 overflow-auto border border-red-900/30 bg-white/70 p-3 text-[11px] leading-5">
-        {STENLY_MIGRATION_SQL}
+        {WHATSAPP_PAYMENT_MIGRATION_SQL}
       </pre>
     </div>
   );

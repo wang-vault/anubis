@@ -1,117 +1,136 @@
 import { describe, expect, it } from "vitest";
 import {
-  isAutoMethod,
+  LEGACY_PAYMENT_METHOD_AUTO,
+  LEGACY_PAYMENT_METHOD_STENLY,
+  PAYMENT_METHOD_LABELS,
+  PAYMENT_METHOD_MANUAL,
+  PAYMENT_METHODS,
+  isLegacyAutoMethod,
   isManualMethod,
-  isPaymentMethod,
+  isStoredPaymentMethod,
   manualAmountAcceptable,
   manualChargedAmount,
   manualUniqueCode,
   normalizePaymentMethod,
+  paymentMethodLabel,
 } from "@/lib/payment-methods";
 
-describe("isPaymentMethod / normalizePaymentMethod", () => {
-  it("mengenali nilai kanonik persis (case-sensitive)", () => {
-    expect(isPaymentMethod("MANUAL")).toBe(true);
-    expect(isPaymentMethod("STENLY")).toBe(true);
-    // Normalisasi huruf besar dilakukan normalizePaymentMethod, bukan di sini.
-    expect(isPaymentMethod("stenly")).toBe(false);
-    expect(isPaymentMethod("TRANSFER")).toBe(false);
-    expect(isPaymentMethod(42)).toBe(false);
+describe("SATU metode bayar: MANUAL", () => {
+  it("daftar metode hanya berisi MANUAL", () => {
+    expect([...PAYMENT_METHODS]).toEqual(["MANUAL"]);
+    expect(PAYMENT_METHOD_MANUAL).toBe("MANUAL");
   });
 
-  /**
-   * Provider LAMA tidak boleh bisa dipilih untuk order baru: nilainya hanya
-   * valid sebagai data historis di database.
-   */
-  it("YOBASEPAY bukan metode yang bisa dipilih untuk order baru", () => {
-    expect(isPaymentMethod("YOBASEPAY")).toBe(false);
-    expect(normalizePaymentMethod("YOBASEPAY", "MANUAL")).toBe("MANUAL");
+  it("nilai apa pun dari klien tetap dinormalisasi ke MANUAL", () => {
+    for (const raw of ["MANUAL", "manual", "STENLY", "YOBASEPAY", "GOPAY", "", null, 42]) {
+      expect(normalizePaymentMethod(raw)).toBe("MANUAL");
+    }
   });
 
-  it("fallback dipakai untuk nilai tak dikenal", () => {
-    expect(normalizePaymentMethod(undefined, "MANUAL")).toBe("MANUAL");
-    expect(normalizePaymentMethod("", "MANUAL")).toBe("MANUAL");
-    expect(normalizePaymentMethod("GOPAY", "MANUAL")).toBe("MANUAL");
-    expect(normalizePaymentMethod(" manual ", "STENLY")).toBe("MANUAL");
-    expect(normalizePaymentMethod("stenly", "MANUAL")).toBe("STENLY");
+  it("isManualMethod hanya benar untuk MANUAL", () => {
+    expect(isManualMethod("MANUAL")).toBe(true);
+    expect(isManualMethod("STENLY")).toBe(false);
+    expect(isManualMethod("YOBASEPAY")).toBe(false);
+    expect(isManualMethod(null)).toBe(false);
   });
 });
 
-describe("isAutoMethod — histori transaksi tetap terbaca", () => {
-  it("mengenali provider aktif maupun order arsip YoBasePay", () => {
-    expect(isAutoMethod("STENLY")).toBe(true);
-    expect(isAutoMethod("YOBASEPAY")).toBe(true);
-    expect(isAutoMethod("MANUAL")).toBe(false);
-    expect(isAutoMethod(null)).toBe(false);
+describe("nilai arsip (order lama) tetap dikenali", () => {
+  it("isStoredPaymentMethod mengenali MANUAL + dua provider lama", () => {
+    expect(isStoredPaymentMethod("MANUAL")).toBe(true);
+    expect(isStoredPaymentMethod(LEGACY_PAYMENT_METHOD_STENLY)).toBe(true);
+    expect(isStoredPaymentMethod(LEGACY_PAYMENT_METHOD_AUTO)).toBe(true);
+    expect(isStoredPaymentMethod("GOPAY")).toBe(false);
+    expect(isStoredPaymentMethod(null)).toBe(false);
+  });
+
+  it("isLegacyAutoMethod menandai QRIS otomatis lama (kapitalisasi diabaikan)", () => {
+    expect(isLegacyAutoMethod("STENLY")).toBe(true);
+    expect(isLegacyAutoMethod(" yobasepay ")).toBe(true);
+    expect(isLegacyAutoMethod("MANUAL")).toBe(false);
+    expect(isLegacyAutoMethod(42)).toBe(false);
+  });
+
+  it("label aman untuk nilai tak dikenal", () => {
+    expect(PAYMENT_METHOD_LABELS.MANUAL).toBe("Transfer Manual (WhatsApp)");
+    expect(PAYMENT_METHOD_LABELS.STENLY).toContain("lama");
+    expect(paymentMethodLabel("STENLY")).toBe(PAYMENT_METHOD_LABELS.STENLY);
+    expect(paymentMethodLabel("MANUAL")).toBe(PAYMENT_METHOD_LABELS.MANUAL);
+    expect(paymentMethodLabel("NGACO")).toBe(PAYMENT_METHOD_LABELS.MANUAL);
+    expect(paymentMethodLabel(undefined)).toBe(PAYMENT_METHOD_LABELS.MANUAL);
   });
 });
 
 describe("manualUniqueCode", () => {
-  it("selalu dalam rentang 1..999", () => {
-    for (let i = 0; i < 500; i++) {
-      const code = manualUniqueCode(`ORD-20260912-${String(i).padStart(6, "A")}`);
-      expect(code).toBeGreaterThanOrEqual(1);
-      expect(code).toBeLessThanOrEqual(999);
-    }
-  });
-
-  it("deterministik untuk order yang sama (nominal tidak berubah saat reload)", () => {
+  it("deterministik: kode order sama → kode unik sama", () => {
     const a = manualUniqueCode("ORD-20260912-AB7K2M");
     const b = manualUniqueCode("ORD-20260912-AB7K2M");
     expect(a).toBe(b);
   });
 
-  it("kode order berbeda menghasilkan nominal berbeda (setidaknya sebagian besar)", () => {
-    const codes = new Set(
-      ["ORD-20260912-AAAAAA", "ORD-20260912-AAAAAB", "ORD-20260912-AAAAAC", "ORD-20260912-AAAAAD"].map(
-        (c) => manualUniqueCode(c),
-      ),
-    );
-    expect(codes.size).toBeGreaterThan(1);
+  it("selalu di rentang 1..max", () => {
+    for (const code of [
+      "ORD-20260912-AB7K2M",
+      "ORD-20260912-ZZZZZZ",
+      "ORD-20250101-AAAAAA",
+      "x",
+      "",
+    ]) {
+      const v = manualUniqueCode(code);
+      expect(v).toBeGreaterThanOrEqual(1);
+      expect(v).toBeLessThanOrEqual(999);
+    }
   });
 
-  it("menghormati batas maksimum yang diminta", () => {
-    expect(manualUniqueCode("ORD-20260912-AB7K2M", 99)).toBeLessThanOrEqual(99);
+  it("case-insensitive & toleran spasi (kode dari URL boleh huruf kecil)", () => {
+    expect(manualUniqueCode(" ord-20260912-ab7k2m ")).toBe(
+      manualUniqueCode("ORD-20260912-AB7K2M"),
+    );
+  });
+
+  it("max < 1 → 0 (tanpa kode unik)", () => {
     expect(manualUniqueCode("ORD-20260912-AB7K2M", 0)).toBe(0);
+  });
+
+  it("menyebar cukup rata untuk order berurutan (bukan konstan)", () => {
+    const values = new Set<number>();
+    for (let i = 0; i < 50; i++) {
+      values.add(manualUniqueCode(`ORD-20260912-AB7K${String(i).padStart(3, "0")}`));
+    }
+    expect(values.size).toBeGreaterThan(30);
   });
 });
 
 describe("manualChargedAmount", () => {
-  it("total + kode unik, dan selalu lebih besar dari total", () => {
-    const total = 85_000;
-    const charged = manualChargedAmount(total, "ORD-20260912-AB7K2M");
-    expect(charged).toBeGreaterThan(total);
-    expect(charged).toBeLessThanOrEqual(total + 999);
-    expect(charged).toBe(total + manualUniqueCode("ORD-20260912-AB7K2M"));
+  it("nominal = total + kode unik", () => {
+    const amount = manualChargedAmount(50000, "ORD-20260912-AB7K2M");
+    expect(amount).toBe(50000 + manualUniqueCode("ORD-20260912-AB7K2M"));
   });
 
-  it("menormalkan total pecahan/negatif menjadi integer non-negatif", () => {
-    expect(manualChargedAmount(1000.7, "ORD-20260912-AB7K2M")).toBe(
+  it("membulatkan total non-integer & tidak pernah negatif", () => {
+    expect(manualChargedAmount(1000.9, "ORD-20260912-AB7K2M")).toBe(
       1000 + manualUniqueCode("ORD-20260912-AB7K2M"),
     );
-    expect(manualChargedAmount(-5, "ORD-20260912-AB7K2M")).toBe(
+    expect(manualChargedAmount(-500, "ORD-20260912-AB7K2M")).toBe(
       manualUniqueCode("ORD-20260912-AB7K2M"),
     );
   });
 });
 
 describe("manualAmountAcceptable", () => {
-  it("menerima nominal pas dan nominal + kode unik", () => {
-    expect(manualAmountAcceptable(85_000, 85_000)).toBe(true);
-    expect(manualAmountAcceptable(85_417, 85_000)).toBe(true);
+  const total = 25000;
+  it("menerima nominal pas dan nominal + kode unik 1..999", () => {
+    expect(manualAmountAcceptable(25000, total)).toBe(true);
+    expect(manualAmountAcceptable(25042, total)).toBe(true);
+    expect(manualAmountAcceptable(25999, total)).toBe(true);
   });
-  it("menolak kekurangan bayar dan nilai tidak masuk akal", () => {
-    expect(manualAmountAcceptable(84_999, 85_000)).toBe(false);
-    expect(manualAmountAcceptable(Number.NaN, 85_000)).toBe(false);
+  it("menolak nominal kurang dari total", () => {
+    expect(manualAmountAcceptable(24999, total)).toBe(false);
   });
-});
-
-describe("isManualMethod", () => {
-  it("hanya true untuk MANUAL", () => {
-    expect(isManualMethod("MANUAL")).toBe(true);
-    expect(isManualMethod("STENLY")).toBe(false);
-    expect(isManualMethod("YOBASEPAY")).toBe(false);
-    expect(isManualMethod(null)).toBe(false);
-    expect(isManualMethod(undefined)).toBe(false);
+  it("menolak nominal di atas total + kode unik maksimum", () => {
+    expect(manualAmountAcceptable(26000, total)).toBe(false);
+  });
+  it("menolak NaN", () => {
+    expect(manualAmountAcceptable(Number.NaN, total)).toBe(false);
   });
 });

@@ -9,14 +9,8 @@ import {
   adminConfirmManualPayment,
   adminRejectManualClaim,
   adminTransition,
-  findOrderByCodeOrId,
-  refreshOrderStatus,
 } from "@/lib/orders";
-import {
-  MANUAL_QR_ALLOWED_MIME,
-  MANUAL_QR_MAX_BYTES,
-  saveManualPaymentSettings,
-} from "@/lib/payment-config";
+import { saveManualPaymentSettings } from "@/lib/payment-config";
 import { manualSettingsSchema, productInputSchema } from "@/lib/validation";
 import { rethrowNextControlFlow } from "@/lib/action-errors";
 import { log } from "@/lib/logger";
@@ -165,25 +159,8 @@ export async function orderTransitionAction(formData: FormData): Promise<void> {
   redirect(sanitizeBack(formData.get("back")));
 }
 
-/** Tombol "Cek status ke Stenly" — sinkron manual, sumber = provider. */
-export async function refreshOrderPaymentAction(formData: FormData): Promise<void> {
-  await requireAdminGuard();
-  const orderId = String(formData.get("orderId") ?? "");
-  const back = sanitizeBack(formData.get("back"));
-  if (!uuidSchema.safeParse(orderId).success) redirect(back);
-  const order = await findOrderByCodeOrId(orderId);
-  if (order && order.payment_status === "PENDING") {
-    try {
-      await refreshOrderStatus(order);
-    } catch (err) {
-      log.errorFrom("admin_refresh_payment_failed", err);
-    }
-  }
-  redirect(back);
-}
-
 // ---------------------------------------------------------------------------
-// PEMBAYARAN MANUAL — verifikasi penjual & pengaturan QR statis
+// PEMBAYARAN MANUAL (WhatsApp) — verifikasi penjual & pengaturan nomor WA
 // ---------------------------------------------------------------------------
 
 const manualReviewFormSchema = z.object({
@@ -259,8 +236,9 @@ export async function rejectManualClaimAction(formData: FormData): Promise<void>
 }
 
 /**
- * Simpan pengaturan pembayaran manual (label, a.n., instruksi, batas waktu,
- * gambar QR). Gambar di-upload sebagai File → base64 (maks ~900 KB).
+ * Simpan pengaturan pembayaran manual via WhatsApp (nomor WA penjual, label,
+ * instruksi, template pesan, batas waktu). Nomor divalidasi & dinormalisasi
+ * (62…) oleh schema; nilai rahasia tidak pernah masuk form ini.
  */
 export async function saveManualPaymentSettingsAction(
   _prev: AdminActionState,
@@ -270,56 +248,26 @@ export async function saveManualPaymentSettingsAction(
 
   const parsed = manualSettingsSchema.safeParse({
     is_enabled: formData.get("is_enabled") === "on",
+    whatsapp_number: formData.get("whatsapp_number"),
     label: formData.get("label"),
     account_name: formData.get("account_name") ?? "",
     instructions: formData.get("instructions") ?? "",
+    whatsapp_message_template: formData.get("whatsapp_message_template") ?? "",
     expiry_minutes: formData.get("expiry_minutes"),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Pengaturan tidak valid." };
   }
 
-  // --- gambar QR (opsional) ---
-  let qrImage: { mime: string; base64: string; size: number } | null | "clear" = null;
-  if (formData.get("clear_qr") === "1") {
-    qrImage = "clear";
-  } else {
-    const file = formData.get("qr_image");
-    if (file instanceof File && file.size > 0) {
-      if (!MANUAL_QR_ALLOWED_MIME.includes(file.type as (typeof MANUAL_QR_ALLOWED_MIME)[number])) {
-        return {
-          error: `Format gambar tidak didukung (${file.type || "tanpa tipe"}). Gunakan PNG, JPG, atau WebP.`,
-        };
-      }
-      if (file.size > MANUAL_QR_MAX_BYTES) {
-        return {
-          error: `Gambar terlalu besar (${Math.round(file.size / 1024)} KB). Maksimal ${Math.round(
-            MANUAL_QR_MAX_BYTES / 1024,
-          )} KB — perkecil dulu (mis. screenshot lalu crop).`,
-        };
-      }
-      try {
-        const buf = Buffer.from(await file.arrayBuffer());
-        qrImage = {
-          mime: file.type || "image/png",
-          base64: buf.toString("base64"),
-          size: buf.byteLength,
-        };
-      } catch (err) {
-        log.errorFrom("manual_qr_read_failed", err);
-        return { error: "Gagal membaca file gambar. Coba lagi." };
-      }
-    }
-  }
-
   try {
     await saveManualPaymentSettings({
       is_enabled: parsed.data.is_enabled,
+      whatsapp_number: parsed.data.whatsapp_number,
       label: parsed.data.label,
       account_name: parsed.data.account_name,
       instructions: parsed.data.instructions,
+      whatsapp_message_template: parsed.data.whatsapp_message_template,
       expiry_minutes: parsed.data.expiry_minutes,
-      qr_image: qrImage,
     });
   } catch (err) {
     rethrowNextControlFlow(err);

@@ -45,7 +45,7 @@ export default async function AdminDashboardPage() {
             <p className="section-kicker">Antrian pembayaran</p>
             <h2 className="admin-section-title">Klaim transfer manual ({toVerify.length})</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Cocokkan dengan mutasi QRIS kamu, lalu konfirmasi. Klaim buyer bukan bukti bayar.
+              Cocokkan dengan mutasi transfer kamu (nomor unik per order), lalu konfirmasi. Klaim buyer bukan bukti bayar.
             </p>
           </div>
           <Link href="/admin/orders?status=CLAIM" className="section-link">

@@ -95,14 +95,14 @@ describe("formatManualClaimMessage", () => {
 });
 
 describe("formatPaidMessage (metode manual)", () => {
-  it("menandai order hasil verifikasi manual", () => {
+  it("menandai order hasil verifikasi manual sebagai Transfer Manual (WhatsApp)", () => {
     const msg = formatPaidMessage(buildPaidOrderInfo({ ...manualSample, payment_status: "PAID" }));
-    expect(msg).toContain("Metode: Transfer manual (sudah kamu verifikasi) 🧾");
+    expect(msg).toContain("Metode: Transfer Manual (WhatsApp)");
     expect(msg).toContain("Status: LUNAS ✅");
   });
 
-  it("order QRIS otomatis tetap memakai label provider", () => {
+  it("order arsip QRIS otomatis diberi label arsip (bukan disamarkan jadi manual)", () => {
     const msg = formatPaidMessage(buildPaidOrderInfo(sample));
-    expect(msg).toContain("Metode: QRIS Otomatis");
+    expect(msg).toContain("Metode: QRIS Otomatis (lama)");
   });
 });

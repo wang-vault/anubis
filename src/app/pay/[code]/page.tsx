@@ -6,6 +6,8 @@ import { getProduct } from "@/lib/products";
 import { getManualPaymentView } from "@/lib/payment-config";
 import { ORDER_CODE_REGEX } from "@/lib/order-code";
 import { PaymentPanel, type PaymentPanelProps } from "@/components/PaymentPanel";
+import { paymentWhatsappUrl, transferProofMessage } from "@/lib/whatsapp";
+import { waMeUrl } from "@/lib/phone";
 
 export const metadata: Metadata = { title: "Pembayaran" };
 export const dynamic = "force-dynamic";
@@ -15,10 +17,13 @@ interface Props {
 }
 
 /**
- * Halaman pembayaran buyer. Data order dimuat server-side (ownership
- * check); panel status + QRIS + countdown di-render dan disinkronkan via
- * endpoint /api/payments/status (sumber kebenaran: server + provider,
- * BUKAN klaim browser).
+ * Halaman pembayaran buyer.
+ *
+ * Semua koordinasi pembayaran terjadi di WhatsApp: halaman ini menyiapkan
+ * tautan chat yang sudah terisi kode order + nominal, menampilkan sisa waktu
+ * bayar, dan memantau status order (sumber kebenaran tetap server).
+ * Detail pembayaran (QRIS statis / rekening / e-wallet) dikirim penjual di
+ * chat, jadi nomor/QR tidak pernah disimpan di halaman ini.
  */
 export default async function PayPage({ params }: Props) {
   const { code } = await params;
@@ -34,15 +39,42 @@ export default async function PayPage({ params }: Props) {
 
   const product = await getProduct(order.product_id);
 
-  // Konfigurasi pembayaran manual hanya dimuat bila order memang manual.
   let manual: PaymentPanelProps["manual"] = null;
-  if (order.payment_method === "MANUAL") {
+  // Konfigurasi pembayaran manual dibaca untuk SEMUA order yang belum lunas
+  // (termasuk order arsip dari masa QRIS otomatis): layar "kadaluarsa/gagal"
+  // menyuruh buyer menghubungi penjual, jadi tautan WhatsApp-nya harus ada.
+  if (order.payment_status !== "PAID") {
     const m = await getManualPaymentView();
+    const amount = order.charged_amount ?? order.total_amount;
+    const messageVars = {
+      storeName: process.env.NEXT_PUBLIC_SITE_NAME ?? "Toko Saya",
+      buyerName: order.buyer_name_snapshot,
+      orderCode: order.order_code,
+      productName: order.product_name_snapshot,
+      quantity: order.quantity,
+      amount,
+    };
+    const waHref = m.whatsappNumber
+      ? paymentWhatsappUrl(m.whatsappNumber, messageVars, m.messageTemplate)
+      : null;
+    const proofHref = m.whatsappNumber
+      ? waMeUrl(
+          m.whatsappNumber,
+          transferProofMessage({
+            orderCode: order.order_code,
+            amount,
+            buyerName: order.buyer_name_snapshot,
+          }),
+        )
+      : null;
+
     manual = {
       label: m.label,
-      accountName: m.accountName,
+      sellerName: m.sellerName,
       instructions: m.instructions,
-      qrSrc: m.qrSrc,
+      whatsappDisplay: m.whatsappDisplay,
+      waHref,
+      proofHref,
     };
   }
 
@@ -58,8 +90,6 @@ export default async function PayPage({ params }: Props) {
         payment_status: order.payment_status,
         order_status: order.order_status,
         payment_method: order.payment_method,
-        payment_url: order.payment_url,
-        qr_image_url: order.qr_image_url,
         payment_expired_at: order.payment_expired_at,
         manual_claim_at: order.manual_claim_at,
         manual_review_status: order.manual_review_status,

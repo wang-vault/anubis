@@ -1,4 +1,4 @@
-# Deployment ke Produksi — Langkah A–O
+# Deployment ke Produksi — Langkah A–L
 
 Panduan klik-per-klik. Total ±45–75 menit bila pertama kali. Kerjakan berurutan;
 setiap langkah punya "✅ tanda berhasil".
@@ -33,12 +33,17 @@ Biarkan dulu (schema dijalankan di langkah C).
 3. Supabase #2 → **SQL Editor → New query** → paste
    `supabase/store/002_manual_payment.sql` → **Run** (migrasi pembayaran
    manual: kolom `payment_method` + `manual_*` + tabel
-   `manual_payment_settings`). Idempoten, dan **wajib** untuk project yang
-   sudah menjalankan `001_schema.sql` versi lama.
+   `manual_payment_settings`). Idempoten.
+4. Supabase #2 → **SQL Editor → New query** → paste
+   `supabase/store/004_whatsapp_payment.sql` → **Run** (migrasi WhatsApp:
+   kolom `whatsapp_number` + `whatsapp_message_template`, default
+   `payment_method = 'MANUAL'`, label default versi WhatsApp). Idempoten.
 
-> Melewatkan langkah 3 adalah penyebab error produksi
-> `column orders.payment_method does not exist` — dashboard `/admin` lalu
-> menolak menampilkan order. Lihat `docs/troubleshooting.md` §18.
+> Melewatkan langkah 3/4 adalah penyebab error produksi
+> `column orders.payment_method does not exist` /
+> `column manual_payment_settings.whatsapp_number does not exist` — dashboard
+> `/admin` lalu menampilkan banner migrasi dan checkout menolak order. Lihat
+> `docs/troubleshooting.md` §18.
 
 ✅ Tanda berhasil:
 - #1 → **Table Editor** muncul tabel `profiles`; di **Database → Triggers** ada
@@ -46,7 +51,8 @@ Biarkan dulu (schema dijalankan di langkah C).
 - #2 → tabel `products`, `orders`, `manual_payment_settings`; di
   **Auth → Policies (RLS)** semuanya "Restricted" — products hanya SELECT
   publik, orders & manual_payment_settings tanpa policy (deny-all).
-  Kolom `orders.payment_method` ada (cek di Table Editor).
+  Kolom `orders.payment_method` + `manual_payment_settings.whatsapp_number`
+  ada (cek di Table Editor).
 - Cek manual di SQL Editor (project #2):
   ```sql
   select relname, relrowsecurity from pg_class where relname in ('products','orders');
@@ -125,119 +131,67 @@ Deployments tab pantau build (~1 menit). ✅ berhasil = status *Ready* dan
      (abu-abu) untuk CNAME Vercel, atau proxy oranye + mengikuti instruksi Vercel (dua-duanya jalan; lihat `docs/cloudflare.md`).
    - Tanpa Cloudflare: cukup arahkan sesuai instruksi Vercel (atau pakai nameserver Vercel).
 2. Setelah domain aktif: **ganti `NEXT_PUBLIC_SITE_URL`** + Redirect URL Supabase
-   (D1) + Callback URL Stenly (J) ke domain baru → **Redeploy** di Vercel.
+   (D1) ke domain baru → **Redeploy** di Vercel.
 
 ✅ `https://tokoanda.com` hijau di Vercel (SSL otomatis).
 
-## I. Konfigurasi Stenly (akun & API key) — OPSIONAL
+## I. Aktifkan pembayaran manual via WhatsApp (WAJIB)
 
-> **Lewati bagian I & J bila kamu memakai mode "manual saja".**
-> Biarkan `STENLY_API_KEY` & `STENLY_WEBHOOK_SECRET` kosong: integrasi
-> QRIS Otomatis mati (webhook ditolak, order QRIS via API ditolak), opsi
-> "QRIS Otomatis" di checkout tetap tampil namun ber-badge **"Ongoing"** dan
-> tidak bisa dipilih, dan toko berjalan penuh dengan **Transfer Manual**. Yang
-> wajib dilakukan hanya **upload gambar QR di `/admin/settings`** (lihat §I-alt
-> di bawah). Setelah kedua var itu diisi + redeploy, opsi QRIS Otomatis
-> otomatis bisa dipilih buyer di halaman checkout.
+Tidak ada akun provider, API key, atau webhook yang perlu diurus. Yang perlu
+dilakukan hanya menghubungkan toko ke nomor WhatsApp penjual:
 
-Ikuti **`docs/stenly.md`** bagian 1–4 (registrasi, buat project, Secret Key
-`sk_live_…`, Webhook Secret `whsec_…`, Callback URL). Masukkan
-`STENLY_API_KEY` + `STENLY_WEBHOOK_SECRET` ke Vercel → **Redeploy**.
+1. Pastikan `MANUAL_PAYMENT_ENABLED` tidak diset `false` (default `true`).
+2. Login `/admin/login` → menu **Pembayaran** (`/admin/settings`).
+3. Isi **Nomor WhatsApp penjual** (wajib; `081234567890` atau `+62 812…`).
+   Opsional: nama penerima, batas waktu bayar (10–4320 menit, default 120),
+   nama metode, instruksi tambahan, dan **template pesan WhatsApp**.
+4. **Simpan** → panel **Status saat ini** harus berbunyi siap (tanpa
+   `no_whatsapp` / `disabled` / `schema_missing`). Tidak perlu redeploy.
 
-> **IP whitelist Stenly: biarkan kosong.** Vercel tidak memberi IP keluar tetap
-> pada paket umum, jadi whitelist yang aktif akan membuat `charge` dibalas 403.
+> **Cadangan env**: bila kamu ingin checkout langsung hidup sebelum sempat
+> membuka dashboard, isi `WHATSAPP_SELLER_NUMBER` di Vercel. Begitu nomor
+> disimpan di `/admin/settings`, nilai DB yang dipakai (env diabaikan).
 
-### I-alt. Mode "manual saja" (tanpa provider)
+Detail pembayaran (QRIS statis / nomor rekening / e-wallet) **tidak** diunggah
+ke aplikasi — penjual mengirimnya langsung di chat WhatsApp saat buyer menekan
+tombol di halaman pembayaran. Jadi kalau detailnya berubah, cukup kirim yang
+baru di chat; tidak ada yang perlu diedit di dashboard.
 
-1. Login `/admin/login` → menu **Pembayaran** (`/admin/settings`).
-2. Pastikan **"Aktifkan metode pembayaran manual"** tercentang.
-3. **Upload gambar QR statis** kamu (QR GoPay Merchant / QRIS bank; PNG/JPG/WebP).
-4. Isi *Nama penerima* & *Batas waktu bayar* → **Simpan**.
-5. Cek panel **Status saat ini**: "Transfer Manual" harus hijau/"Tampil di
-   halaman checkout". Bila tertulis `no_qr`, gambar QR belum tersimpan. Baris
-   "QRIS Otomatis (Stenly)" berbunyi **ONGOING** — normal pada tahap ini
-   (env `STENLY_*` belum terisi).
+✅ Buka `/checkout?product=…` sebagai buyer → order dibuat → di `/pay/…` muncul
+tombol **💬 Buka WhatsApp Penjual** dengan pesan berisi kode order + nominal.
+Tidak ada gambar QR maupun nomor rekening di halaman (memang disengaja).
 
-✅ Buka `/checkout?product=…` sebagai buyer → "Transfer Manual" terpilih
-(default); "QRIS Otomatis" ber-badge **"Ongoing"** dan tidak bisa dipilih
-selama env `STENLY_*` belum terisi (bisa dipilih setelah env terisi +
-redeploy).
+> Tanpa nomor WhatsApp, checkout menampilkan **"Pembayaran belum tersedia"**
+> dengan alasan `no_whatsapp`. Panduan lengkap: `docs/manual-payment.md`.
 
-> Tanpa langkah 3, checkout menampilkan **"Pembayaran belum tersedia"** karena
-> tidak ada satu pun metode yang siap.
-
-Uji cepat create charge dari server (bukan browser!):
-```bash
-# jalan di laptop; cukup Secret Key project-nya
-curl -X POST https://stenly.id/api/v1/charge \
-  -H "x-api-key: <SECRET_KEY>" -H "Content-Type: application/json" \
-  -d '{"order_id":"UJI-001","gross_amount":1000}'
-# sukses (201): {"status":"success","data":{"qr_string":"0002010102122667…",
-#   "payment_url":"https://stenly.id/pay/UJI-001","expires_at":"…Z", …}}
-```
-
-Cara termudah tanpa curl: buka **/admin/settings** di situsmu — panel diagnosa
-menampilkan status tiap env (disamarkan), menandai sandbox vs produksi, dan
-memberi satu kesimpulan beserta langkah perbaikannya.
-
-## J. Konfigurasi webhook Stenly
-
-- URL tujuan (Callback URL di detail project Stenly):
-  `https://tokoanda.com/api/webhooks/stenly` — salin persis dari
-  **/admin/settings** (panel diagnosa) agar tidak salah ketik.
-- Secret: salin `whsec_…` ke `STENLY_WEBHOOK_SECRET` → Redeploy.
-- **Vercel Deployment Protection harus MATI untuk Production**, kalau tidak
-  Stenly menerima halaman login SSO dan webhook tidak pernah sampai.
-- Test: bayar transaksi kecil, atau kirim webhook bertanda tangan sendiri
-  (resep curl di `docs/stenly.md` §7.3). ✅ = order di Supabase #2 menjadi
-  `payment_status=PAID`. Riwayat pengiriman ada di **Webhook Logs** dashboard
-  Stenly (lengkap dengan tombol resend).
-
-## J-2. Migrasi database untuk Stenly (WAJIB untuk project lama)
-
-Skema lama membatasi `orders.payment_method` ke `('YOBASEPAY','MANUAL')`,
-sehingga order QRIS otomatis yang baru ditolak database.
-
-1. Supabase **#2 (store)** → **SQL Editor** → **New query**.
-2. Tempel isi `supabase/store/003_stenly_payment.sql` → **Run**.
-3. Idempoten & non-destruktif: tidak ada baris order yang diubah, dan nilai
-   `'YOBASEPAY'` tetap sah sehingga transaksi lama tetap terbaca.
-
-Bila langkah ini terlewat, checkout QRIS otomatis membalas **503** dengan
-arahan memakai Transfer Manual (bukan 500), dan banner di `/admin` menampilkan
-SQL yang harus dijalankan.
-
-## K–M. Telegram Bot (notifikasi penjual)
+## J. Telegram Bot (notifikasi penjual)
 
 Ikuti **`docs/telegram.md`** dari nol: buat bot @BotFather → token → chat ID →
 isi `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` → Redeploy → tes kirim pesan →
 tes order lunas memunculkan pesan.
 
-## N. Test end-to-end
+## K. Test end-to-end
 
 Jalankan checklist **`docs/testing.md`** minimal alur:
-register buyer → verif email → tambah produk (admin) → checkout → QRIS bayar
-→ PAID + Telegram → Proses → WhatsApp → Selesai.
+register buyer → verif email → tambah produk (admin) → checkout → chat WhatsApp
+→ transfer + kode unik → klaim "Saya sudah transfer" → konfirmasi penjual
+(PAID + Telegram) → Proses → Selesai.
 
-## O. Production checklist (habiskan! 15 menit)
+## L. Production checklist (habiskan! 15 menit)
 
 - [ ] Repo privat / tidak ada `.env` ter-commit (`git log -p --all -S service_role`)
 - [ ] Semua env terisi & **Redeploy** setelah perubahan apa pun
 - [ ] Supabase: Autoconfirm **OFF**, SMTP dikirim sendiri, backup harian aktif (Settings → Database → Pitr)
-- [ ] Domain final = `NEXT_PUBLIC_SITE_URL` = Supabase Site URL (+ bila pakai Stenly: = Callback URL project)
-- [ ] `supabase/store/003_stenly_payment.sql` sudah dijalankan di Supabase #2 (project lama)
+- [ ] Domain final = `NEXT_PUBLIC_SITE_URL` = Supabase Site URL
+- [ ] `supabase/store/002_manual_payment.sql` + `004_whatsapp_payment.sql` sudah dijalankan di Supabase #2 (project lama)
 - [ ] Akun admin tes sudah login `/admin/login`
 - [ ] Produk nyata dibuat; produk dummy tidak ada (memang tidak pernah dibuat)
-- [ ] **Minimal satu metode bayar siap** — cek `/admin/settings` → panel "Status saat ini":
-  - mode manual saja → "Transfer Manual" tampil di checkout (QR sudah di-upload);
-    "QRIS Otomatis" ber-badge ONGOING — itu disengaja
-  - mode QRIS otomatis → webhook live **dan** opsi "QRIS Otomatis" bisa
-    dipilih buyer di halaman checkout (badge "Ongoing" hilang). Uji lewat UI
-    checkout atau `POST /api/orders {"paymentMethod":"STENLY"}` (lihat
-    `docs/stenly.md` §7)
-- [ ] Telegram tes masuk saat PAID
+- [ ] **Metode bayar siap** — `/admin/settings` → panel "Status saat ini" hijau
+      (nomor WhatsApp penjual terisi); `/pay/…` menampilkan tombol WhatsApp
+      dengan nominal `total + kode unik`
+- [ ] Telegram tes masuk saat klaim transfer & saat order PAID
 - [ ] Rate limit Cloudflare aktif (opsional disarankan — `docs/cloudflare.md`)
-- [ ] Nominal transfer unik buyer (metode manual) terverifikasi oleh tolerance
-      check (cek log 1x). QRIS Stenly menagih nominal persis → toleransi 0.
+- [ ] Env provider lama (`STENLY_*`, `DEFAULT_PAYMENT_METHOD`, `MANUAL_PAYMENT_QR_IMAGE_URL`)
+      sudah dihapus dari Vercel; webhook lama di dashboard provider dimatikan
 
 Selesai — sistem siap dikelola manual dari dashboard (lihat `docs/admin-guide.md`).

@@ -13,7 +13,7 @@ export async function Header() {
       <div className="container-x">
         <div className="masthead-meta">
           <span>Edisi harian · Belanja lokal</span>
-          <span className="hidden sm:inline">Transfer Manual · QRIS Otomatis (bila aktif) · WhatsApp siap membantu</span>
+          <span className="hidden sm:inline">Bayar transfer manual via WhatsApp · pesanan diantar penjual</span>
         </div>
 
         <div className="masthead-brand-row">

@@ -117,7 +117,7 @@ describe("normalizeOrderRow — baris dari database yang belum di-migrasi", () =
     const row: Partial<OrderRow> = { id: "1", order_code: "ORD-1", payment_status: "PENDING" };
     const out = normalizeOrderRow(row);
 
-    expect(out.payment_method).toBe("STENLY");
+    expect(out.payment_method).toBe("MANUAL");
     expect(out.manual_claim_at).toBeNull();
     expect(out.manual_claim_note).toBe("");
     expect(out.manual_claim_reference).toBe("");

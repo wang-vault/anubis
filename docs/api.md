@@ -11,105 +11,73 @@ Kode HTTP yang dipakai: 400 VALIDATION_ERROR · 401 UNAUTHORIZED ·
 Auth cookie: semua endpoint buyer membaca session Supabase #1 dari httpOnly
 cookie (browser mengirim otomatis; dari curl pakai `-b "sb-<ref>-auth-token=…"`).
 
+> **Tidak ada endpoint pembayaran provider.** Toko ini hanya punya satu metode
+> bayar: transfer manual via WhatsApp. Endpoint `/api/webhooks/stenly`,
+> `/api/manual-qr`, dan `/api/admin/payments/diagnose` sudah **dihapus** —
+> permintaan ke sana sekarang 404.
+
 ## Orders & Payment (buyer)
 
 ### POST /api/orders
-Buat order + pembayaran.
+Buat order transfer manual.
 ```jsonc
 // request
-{ "productId": "uuid", "quantity": 1,        // 1..20
-  "paymentMethod": "MANUAL" }                // opsional: MANUAL | STENLY
-// 201 response (QRIS otomatis)
+{ "productId": "uuid", "quantity": 1 }         // quantity 1..20
+// 201 response
 { "ok": true,
-  "order":   { "order_code":"ORD-20260911-AB7K2M","total_amount":25000,
+  "order":   { "order_code":"ORD-20260912-MANU4L","total_amount":50000,
                "order_status":"PENDING","payment_status":"PENDING" },
-  "payment": { "paymentId":"ORD-20260911-AB7K2M",        // = order_code (order_id di Stenly)
-               "paymentUrl":"https://stenly.id/pay/ORD-…",
-               "qrImageUrl":"data:image/png;base64,…",    // dirender lokal dari qr_string
-               "expiresAt":"2026-09-11T05:30:00.000Z" } }
-// 201 response (transfer manual) — tidak ada transaksi provider
-{ "ok": true,
-  "order":   { "order_code":"ORD-20260912-MANU4L","total_amount":50000, … },
-  "payment": { "paymentId":null,"paymentUrl":null,
-               "qrImageUrl":"/api/manual-qr?v=…","expiresAt":"2026-09-12T14:30:00.000Z" } }
+  "payment": { "expiresAt":"2026-09-12T14:30:00.000Z",   // now + expiry_minutes pengaturan
+               "sellerWhatsapp":"628111222333" } }       // siap dipakai tombol wa.me
 ```
 Syarat: login + email verified. Harga dari DB, BUKAN dari request.
-`paymentMethod` yang tidak tersedia (mis. QRIS otomatis belum dikonfigurasi) →
-409 `"Pembayaran QRIS otomatis sedang dalam proses (status ongoing). Silakan
-gunakan opsi Transfer Manual terlebih dahulu."`; metode manual belum siap →
-409 `"Pembayaran manual belum dikonfigurasi penjual…"`; tidak ada metode sama
-sekali → 503 `paymentUnavailable`. Tidak diisi → memakai
-`DEFAULT_PAYMENT_METHOD` / satu-satunya metode aktif.
-Gagal provider → 503 (order ditandai FAILED/EXPIRED agar tidak menggantung).
+Nominal tagihan = `total_amount` + **kode unik 1–999** yang deterministik dari
+kode order; nominal itu disimpan di `orders.charged_amount` dan ikut terisi di
+pesan WhatsApp, bukan dikembalikan di response ini.
 
-> **Tampilan checkout mengikuti ketersediaan API.** Halaman `/checkout`
-> menampilkan kedua opsi lewat `getCheckoutPaymentMethods()`: Transfer Manual
-> (aktif, default) dan QRIS Otomatis — yang terakhir **bisa dipilih** bila env
-> Stenly terisi, dan ber-badge **"Ongoing"** (disabled) bila belum. Daftar
-> itu membaca sumber yang sama dengan `getAvailablePaymentMethods()` (env
-> Stenly + pengaturan manual penjual) yang dipakai
-> `resolvePaymentMethod()`, jadi nilai yang dikirim UI selalu valid. Endpoint
-> ini tetap jalur utama untuk uji end-to-end QRis tanpa browser.
+Field `paymentMethod` tidak lagi ada di kontrak. Bila dikirim, nilainya
+**diabaikan** — order selalu dibuat sebagai `MANUAL`. Bila penjual belum
+menyiapkan metode (kolom WhatsApp kosong, saklar mati, atau migrasi belum
+dijalankan), permintaan dibalas **503 PAYMENT_UNAVAILABLE** tanpa membuat order
+menggantung:
+```json
+{"error":{"code":"PAYMENT_UNAVAILABLE",
+          "message":"Penjual belum mengatur nomor WhatsApp untuk pembayaran. Silakan hubungi penjual."}}
+```
+Rate limit 10 order / 10 menit / user (429).
 
 ### GET /api/orders
-Daftar order milik sendiri (maks 30, terbaru dulu).
+Daftar order milik sendiri (maks 30, terbaru dulu):
+`{ok, orders:[{order_code, product_name, quantity, total_amount, charged_amount,
+payment_status, order_status, payment_method, manual_claim_at, created_at}]}`
 
 ### GET /api/orders/{order_code}
-Detail order milik sendiri. 404 bila bukan milikmu (tidak membocorkan keberadaan).
+Detail order milik sendiri (`toBuyerOrderPublic` — field internal & kolom
+provider warisan disaring). 404 bila bukan milikmu (tidak membocorkan keberadaan).
 
 ### GET /api/orders/{order_code}/status
-Polling ringan (hanya DB):
-`{ok, order_code, payment_status, order_status, total_amount, paid_at, payment_expired_at,
-payment_method, manual_claim_at, manual_review_status, manual_review_note, server_time}`
+Polling ringan (hanya baca DB, tanpa memanggil layanan luar):
+`{ok, order_code, payment_status, order_status, total_amount, charged_amount,
+paid_at, payment_expired_at, payment_method, manual_claim_at,
+manual_review_status, manual_review_note, server_time}`
 
-### GET /api/manual-qr
-Gambar QRIS statis penjual (PNG/JPG/WebP) yang di-upload dari `/admin/settings`.
-Publik + `Cache-Control: public, max-age=300` (QRIS statis memang untuk
-dipindai siapa pun). 404 bila belum diunggah; 302 ke `MANUAL_PAYMENT_QR_IMAGE_URL`
-bila env itu diisi.
+### GET /api/payments/status?order=ORD-...
+Endpoint yang dipakai halaman `/pay/[code]` (polling 8 detik). Membaca DB
+**dan** menjalankan pengecekan kadaluarsa: order `PENDING` yang **belum
+diklaim** dan sudah lewat `payment_expired_at` (+ grasi 30 detik) ditandai
+`EXPIRED`. Tidak ada panggilan ke provider dan tidak ada field
+`checked_provider` lagi.
+- Kepemilikan: buyer hanya order miliknya; admin boleh order mana pun (404 bila tidak ada).
+- Batas 30 req/menit/user (429).
+- **Status PAID tidak pernah bisa dipicu dari endpoint ini.**
 
 ### Klaim pembayaran manual (server action, bukan REST)
 `claimManualPaymentAction` (`src/app/pay/actions.ts`) — dipanggil tombol
-"Saya sudah transfer" di `/pay/[code]`. Input: `orderCode`, `note`, `reference`.
-Mencatat `manual_claim_at` + notifikasi Telegram ke penjual.
+"Saya sudah transfer" di `/pay/[code]`. Input: `orderCode`, `note` (maks 200),
+`reference` (maks 60). Mencatat `manual_claim_at` + notifikasi Telegram ke penjual.
 **Tidak pernah** mengubah `payment_status`; idempoten (klaim kedua = no-op);
-rate limit 10/10 menit/user; 409 bila order bukan manual / sudah lunas / sudah ditutup.
-
-### GET /api/payments/status?order=ORD-...
-Sinkronisasi + polling endpoint untuk halaman bayar:
-- membaca DB, dan bila masih PENDING (maks 1x/10 detik per order) menanyakan
-  `GET /api/v1/status/:order_id` ke Stenly dengan API KEY SERVER, lalu menyimpan hasil
-  (termasuk transisi PAID/EXPIRED + notifikasi Telegram).
-- Batas 30 req/menit/user (429).
-Response: seperti status di atas + `checked_provider: boolean`.
-
-## Webhook
-
-### POST /api/webhooks/stenly
-Raw body JSON dari Stenly + header `X-Stenly-Signature`
-(HMAC-SHA256 hex atas raw body, secret = `STENLY_WEBHOOK_SECRET`).
-Header pendamping: `X-Stenly-Timestamp` (epoch ms), `X-Stenly-Event`
-(`payment.status_updated`). Body: `{ event, data:{ order_id, gross_amount,
-status, paid_at?, journal_id? }, timestamp }`.
-
-Balasan sukses memakai format yang diminta Stenly: **`{"received": true, …}`**
-dalam <10 detik (bila tidak, delivery ditandai `failed` dan diretry 6×:
-1m, 5m, 30m, 2j, 6j). Body dibatasi 64 KB; JSON di-parse **setelah** signature
-terverifikasi.
-
-| Situasi | HTTP | Body |
-|---|---|---|
-| Body kosong / >64 KB / bukan JSON | 400 | `{"error":{"code":"BAD_PAYLOAD"\|"BAD_JSON",…}}` |
-| Signature salah/hilang | 403 | `{"error":{"code":"INVALID_SIGNATURE",…}}` |
-| Order lunas OK | 200 | `{"received":true,"handled":"paid","reason":null}` |
-| Webhook sama datang lagi | 200 | `{"received":true,"handled":"paid","reason":"already_processed"}` |
-| Nominal tidak sah / hilang | 200* | `{"received":true,"handled":"ignored","reason":"amount_mismatch"\|"amount_missing"}` |
-| Order tidak ditemukan | 200* | `{"received":true,"handled":"ignored","reason":"order_not_found"}` |
-| Transisi EXPIRED provider | 200 | `{"received":true,"handled":"expired"}` |
-| Error DB tak terduga | 500 | provider akan retry — idempoten, aman |
-
-\*200 disengaja agar provider berhenti retry untuk event yang memang tidak bisa
-diproses; detail ada di log (`webhook_amount_invalid`, dsb).
+rate limit 10/10 menit/user; 409 bila order bukan `MANUAL` / sudah lunas /
+sudah ditutup (kadaluarsa) atau datanya sudah punya klaim.
 
 ## Admin (role `admin` — dicek server-side per request)
 
@@ -120,42 +88,32 @@ diproses; detail ada di log (`webhook_amount_invalid`, dsb).
 { "name":"Kopi 250g", "description":"…", "price":85000,
   "image_url":"https://…", "is_active":true }
 ```
-Validasi: name 2–120, price 1.000–100.000.000 int, image https-oppsional.
+Validasi: name 2–120, price 1.000–100.000.000 int, image https-opsional.
 → `201 {ok, product}`.
 ### PATCH /api/admin/products/{id}
 Subset field yang sama (parsial). Nonaktifkan produk: `{"is_active":false}`.
 
 ### GET /api/admin/orders?status=PAID&q=ORD-...
-`{ok, count, orders:[OrderRow…]}` (maks 200 terbaru).
+`{ok, count, orders:[OrderRow…]}` (maks 200 terbaru). `status=CLAIM` → antrian
+verifikasi transfer manual (klaim tertua dulu).
 ### GET /api/admin/orders/{codeAtauId}
-`{ok, order}` — order_code publik ATAU uuid internal.
+`{ok, order}` — order_code publik ATAU uuid internal. Order arsip
+(`payment_method` = `STENLY`/`YOBASEPAY`) tetap terkirim apa adanya.
 ### PATCH /api/admin/orders/{codeAtauId}/status
 `{"action":"process"|"complete"}` — transisi PAID→PROCESSING→DONE (guard
 idempoten + cek `payment_status=PAID`). Salah kondisi → 409 CONFLICT.
-(Endpoint internal UI juga mendukung `expire` utk admin membatalkan PENDING:
-`src/app/admin/actions.ts`.)
+(Endpoint internal UI juga mendukung `expire` untuk admin membatalkan PENDING:
+`src/app/admin/actions.ts`.) Tidak ada lagi aksi "Cek Pembayaran" — tidak ada
+provider yang bisa ditanya.
 
-### GET /api/admin/payments/diagnose
-Diagnosa koneksi Stenly **tanpa efek samping**: memanggil
-`GET /api/v1/status/:order_id` dengan order_id karangan
-(`ANUBIS-DIAGNOSTIK-000000`) sehingga tidak membuat transaksi apa pun, lalu
-menerjemahkan jawaban provider menjadi vonis + langkah perbaikan.
-→ `{ok, diagnostics:{verdict, verdictLabel, hints[], env[], provider, configured,
-sandbox, webhookUrl, baseUrl, expiryMinutes, probe, checkedAt}}`
-Vonis: `OK_KEY_VALID` | `NOT_CONFIGURED` | `INVALID_API_KEY` | `IP_NOT_ALLOWED` |
-`GATEWAY_NOT_READY` | `PROVIDER_UNREACHABLE` | `BAD_RESPONSE` | `UNKNOWN`.
-Nilai env **disamarkan** (`maskSecret`) — API key & webhook secret tidak pernah
-dikembalikan utuh. `webhookUrl` = Callback URL siap salin. Rate limit 10/10
-menit per admin. Dipakai panel diagnosa di `/admin/settings`
-(`src/components/admin/PaymentDiagnostics.tsx`). Detail: `docs/stenly.md` §8.
-
-### Verifikasi pembayaran manual (server action admin)
+### Verifikasi pembayaran manual & pengaturan (server action admin)
 `src/app/admin/actions.ts`:
+
 | Action | Input | Efek |
 |---|---|---|
-| `confirmManualPaymentAction` | `orderId`, `receivedAmount?`, `note?` | order manual → `PAID` (`applyPaid`, sumber `manual`) + Telegram "LUNAS" |
+| `confirmManualPaymentAction` | `orderId`, `receivedAmount?`, `note?` | order `MANUAL` → `PAID` (`applyPaid`, sumber `manual`) + Telegram "LUNAS". `receivedAmount` < total order → 409; nominalnya disimpan di `charged_amount` |
 | `rejectManualClaimAction` | `orderId`, `note?` | klaim dibersihkan → buyer boleh konfirmasi ulang; `manual_review_status=REJECTED` |
-| `saveManualPaymentSettingsAction` | `label`, `account_name`, `instructions`, `expiry_minutes`, `is_enabled`, `qr_image` (File) | simpan konfigurasi + gambar QR (maks 900 KB) |
+| `saveManualPaymentSettingsAction` | `is_enabled`, `whatsapp_number` (**wajib**), `label`, `account_name`, `instructions`, `whatsapp_message_template`, `expiry_minutes` | simpan konfigurasi WhatsApp; nomor dinormalisasi `62…`; redirect `/admin/settings?saved=1` |
 
 `GET /api/admin/orders?status=CLAIM` → antrian order manual yang menunggu
 verifikasi (klaim tertua dulu).
@@ -169,7 +127,7 @@ Auth #1** (via server action, cookie session). Link email selalu mendarat di:
 ## Konvensi yang berlaku di semua endpoint
 1. Input divalidasi zod (400 rapi, pesan pertama).
 2. Otorisasi sebelum query (requireUser / requireVerifiedUser / requireAdmin).
-3. Mutasi sensitive memakai service role server-side; tidak pernah menerima
+3. Mutasi sensitif memakai service role server-side; tidak pernah menerima
    field `payment_status/order_status/price/total_amount` dari klien.
 4. Rate limit in-memory (best-effort; produksi disarankan Cloudflare).
-5. Timeout 15 dtk ke provider, 6 dtk ke Telegram — tidak ada request menggantung.
+5. Timeout 6 detik ke Telegram — tidak ada request menggantung.

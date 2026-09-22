@@ -2,7 +2,6 @@ import Link from "next/link";
 import {
   confirmManualPaymentAction,
   orderTransitionAction,
-  refreshOrderPaymentAction,
   rejectManualClaimAction,
 } from "@/app/admin/actions";
 import { sellerWaMessage, waMeUrl } from "@/lib/phone";
@@ -28,8 +27,6 @@ export function OrderActions({
   const canComplete =
     order.payment_status === "PAID" && ["PAID", "PROCESSING"].includes(order.order_status);
   const canExpire = order.order_status === "PENDING";
-  // Cek ke provider hanya relevan untuk QRIS otomatis.
-  const canRefresh = order.payment_status === "PENDING" && !isManual;
   // Pembayaran manual: klaim buyer menunggu penjual mencocokkan mutasi.
   const needsManualVerification =
     isManual && order.payment_status === "PENDING" && Boolean(order.manual_claim_at);
@@ -102,20 +99,6 @@ export function OrderActions({
             </ActionButton>
           </form>
         </>
-      )}
-      {canRefresh && (
-        <form action={refreshOrderPaymentAction} className="inline">
-          <input type="hidden" name="orderId" value={order.id} />
-          <input type="hidden" name="back" value={back} />
-          <ActionButton
-            className={cls}
-            type="submit"
-            pendingText="Mengecek…"
-            title="Tanya status ke Stenly (maks 1x/10 dtk)"
-          >
-            ⟳ Cek Pembayaran
-          </ActionButton>
-        </form>
       )}
       {canExpire && (
         <form action={orderTransitionAction} className="inline">

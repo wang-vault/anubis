@@ -29,9 +29,12 @@ Lakukan dulu supaya punya URL + keys (di **dashboard** https://supabase.com):
    - Supabase #1 (account) ← `supabase/account/001_schema.sql` → Run
    - Supabase #2 (store) ← `supabase/store/001_schema.sql` → Run
    - Supabase #2 (store) ← `supabase/store/002_manual_payment.sql` → Run
-     (migrasi pembayaran manual; idempoten. **Wajib** bila project #2 sudah
+     (migrasi pembayaran manual; idempoten)
+   - Supabase #2 (store) ← `supabase/store/004_whatsapp_payment.sql` → Run
+     (migrasi nomor WhatsApp penjual; idempoten. **Wajib** bila project #2 sudah
      pernah menjalankan `001_schema.sql` versi lama — tanpa itu aplikasi gagal
-     dengan `column orders.payment_method does not exist`, lihat
+     dengan `column orders.payment_method does not exist` /
+     `column manual_payment_settings.whatsapp_number does not exist`, lihat
      `docs/troubleshooting.md` §18.)
    (Penjelasan detail, konfigurasi Auth & email: `docs/supabase-account.md`,
    `docs/supabase-store.md`.)
@@ -46,24 +49,24 @@ Isi `.env.local` dengan nilai asli dari Supabase dashboard (lihat
 `docs/environment-variables.md` untuk arti & lokasi tiap variabel).
 
 Yang **wajib** hanya kredensial Supabase (URL + keys kedua project): app
-sengaja **fail-fast** bila salah satu belum diisi. `STENLY_*` dan
-`TELEGRAM_*` boleh dibiarkan kosong.
+sengaja **fail-fast** bila salah satu belum diisi. `TELEGRAM_*` boleh dibiarkan
+kosong.
 
-> **Default file ini = mode "manual saja".** Dengan `STENLY_API_KEY` &
-> `STENLY_WEBHOOK_SECRET` kosong, integrasi QRIS Otomatis nonaktif — di
-> halaman checkout opsinya tetap tampil namun ber-badge **"Ongoing"** (tidak
-> bisa dipilih), dan toko berjalan penuh memakai **Transfer Manual** (QRIS
-> statis milikmu). Checkout **tidak** menunggu Stenly. Begitu kedua var
-> terisi + redeploy, opsi QRIS Otomatis otomatis ikut bisa dipilih buyer
-> (badge "Ongoing"-nya hilang).
+> **Satu-satunya metode bayar = transfer manual via WhatsApp.** Tidak ada
+> kredensial provider yang perlu diisi. Agar checkout bisa membuat order, ada
+> dua hal yang harus siap:
+> 1. `MANUAL_PAYMENT_ENABLED` tidak diset `false` (default `true`), **dan**
+> 2. **nomor WhatsApp penjual** terisi — buka `/admin/settings` → isi nomor →
+>    Simpan. Untuk bootstrap sebelum sempat login ke `/admin`, boleh pakai
+>    cadangan env `WHATSAPP_SELLER_NUMBER`.
 >
-> Syaratnya satu: **upload gambar QR di `/admin/settings`**. Tanpa QR itu
-> metode manual dianggap belum siap dan checkout menampilkan "Pembayaran
-> belum tersedia". Panduan lengkap: `docs/manual-payment.md`.
+> Tanpa nomor itu metode dianggap belum siap dan checkout menampilkan
+> "Pembayaran belum tersedia". Panduan lengkap: `docs/manual-payment.md`.
 >
-> Env *preferensi* (`DEFAULT_PAYMENT_METHOD`, `MANUAL_PAYMENT_ENABLED`)
-> toleran salah ketik — nilai tak dikenal jatuh ke default aman, tidak
-> menjatuhkan situs. Yang tetap fail-fast hanya kredensial.
+> Env *preferensi* (`MANUAL_PAYMENT_ENABLED`, `WHATSAPP_SELLER_NUMBER`) toleran
+> salah ketik — nilai tak dikenal tidak menjatuhkan situs. Yang tetap fail-fast
+> hanya kredensial. Var provider lama (`STENLY_*`, `DEFAULT_PAYMENT_METHOD`,
+> `MANUAL_PAYMENT_QR_IMAGE_URL`) sudah tidak dibaca kode.
 
 > `.env.local` tidak akan pernah ter-commit (ada di `.gitignore`).
 
@@ -82,20 +85,21 @@ Cek cepat:
 
 ```bash
 npm run typecheck   # TypeScript strict
-npm test            # unit test logic kritis (uang, nomor WA, webhook amount)
+npm test            # unit test logic kritis (uang, nomor WA, alur pembayaran manual)
 npm run build       # build produksi
 ```
 
 ## 6. Coba alur penuh
 
-Ikuti checklist di **`docs/testing.md`** (auth → produk → order → bayar →
-webhook test → admin). Untuk menguji pembayaran QRIS asli diperlukan akun
-Stenly (lihat `docs/stenly.md`) dan untuk webhook dari internet kamu perlu
-URL publik — dev lokal tidak menerima webhook; gunakan tunnel (opsional:
-`npx ngrok http 3000` / `cloudflared tunnel --url http://localhost:3000` +
-daftarkan URL-nya sebagai Callback URL sementara) atau test webhook dengan curl
-bertanda tangan (resep ada di `docs/stenly.md` §7.3). Untuk uji tanpa uang
-sungguhan pakai project sandbox (`sk_test_…`) + `POST /api/v1/simulate-pay`.
+Ikuti checklist di **`docs/testing.md`** (auth → produk → order → chat WhatsApp
+→ klaim transfer → verifikasi penjual → admin).
+
+Uji pembayaran manual tidak butuh internet tambahan maupun tunnel: cukup buka
+`/pay/<kode>` di dua peran (buyer & admin) — tombol WhatsApp memakai link
+`wa.me`, jadi kamu bisa memeriksa isi pesannya di aplikasi WhatsApp/WhatsApp Web.
+Kalau ingin memaksa alur lengkap tanpa benar-benar transfer, buat order lalu
+konfirmasi sebagai penjual dari `/admin/orders?status=CLAIM` (catatan
+verifikasi diisi alasan uji).
 
 ## Troubleshooting awal
 
@@ -105,6 +109,8 @@ sungguhan pakai project sandbox (`sk_test_…`) + `POST /api/v1/simulate-pay`.
 | `ERR_MODULE_NOT_FOUND` | npm install gagal | `rm -rf node_modules && npm install` |
 | Port 3000 dipakai | app lain jalan | `npm run dev -- -p 3001` (update `NEXT_PUBLIC_SITE_URL`) |
 | Halaman error Supabase `invalid api key`/`JWT expired` | key ketuker antara project #1 dan #2 | Pastikan URL+key sepasang dari project yang sama |
+| Checkout bilang "Pembayaran belum tersedia" | `WHATSAPP_SELLER_NUMBER` kosong & nomor belum diisi di `/admin/settings` | Isi salah satu (lihat `docs/manual-payment.md`) |
+| Banner merah "Database toko belum dimigrasi" di `/admin` | migrasi 002/004 belum dijalankan di Supabase #2 | Jalankan SQL dari banner (aman berulang) |
 | Login "Invalid login credentials" padahal baru daftar | email belum diverifikasi / Autoconfirm aktif | Lihat `docs/supabase-account.md` §4-5 |
 
 Lengkapnya: `docs/troubleshooting.md`.

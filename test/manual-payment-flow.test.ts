@@ -1,9 +1,14 @@
 /**
- * Unit test ALUR PEMBAYARAN MANUAL — mengeksekusi domain logic asli di
- * lib/orders.ts + lib/payment-config.ts terhadap fake Supabase (PostgREST-ish).
+ * Unit test ALUR PEMBAYARAN MANUAL VIA WHATSAPP — mengeksekusi domain logic
+ * asli di lib/orders.ts + lib/payment-config.ts terhadap fake Supabase
+ * (PostgREST-ish).
  *
- * Fokus: klaim buyer TIDAK bisa membuat order lunas; hanya konfirmasi penjual
- * yang bisa. Plus: idempotensi, penolakan nominal kurang, dan aturan expire.
+ * Fokus (aturan emas yang tidak boleh rusak):
+ *  - klaim buyer TIDAK bisa membuat order lunas; hanya konfirmasi penjual bisa;
+ *  - nominal order = total + kode unik, dan order ditolak bila penjual belum
+ *    mengatur nomor WhatsApp (jangan membuat order yatim);
+ *  - idempotensi klaim/konfirmasi, penolakan nominal kurang, aturan expire;
+ *  - order arsip (STENLY/YOBASEPAY) tidak bisa dikonfirmasi lewat jalur manual.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeDb, type FakeDb, type Row } from "./helpers/fake-store";
@@ -15,13 +20,10 @@ import type { OrderRow } from "@/lib/types";
 const h = vi.hoisted(() => ({
   db: null as unknown as ReturnType<typeof createFakeDb>,
   env: {
-    STENLY_EXPIRY_MINUTES: 15,
     MANUAL_PAYMENT_ENABLED: true,
-    DEFAULT_PAYMENT_METHOD: "MANUAL",
-    MANUAL_PAYMENT_QR_IMAGE_URL: null,
+    WHATSAPP_SELLER_NUMBER: "",
   } as Record<string, unknown>,
   telegram: true,
-  stenly: false,
   notifier: {
     notifyOrderPaid: vi.fn(async () => ({ ok: true as const })),
     notifyManualPaymentClaim: vi.fn(async () => ({ ok: true as const })),
@@ -37,7 +39,6 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/env", () => ({
   serverEnv: () => h.env,
   telegramConfigured: () => h.telegram,
-  stenlyConfigured: () => h.stenly,
 }));
 
 vi.mock("@/lib/integrations/telegram", () => ({
@@ -50,6 +51,7 @@ vi.mock("@/lib/integrations/telegram", () => ({
 }));
 
 import { HttpError } from "@/lib/api";
+import { resetStoreSchemaCache } from "@/lib/store-schema";
 import {
   adminConfirmManualPayment,
   adminRejectManualClaim,
@@ -62,6 +64,7 @@ import {
 const PRODUCT_ID = "33333333-3333-4333-8333-333333333333";
 const BUYER_ID = "22222222-2222-4222-8222-222222222222";
 const ADMIN_ID = "44444444-4444-4444-8444-444444444444";
+const SELLER_WA = "628111222333";
 
 const buyerCtx = {
   user: { id: BUYER_ID, email: "budi@example.com" },
@@ -85,13 +88,12 @@ function settingsRow(overrides: Row = {}): Row {
   return {
     id: 1,
     is_enabled: true,
-    label: "Transfer Manual (QRIS GoPay)",
+    label: "Transfer via WhatsApp",
     account_name: "Toko Saya",
-    instructions: "Pakai GoPay/OVO/DANA.",
+    instructions: "Detail pembayaran dikirim lewat chat.",
     expiry_minutes: 120,
-    qr_image_mime: "image/png",
-    qr_image_base64: "iVBORw0KGgoAAAANSUhEUg==",
-    qr_image_size: 42,
+    whatsapp_number: SELLER_WA,
+    whatsapp_message_template: "",
     updated_at: "2026-09-12T02:00:00.000Z",
     ...overrides,
   };
@@ -171,63 +173,63 @@ async function tick(): Promise<void> {
 }
 
 beforeEach(() => {
+  // Probe skema di-cache per instance → tiap kasus harus mulai dari nol.
+  resetStoreSchemaCache();
   h.telegram = true;
-  h.stenly = false;
   h.env.MANUAL_PAYMENT_ENABLED = true;
-  h.env.DEFAULT_PAYMENT_METHOD = "MANUAL";
+  h.env.WHATSAPP_SELLER_NUMBER = "";
   h.notifier.notifyOrderPaid.mockClear();
   h.notifier.notifyManualPaymentClaim.mockClear();
 });
 
 // ---------------------------------------------------------------------------
-describe("createOrderForBuyer — metode manual", () => {
-  it("membuat order MANUAL dengan nominal = total + kode unik & batas waktu dari pengaturan", async () => {
+describe("createOrderForBuyer — transfer manual via WhatsApp", () => {
+  it("membuat order MANUAL: nominal = total + kode unik, expiry dari pengaturan, nomor penjual ikut", async () => {
     const db = setup();
     const before = Date.now();
 
-    const res = await createOrderForBuyer(buyerCtx, {
-      productId: PRODUCT_ID,
-      quantity: 1,
-      paymentMethod: "MANUAL",
-    });
+    const res = await createOrderForBuyer(buyerCtx, { productId: PRODUCT_ID, quantity: 1 });
 
     const order = onlyOrder(db);
     expect(res.paymentMethod).toBe("MANUAL");
     expect(order.payment_method).toBe("MANUAL");
     expect(order.total_amount).toBe(50000);
     expect(order.charged_amount).toBe(50000 + manualUniqueCode(order.order_code));
-    // tidak ada transaksi provider
+    // tidak ada transaksi provider apa pun
     expect(order.payment_id).toBeNull();
-    expect(res.payment.paymentId).toBeNull();
-    expect(res.payment.qrImageUrl).toMatch(/^\/api\/manual-qr\?v=/);
+    expect(order.payment_url).toBeNull();
+    expect(order.qr_image_url).toBeNull();
+    expect(res.payment.sellerWhatsapp).toBe(SELLER_WA);
     // expiry = now + expiry_minutes (120)
     const expiry = Date.parse(order.payment_expired_at!);
     expect(expiry - before).toBeGreaterThan(119 * 60_000);
     expect(expiry - before).toBeLessThanOrEqual(121 * 60_000);
   });
 
-  it("memakai metode default dari env bila buyer tidak memilih", async () => {
+  it("tetap MANUAL walau klien mengirim nilai metode lama (STENLY/YOBASEPAY)", async () => {
     const db = setup();
-    h.env.DEFAULT_PAYMENT_METHOD = "MANUAL";
-
-    const res = await createOrderForBuyer(buyerCtx, { productId: PRODUCT_ID, quantity: 2 });
+    // createOrderForBuyer memang tidak lagi menerima pilihan metode dari klien.
+    const res = await createOrderForBuyer(buyerCtx, {
+      productId: PRODUCT_ID,
+      quantity: 2,
+      ...( { paymentMethod: "STENLY" } as Record<string, unknown>),
+    });
 
     expect(res.paymentMethod).toBe("MANUAL");
+    expect(onlyOrder(db).payment_method).toBe("MANUAL");
     expect(onlyOrder(db).total_amount).toBe(100000);
   });
 
-  it("menolak QRIS otomatis bila provider tidak dikonfigurasi (409, tanpa order yatim)", async () => {
-    const db = setup();
-    h.stenly = false;
+  it("menolak checkout (503) bila penjual belum mengatur nomor WhatsApp — tanpa order yatim", async () => {
+    const db = setup({ settings: settingsRow({ whatsapp_number: "" }) });
 
     await expect(
-      createOrderForBuyer(buyerCtx, { productId: PRODUCT_ID, quantity: 1, paymentMethod: "STENLY" }),
-    ).rejects.toMatchObject({ status: 409 });
-    // ditolak SEBELUM insert → tidak ada order yatim yang menggantung
+      createOrderForBuyer(buyerCtx, { productId: PRODUCT_ID, quantity: 1 }),
+    ).rejects.toMatchObject({ status: 503 });
     expect(table(db, "orders")).toHaveLength(0);
   });
 
-  it("menolak checkout bila tidak ada metode pembayaran yang tersedia (503)", async () => {
+  it("menolak checkout bila metode dimatikan penjual (503)", async () => {
     setup({ settings: settingsRow({ is_enabled: false }) });
 
     await expect(
@@ -236,14 +238,21 @@ describe("createOrderForBuyer — metode manual", () => {
     expect(table(h.db, "orders")).toHaveLength(0);
   });
 
-  it("menolak MANUAL yang di-request eksplisit saat metode manual dimatikan penjual (409)", async () => {
-    const db = setup({ settings: settingsRow({ is_enabled: false }) });
-    h.stenly = true; // provider aktif → hanya STENLY yang tersedia
+  it("menolak checkout bila saklar env global dimatikan (503)", async () => {
+    setup();
+    h.env.MANUAL_PAYMENT_ENABLED = false;
 
     await expect(
-      createOrderForBuyer(buyerCtx, { productId: PRODUCT_ID, quantity: 1, paymentMethod: "MANUAL" }),
-    ).rejects.toMatchObject({ status: 409 });
-    expect(table(db, "orders")).toHaveLength(0);
+      createOrderForBuyer(buyerCtx, { productId: PRODUCT_ID, quantity: 1 }),
+    ).rejects.toMatchObject({ status: 503 });
+  });
+
+  it("nomor WhatsApp dari env dipakai sebagai cadangan bila kolom DB kosong", async () => {
+    setup({ settings: settingsRow({ whatsapp_number: "" }) });
+    h.env.WHATSAPP_SELLER_NUMBER = "0812-9999-1111";
+
+    const res = await createOrderForBuyer(buyerCtx, { productId: PRODUCT_ID, quantity: 1 });
+    expect(res.payment.sellerWhatsapp).toBe("6281299991111");
   });
 });
 
@@ -293,7 +302,7 @@ describe("claimManualPayment (buyer menekan 'Saya sudah transfer')", () => {
     expect(h.notifier.notifyManualPaymentClaim).toHaveBeenCalledTimes(1);
   });
 
-  it("menolak order QRIS otomatis, order sudah lunas, dan order kadaluarsa (409)", async () => {
+  it("menolak order arsip QRIS otomatis, order sudah lunas, dan order kadaluarsa (409)", async () => {
     setup({ orders: [orderRow({ payment_method: "STENLY" })] });
     await expect(claimManualPayment(onlyOrder(h.db), {})).rejects.toMatchObject({ status: 409 });
 
@@ -358,7 +367,48 @@ describe("adminConfirmManualPayment (verifikasi penjual)", () => {
     expect(onlyOrder(db).payment_status).toBe("PAID");
   });
 
-  it("menolak order yang bukan pembayaran manual (409)", async () => {
+  it("mengonfirmasi order manual TANPA klaim buyer (uang masuk duluan) tetap boleh", async () => {
+    // Pembayaran dikoordinasikan lewat WhatsApp: buyer sering transfer tanpa
+    // menekan "Saya sudah transfer". Penjual harus tetap bisa mencatat uangnya.
+    const db = setup({ orders: [orderRow()] });
+    expect(onlyOrder(db).manual_claim_at).toBeNull();
+
+    const updated = await adminConfirmManualPayment(onlyOrder(db).id, adminCtx, {
+      note: "mutasi masuk, buyer tidak klaim",
+    });
+
+    expect(updated.payment_status).toBe("PAID");
+    expect(updated.order_status).toBe("PAID");
+    expect(onlyOrder(db).manual_review_status).toBe("APPROVED");
+    expect(onlyOrder(db).paid_at).toBeTruthy();
+  });
+
+  it("mengonfirmasi order manual yang sudah kadaluarsa (transfer telat) menghidupkan order", async () => {
+    const db = setup({
+      orders: [orderRow({ payment_status: "EXPIRED", order_status: "EXPIRED" })],
+    });
+
+    const updated = await adminConfirmManualPayment(onlyOrder(db).id, adminCtx, {});
+
+    expect(updated.payment_status).toBe("PAID");
+    expect(updated.order_status).toBe("PAID");
+  });
+
+  it("menolak order FAILED (409) tanpa menandai review APPROVED", async () => {
+    const db = setup({
+      orders: [orderRow({ payment_status: "FAILED", order_status: "EXPIRED" })],
+    });
+
+    await expect(
+      adminConfirmManualPayment(onlyOrder(db).id, adminCtx, {}),
+    ).rejects.toMatchObject({ status: 409 });
+
+    // Tidak boleh ada review "disetujui" tanpa pembayaran yang ikut berubah.
+    expect(onlyOrder(db).payment_status).toBe("FAILED");
+    expect(onlyOrder(db).manual_review_status).toBeNull();
+  });
+
+  it("menolak order arsip QRIS otomatis (409) — jalur verifikasi manual hanya untuk MANUAL", async () => {
     const db = setup({
       orders: [orderRow({ payment_method: "STENLY", payment_id: "YO-ABC123" })],
     });
@@ -409,8 +459,8 @@ describe("adminRejectManualClaim", () => {
   /**
    * REGRESI: guard race-safe sempat memakai `.is("payment_status","PENDING")`.
    * Di PostgREST `is.` hanya sah untuk null/true/false, jadi query itu ditolak
-   * server (22P02) dan SETIAP penolakan klaim gagal dengan 409 palsu — tombol
-   * "Tolak Klaim" mustahil dipakai penjual. Guard harus memakai `.eq`.
+   * server (22P02) dan SETIAP penolakan klaim gagal dengan 409 palsu. Guard
+   * harus memakai `.eq`.
    */
   it("tidak memakai filter `is.` untuk kolom teks (harus `eq`) saat mengunci status", async () => {
     const db = setup({
@@ -426,8 +476,8 @@ describe("adminRejectManualClaim", () => {
 });
 
 // ---------------------------------------------------------------------------
-describe("refreshOrderStatus — order manual", () => {
-  it("TIDAK meng-expire order manual yang sudah diklaim walau lewat batas waktu", async () => {
+describe("refreshOrderStatus — order manual (tanpa provider)", () => {
+  it("TIDAK meng-expire order yang sudah diklaim walau lewat batas waktu", async () => {
     const db = setup({
       orders: [
         orderRow({
@@ -440,10 +490,9 @@ describe("refreshOrderStatus — order manual", () => {
     const res = await refreshOrderStatus(onlyOrder(db));
 
     expect(res.order.payment_status).toBe("PENDING");
-    expect(res.checkedProvider).toBe(false);
   });
 
-  it("meng-expire order manual yang belum diklaim setelah batas waktu + grasi", async () => {
+  it("meng-expire order yang belum diklaim setelah batas waktu + grasi", async () => {
     const db = setup({
       orders: [
         orderRow({ payment_expired_at: new Date(Date.now() - 120_000).toISOString() }),
@@ -456,106 +505,105 @@ describe("refreshOrderStatus — order manual", () => {
     expect(res.order.order_status).toBe("EXPIRED");
   });
 
-  it("order manual tidak pernah memanggil provider (payment_id null aman)", async () => {
+  it("order yang masih dalam batas waktu tidak boleh berubah status", async () => {
     const db = setup({ orders: [orderRow()] });
 
     const res = await refreshOrderStatus(onlyOrder(db));
 
-    expect(res.checkedProvider).toBe(false);
     expect(res.order.payment_status).toBe("PENDING");
+    expect(res.order.order_status).toBe("PENDING");
+  });
+
+  it("tidak pernah menyentuh kolom provider (payment_id tetap null & tidak ada error)", async () => {
+    const db = setup({ orders: [orderRow()] });
+
+    await refreshOrderStatus(onlyOrder(db));
+
+    expect(onlyOrder(db).payment_id).toBeNull();
+    expect(onlyOrder(db).last_payment_checked_at).toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-describe("konfigurasi pembayaran manual (lib/payment-config)", () => {
-  it("available bila saklar aktif + QR terunggah; qrSrc menunjuk endpoint gambar", async () => {
+describe("konfigurasi pembayaran manual via WhatsApp (lib/payment-config)", () => {
+  it("available bila saklar aktif + nomor WA valid; nomor tampil terformat", async () => {
     setup();
     const { getManualPaymentView } = await import("@/lib/payment-config");
 
     const view = await getManualPaymentView();
     expect(view.available).toBe(true);
     expect(view.reason).toBeNull();
-    expect(view.label).toBe("Transfer Manual (QRIS GoPay)");
-    expect(view.accountName).toBe("Toko Saya");
+    expect(view.label).toBe("Transfer via WhatsApp");
+    expect(view.sellerName).toBe("Toko Saya");
     expect(view.expiryMinutes).toBe(120);
-    expect(view.qrSrc).toBe("/api/manual-qr?v=2026-09-12T02%3A00%3A00.000Z");
+    expect(view.whatsappNumber).toBe(SELLER_WA);
+    expect(view.whatsappDisplay).toContain("+62");
+    expect(view.numberFromDatabase).toBe(true);
   });
 
-  it("reason=no_qr bila belum ada gambar → metode tidak ditawarkan ke buyer", async () => {
-    setup({ settings: settingsRow({ qr_image_base64: null, qr_image_size: 0 }) });
-    const { getManualPaymentView, getAvailablePaymentMethods } = await import("@/lib/payment-config");
+  it("reason=no_whatsapp bila nomor belum diisi → metode tidak ditawarkan ke buyer", async () => {
+    setup({ settings: settingsRow({ whatsapp_number: "" }) });
+    const { getManualPaymentView, getAvailablePaymentMethods } = await import(
+      "@/lib/payment-config"
+    );
 
     const view = await getManualPaymentView();
     expect(view.available).toBe(false);
-    expect(view.reason).toBe("no_qr");
+    expect(view.reason).toBe("no_whatsapp");
     expect(await getAvailablePaymentMethods()).toEqual([]);
   });
 
-  it("MANUAL_PAYMENT_QR_IMAGE_URL (https) mengalahkan gambar hasil upload", async () => {
-    setup();
-    h.env.MANUAL_PAYMENT_QR_IMAGE_URL = "https://cdn.toko/qris.png";
+  it("reason=disabled bila saklar penjual mati; reason=schema_missing bila DB belum dimigrasi", async () => {
+    setup({ settings: settingsRow({ is_enabled: false }) });
     const { getManualPaymentView } = await import("@/lib/payment-config");
+    expect((await getManualPaymentView()).reason).toBe("disabled");
 
-    const view = await getManualPaymentView();
-    expect(view.qrSrc).toBe("https://cdn.toko/qris.png");
-    expect(view.available).toBe(true);
-    h.env.MANUAL_PAYMENT_QR_IMAGE_URL = null;
+    // Kolom whatsapp_number belum ada di database (migrasi 004 belum jalan).
+    h.db = createFakeDb(
+      {
+        products: [],
+        orders: [],
+        manual_payment_settings: [settingsRow()],
+      },
+      { phantomColumns: { manual_payment_settings: ["whatsapp_number"] } },
+    );
+    // Cache probe dilepas: database berganti di tengah kasus.
+    resetStoreSchemaCache();
+    const { checkStoreSchema: check } = await import("@/lib/store-schema");
+    expect((await check()).ready).toBe(false);
+    expect((await getManualPaymentView()).reason).toBe("schema_missing");
   });
 
-  it("getAvailablePaymentMethods mengikuti konfigurasi provider + penjual", async () => {
-    setup();
-    const { getAvailablePaymentMethods } = await import("@/lib/payment-config");
-
-    h.stenly = false;
-    expect((await getAvailablePaymentMethods()).map((m) => m.id)).toEqual(["MANUAL"]);
-
-    h.stenly = true;
-    expect((await getAvailablePaymentMethods()).map((m) => m.id)).toEqual(["STENLY", "MANUAL"]);
-  });
-
-  it("resolvePaymentMethod: default env dipakai, metode tak tersedia ditolak 409", async () => {
-    setup();
-    const { resolvePaymentMethod } = await import("@/lib/payment-config");
-    h.env.DEFAULT_PAYMENT_METHOD = "MANUAL";
-    h.stenly = false;
-
-    expect(await resolvePaymentMethod(undefined)).toBe("MANUAL");
-    expect(await resolvePaymentMethod("manual")).toBe("MANUAL");
-    await expect(resolvePaymentMethod("STENLY")).rejects.toMatchObject({ status: 409 });
-    // nilai ngawur dari klien → fallback default, bukan error
-    expect(await resolvePaymentMethod("GOPAY")).toBe("MANUAL");
-  });
-
-  it("saveManualPaymentSettings menyimpan label/a.n./batas waktu + gambar QR", async () => {
+  it("saveManualPaymentSettings menormalisasi nomor (08… → 62…) dan menyimpan template", async () => {
     const db = setup();
     const { saveManualPaymentSettings } = await import("@/lib/payment-config");
 
     await saveManualPaymentSettings({
-      label: "QRIS Toko Saya",
+      label: "Transfer WhatsApp",
       account_name: "CV Toko Saya",
       expiry_minutes: 60,
-      qr_image: { mime: "image/png", base64: "QUJD", size: 3 },
+      whatsapp_number: "0812-3456-7890",
+      whatsapp_message_template: "Order {kode} total {total}",
     });
 
     const row = table(db, "manual_payment_settings")[0]!;
-    expect(row.label).toBe("QRIS Toko Saya");
+    expect(row.label).toBe("Transfer WhatsApp");
     expect(row.account_name).toBe("CV Toko Saya");
     expect(row.expiry_minutes).toBe(60);
-    expect(row.qr_image_base64).toBe("QUJD");
-    expect(row.qr_image_size).toBe(3);
+    expect(row.whatsapp_number).toBe("6281234567890");
+    expect(row.whatsapp_message_template).toBe("Order {kode} total {total}");
   });
 
-  it("saveManualPaymentSettings bisa menghapus gambar QR (clear)", async () => {
-    const db = setup();
-    const { saveManualPaymentSettings, getManualPaymentView } = await import("@/lib/payment-config");
+  it("saveManualPaymentSettings menolak nomor tidak valid dengan 400", async () => {
+    setup();
+    const { saveManualPaymentSettings } = await import("@/lib/payment-config");
 
-    await saveManualPaymentSettings({ qr_image: "clear" });
-
-    expect(table(db, "manual_payment_settings")[0]!.qr_image_base64).toBeNull();
-    expect((await getManualPaymentView()).available).toBe(false);
+    await expect(
+      saveManualPaymentSettings({ whatsapp_number: "12345" }),
+    ).rejects.toMatchObject({ status: 400 });
   });
 
-  it("tetap jalan (metode manual dianggap belum siap) bila baris settings belum ada", async () => {
+  it("tetap jalan (metode dianggap belum siap) bila baris settings belum ada", async () => {
     h.db = createFakeDb({ products: [], orders: [] });
     // tanpa baris id=1 → getManualPaymentSettings mengembalikan null (bukan crash)
     const { getManualPaymentView } = await import("@/lib/payment-config");
@@ -565,67 +613,30 @@ describe("konfigurasi pembayaran manual (lib/payment-config)", () => {
     expect(view.reason).toBe("disabled");
   });
 
-  it("getCheckoutPaymentMethods menaruh opsi manual pertama (aktif) dan QRIS berstatus ongoing (disabled) saat Stenly belum terkonfigurasi", async () => {
+  it("getCheckoutPaymentMethods selalu satu opsi (MANUAL) dan non-aktif bila belum siap", async () => {
     setup();
-    h.stenly = false;
     const { getCheckoutPaymentMethods } = await import("@/lib/payment-config");
 
-    const checkoutMethods = await getCheckoutPaymentMethods();
-    expect(checkoutMethods).toHaveLength(2);
+    const methods = await getCheckoutPaymentMethods();
+    expect(methods).toHaveLength(1);
+    expect(methods[0]?.id).toBe("MANUAL");
+    expect(methods[0]?.disabled).toBe(false);
 
-    const [manualMethod, qrisMethod] = checkoutMethods;
-    expect(manualMethod?.id).toBe("MANUAL");
-    expect(manualMethod?.disabled).toBe(false);
-    expect(manualMethod?.label).toContain("Transfer Manual");
-
-    expect(qrisMethod?.id).toBe("STENLY");
-    expect(qrisMethod?.disabled).toBe(true);
-    expect(qrisMethod?.isOngoing).toBe(true);
-    expect(qrisMethod?.statusBadge).toBe("Ongoing");
+    setup({ settings: settingsRow({ whatsapp_number: "" }) });
+    const blocked = await getCheckoutPaymentMethods();
+    expect(blocked[0]?.disabled).toBe(true);
   });
 
-  it("getCheckoutPaymentMethods membuka opsi QRIS otomatis (bisa dipilih) saat kredensial terisi", async () => {
+  it("resolvePaymentMethod selalu MANUAL dan menolak 503 bila belum siap", async () => {
     setup();
-    h.stenly = true;
-    const { getCheckoutPaymentMethods } = await import("@/lib/payment-config");
+    const { resolvePaymentMethod } = await import("@/lib/payment-config");
 
-    const checkoutMethods = await getCheckoutPaymentMethods();
-    expect(checkoutMethods).toHaveLength(2);
+    expect(await resolvePaymentMethod(undefined)).toBe("MANUAL");
+    expect(await resolvePaymentMethod("manual")).toBe("MANUAL");
+    // nilai ngawur dari klien bukan alasan menolak — tetap MANUAL
+    expect(await resolvePaymentMethod("GOPAY")).toBe("MANUAL");
 
-    const [manualMethod, qrisMethod] = checkoutMethods;
-    // Manual tetap urutan pertama & jadi default, tetapi keduanya kini bisa dipilih.
-    expect(manualMethod?.id).toBe("MANUAL");
-    expect(manualMethod?.disabled).toBe(false);
-
-    expect(qrisMethod?.id).toBe("STENLY");
-    expect(qrisMethod?.disabled).toBeFalsy();
-    expect(qrisMethod?.isOngoing).toBeFalsy();
-    expect(qrisMethod?.statusBadge).toBeUndefined();
-  });
-
-  it("getCheckoutPaymentMethods tetap menampilkan QRIS ongoing walau manual sedang aktif & terkonfigurasi", async () => {
-    setup();
-    h.stenly = false;
-    const { getCheckoutPaymentMethods, getAvailablePaymentMethods } = await import(
-      "@/lib/payment-config"
-    );
-
-    // Ketersediaan server (order) tidak bergantung daftar tampilan checkout.
-    await expect(getAvailablePaymentMethods()).resolves.toEqual([
-      expect.objectContaining({ id: "MANUAL" }),
-    ]);
-
-    const qris = (await getCheckoutPaymentMethods()).find((m) => m.id === "STENLY");
-    expect(qris?.disabled).toBe(true);
-    expect(qris?.statusBadge).toBe("Ongoing");
-  });
-
-  it("getCheckoutPaymentMethods menonaktifkan manual jika pengaturan manual dimatikan penjual", async () => {
     setup({ settings: settingsRow({ is_enabled: false }) });
-    const { getCheckoutPaymentMethods } = await import("@/lib/payment-config");
-
-    const checkoutMethods = await getCheckoutPaymentMethods();
-    const manualMethod = checkoutMethods.find((m) => m.id === "MANUAL");
-    expect(manualMethod?.disabled).toBe(true);
+    await expect(resolvePaymentMethod(undefined)).rejects.toMatchObject({ status: 503 });
   });
 });

@@ -55,6 +55,15 @@ export async function claimManualPaymentAction(
       note: parsed.data.note,
       reference: parsed.data.reference,
     });
+    // `changed: false` tanpa catatan klaim = balapan: order telanjur kadaluarsa
+    // / ditutup antara render halaman dan klik. Jangan balas "ok" (tombol akan
+    // tampak tidak bekerja) — jelaskan supaya buyer menghubungi penjual.
+    if (!res.changed && !res.order.manual_claim_at) {
+      return {
+        error:
+          "Waktu pembayaran order ini sudah habis. Hubungi penjual di WhatsApp — bila uangnya sudah terlanjur masuk, penjual masih bisa menandainya lunas.",
+      };
+    }
     return { ok: true, claimedAt: res.order.manual_claim_at ?? undefined };
   } catch (err) {
     rethrowNextControlFlow(err);

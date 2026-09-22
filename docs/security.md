@@ -2,15 +2,16 @@
 
 ## 1. Prinsip: jangan percaya browser
 
-Semua uang & status hidup di server. Tiga pintu masuk publik: **halaman/SSR**,
-**API routes**, **webhook**. Masing-masing punya gerbang sendiri:
+Semua uang & status hidup di server. Dua pintu masuk publik: **halaman/SSR**
+dan **API routes**. Tidak ada webhook: tidak ada layanan luar yang boleh
+mengubah status apa pun. Masing-masing pintu punya gerbang sendiri:
 
 | Pintu | Gerbang |
 |---|---|
 | Halaman `/checkout`, `/orders`, `/pay` | Middleware: ada session → **server action/halaman tetap cek ulang** session + `email_confirmed_at` + kepemilikan |
 | `/api/orders*` | `requireVerifiedUser()`: `getUser()` ke Supabase (verifikasi token, bukan decode) + profil |
 | `/api/admin*` | `requireAdmin()`: `profiles.role='admin'` dibaca dari DB via service role di SETIAP request — bukan dari frontend, bukan dari email hardcoded |
-| `/api/webhooks/stenly` | HMAC-SHA256 raw-body constant-time (`X-Stenly-Signature`) + validasi nominal + idempotensi; JSON di-parse setelah signature sah; body dibatasi 64 KB |
+| `/api/payments/status`, `/api/orders*` (baca status) | `requireUser()` + filter kepemilikan; endpoint **hanya membaca** — tidak ada jalur yang bisa menulis status pembayaran dari klien |
 
 ## 2. RLS Supabase (baris pertahanan ke-2, di database)
 
@@ -35,19 +36,19 @@ jalan ke orders adalah server aplikasi (yang sudah memfilter kepemilikan).
 1. Harga order = `products.price` dibaca ulang di server saat create — body
    klien hanya `productId`/`quantity`.
 2. `total_amount` dihitung server (int Rupiah × int qty) dan disimpan snapshot.
-3. Menuju PAID hanya 3 jalur: webhook terverifikasi; `checkstatus` API privat
-   dari server; dan **konfirmasi penjual** untuk order manual
+3. Menuju PAID hanya **satu** jalur: konfirmasi penjual di dashboard
    (`adminConfirmManualPayment` — diverifikasi `requireAdmin` + guard
    `payment_method=MANUAL`). Endpoint klien tidak menerima field status apa
    pun; klaim "saya sudah transfer" dari buyer hanya mencatat
    `manual_claim_at` (antrian verifikasi), bukan melunasi order.
-4. Webhook validasi nominal: `total ≤ charged ≤ total + toleransi` (kode unik
-   Stenly). Amount absen/salah → diabaikan + log, tidak ada auto-PAID.
-   QRIS Stenly menagih nominal persis → toleransi 0 untuk metode otomatis.
+4. Konfirmasi memvalidasi nominal: bila penjual mengisi *nominal masuk* yang
+   **kurang dari total order** → 409, order tetap PENDING. Nominal tidak bisa
+   dikarang dari klien (aksi hanya bisa dipanggil admin, dan nilainya dicatat
+   di `charged_amount` untuk audit).
 5. Update PAID idempoten (`WHERE payment_status IN ('PENDING','EXPIRED')`) →
-   replay/dobel = no-op; order tidak "dibayar dua kali"; Telegram sekali
-   (`telegram_notified_at` claim-before-send).
-6. Kegagalan Telegram/provider **tidak** mengorbankan status uang.
+   klik ganda/race = no-op (409); order tidak "dibayar dua kali"; Telegram
+   sekali (`telegram_notified_at` claim-before-send).
+6. Kegagalan Telegram **tidak** mengorbankan status uang.
 
 ## 4. Kebocoran informasi
 
@@ -57,30 +58,33 @@ jalan ke orders adalah server aplikasi (yang sudah memfilter kepemilikan).
   email terdaftar (anti-enumeration).
 - Order publik = `order_code` acak (bukan UUID) — enumeration ID DB tidak
   berguna; endpoint tetap cek kepemilikan (404 untuk order asing).
-- Webhook membalas body minimal tanpa data order.
+- Detail pembayaran (QRIS/rekening) tidak pernah disimpan maupun ditampilkan
+  aplikasi — hanya nomor WhatsApp penjual yang publik, sesuai fungsinya.
+- Pesan error endpoint status tidak menyebut alasan internal; alasan migrasi
+  hanya muncul di dashboard admin (banner) dan log.
 
 ## 5. Rate limiting & edge
 
 - In-memory limiter (login 8/5mnt per email+ip, signup 5/10mnt, order 10/10mnt
-  per user, status 30/mnt) — **best-effort** di serverless (per instance).
-- Lapisan nyata: Cloudflare WAF/rate-limit untuk `/auth/*`, `/api/orders`,
-  `/api/webhooks/stenly` (lihat `docs/cloudflare.md`).
-- Timeout 15 dtk ke provider, 6 dtk ke Telegram → thread tidak digantung
-  server jahat.
+  per user, klaim transfer 10/10mnt per user, status 30/mnt) — **best-effort**
+  di serverless (per instance).
+- Lapisan nyata: Cloudflare WAF/rate-limit untuk `/auth/*` dan `/api/orders`
+  (lihat `docs/cloudflare.md`).
+- Timeout 6 dtk ke Telegram → thread tidak digantung server jahat.
 
 ## 6. Secrets hygiene
 
 - Tidak ada secret di source (hanya nama var di `.env.example` placeholder).
-- `server-only` import pada semua modul DB/provider → build gagal kalau
-  terseret ke bundle browser.
+- `server-only` import pada semua modul DB → build gagal kalau terseret ke
+  bundle browser.
 - `.env*` di-gitignore; skrip verifikasi cepat:
   ```bash
   git log -p --all -S 'sb_secret' | head          # kosong = aman
   npm run build && grep -RE "eyJ.+\..+\..+" .next/static | head  # JWT bocor?
   ```
 - Vercel env: simpan sebagai Secret (bukan committed `.env`); rotasi bila
-  pernah terekspos (BotFather `/revoke`, Supabase API keys, Stenly
-  regenerate, ganti webhook secret + redeploy).
+  pernah terekspos (BotFather `/revoke`, Supabase API keys). Env provider lama
+  (`STENLY_*`) sudah tidak dibaca kode — hapus saja dari Vercel.
 - Admin TIDAK pernah menerima service key; anon key hanya sekuat RLS.
 
 ## 7. Transport & headers
@@ -91,8 +95,8 @@ jalan ke orders adalah server aplikasi (yang sudah memfilter kepemilikan).
   `Referrer-Policy`, `Permissions-Policy` (lihat next.config.ts).
   Cookie session: httpOnly/secure/samesite=lax dikelola `@supabase/ssr`.
 - CSP ketat (opsional lanjutan): bisa ditambahkan via middleware/Cloudflare;
-  belum dipasang karena inline styles Tailwind/QR image lintas host perlu
-  penyesuaian — dokumentasikan sebelum mengaktifkan.
+  belum dipasang karena inline styles Tailwind perlu penyesuaian —
+  dokumentasikan sebelum mengaktifkan.
 
 ## 8. Audit checklist (berkala)
 
@@ -101,7 +105,7 @@ jalan ke orders adalah server aplikasi (yang sudah memfilter kepemilikan).
 - [ ] Tidak ada policy tulis untuk anon/authenticated di #2
 - [ ] Trigger role-guard masih ada (DROP oleh iseng = lubang privilege)
 - [ ] Akses dashboard Supabase [ ] Email admin login terakhir tercatat; akun tak terpakai dihapus di Supabase Vercel hanya untuk owner; 2FA aktif di keduanya
-- [ ] Callback URL Stenly hanya endpoint `/api/webhooks/stenly` (bukan dengan secret lama)
-- [ ] Tidak ada env `NEXT_PUBLIC_STENLY_*`; `qr_image_url` yang tersimpan berupa data URI (bukan URL provider yang memuat `api_key`)
+- [ ] Tidak ada env provider tersisa (`STENLY_*`, `DEFAULT_PAYMENT_METHOD`, `MANUAL_PAYMENT_QR_IMAGE_URL`) di Vercel/`.env`
+- [ ] Webhook di dashboard provider lama sudah dimatikan (endpoint `/api/webhooks/stenly` sudah tidak ada → akan menerima 404)
 - [ ] Backup DB hidup (restore test sekali/kuartal)
 - [ ] Dependabot/`npm outdated` dipantau (Next/Supabase JS = jalur auth)

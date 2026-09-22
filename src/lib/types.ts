@@ -1,14 +1,16 @@
 /** Tipe baris database yang dipakai bersama (cermin dari supabase/*.sql). */
+import type { StoredPaymentMethod } from "@/lib/payment-methods";
 
 export type PaymentStatus = "PENDING" | "PAID" | "FAILED" | "EXPIRED";
 export type OrderStatus = "PENDING" | "PAID" | "PROCESSING" | "DONE" | "EXPIRED";
 export type ProfileRole = "buyer" | "admin";
 /**
  * Metode bayar order — lihat lib/payment-methods.ts.
- * "YOBASEPAY" hanya muncul pada order LAMA (provider otomatis sebelumnya) dan
- * dipertahankan agar histori transaksi tetap terbaca; order baru = "STENLY".
+ * Satu-satunya metode untuk order BARU adalah "MANUAL" (transfer manual via
+ * WhatsApp). "STENLY" dan "YOBASEPAY" hanya bisa muncul pada order ARSIP dari
+ * masa QRIS otomatis, dipertahankan agar histori transaksi tetap terbaca.
  */
-export type PaymentMethodId = "STENLY" | "MANUAL" | "YOBASEPAY";
+export type PaymentMethodId = StoredPaymentMethod;
 /** Hasil verifikasi penjual atas klaim transfer manual. */
 export type ManualReviewStatus = "APPROVED" | "REJECTED";
 
@@ -50,8 +52,9 @@ export interface OrderRow {
   charged_amount: number | null;
   payment_status: PaymentStatus;
   order_status: OrderStatus;
-  /** STENLY (QRIS otomatis) atau MANUAL (QRIS statis penjual). Order lama bisa berisi YOBASEPAY. */
+  /** Selalu MANUAL untuk order baru; STENLY/YOBASEPAY hanya pada order arsip. */
   payment_method: PaymentMethodId;
+  /** Sisa data provider (arsip) — tidak pernah diisi untuk order baru. */
   payment_id: string | null;
   payment_url: string | null;
   qr_image_url: string | null;
@@ -63,7 +66,7 @@ export interface OrderRow {
   buyer_whatsapp_snapshot: string;
   buyer_email_snapshot: string;
 
-  // --- Pembayaran MANUAL (QRIS statis penjual) ---
+  // --- Pembayaran MANUAL (transfer/QRIS penjual, koordinasi via WhatsApp) ---
   /** Buyer menekan "Saya sudah transfer" (null bila belum). */
   manual_claim_at: string | null;
   manual_claim_note: string;
@@ -95,8 +98,6 @@ export type BuyerOrderPublic = Pick<
   | "manual_claim_at"
   | "manual_review_status"
   | "manual_review_note"
-  | "payment_url"
-  | "qr_image_url"
   | "payment_expired_at"
   | "paid_at"
   | "buyer_name_snapshot"
@@ -120,8 +121,6 @@ export function toBuyerOrderPublic(o: OrderRow): BuyerOrderPublic {
     manual_claim_at: o.manual_claim_at,
     manual_review_status: o.manual_review_status,
     manual_review_note: o.manual_review_note,
-    payment_url: o.payment_url,
-    qr_image_url: o.qr_image_url,
     payment_expired_at: o.payment_expired_at,
     paid_at: o.paid_at,
     buyer_name_snapshot: o.buyer_name_snapshot,
