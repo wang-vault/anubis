@@ -4,7 +4,7 @@ Legenda: [AUTO] unit test (`npm test`) · [MANUAL] lewat browser/Telegram.
 Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 
 ## 0. Pra-syarat
-- [ ] `npm run typecheck`, `npm run build`, `npm test` hijau (19 file / 227 test)
+- [ ] `npm run typecheck`, `npm run build`, `npm test` hijau (21 file / 265 test)
 - [ ] 2 Supabase terpasang + SQL dijalankan (cek trigger & RLS — lihat docs masing-masing)
 - [ ] Supabase #2 sudah menjalankan `002_manual_payment.sql` (kolom `orders.payment_method` ada) **dan** `004_whatsapp_payment.sql` (kolom `manual_payment_settings.whatsapp_number` ada) — bila tidak, `/admin` menampilkan banner migrasi
 - [ ] Nomor WhatsApp penjual sudah diisi di `/admin/settings` (atau `WHATSAPP_SELLER_NUMBER`)
@@ -29,6 +29,11 @@ Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 - [ ] [MANUAL] Nonaktifkan produk → hilang dari katalog; `/products/{id}` tampil "Tidak tersedia"; checkout produk tsb ditolak
 - [ ] [MANUAL] Buyer view: list, detail, harga format Rp (integer DB)
 - [ ] [MANUAL] Input produk invalid (harga <1000, teks kepanjangan) → ditolak dengan pesan jelas
+- [ ] [MANUAL] Katalog `/products`: cari `kopi` → hasil menyusut + kata kunci disorot + hitungan "N dari M produk cocok"; tekan **Hapus** → daftar penuh kembali
+- [ ] [MANUAL] Pencarian katalog mencari juga di deskripsi & angka harga (`sepatu kulit`, `50000`), tidak case-sensitive
+- [ ] [MANUAL] Kata kunci 1 huruf / kosong → daftar tidak disaring; kata kunci aneh (`%`, `_`, `,`, `<script>`) tidak merusak halaman
+- [ ] [MANUAL] `/admin/products`: kotak cari ada di kanan judul; produk **nonaktif** tetap ketemu; toggle aktif/nonaktif dari hasil pencarian kembali ke hasil yang sama
+- [ ] [AUTO] Mesin pencarian produk (`test/product-search.test.ts`) + render halaman (`test/product-search-pages.test.tsx`)
 
 ## 3. ORDER
 - [ ] [MANUAL] Create: order PENDING + `ORD-YYYYMMDD-XXXXXX`, `payment_method='MANUAL'`, `charged_amount = total + kode unik 1..999`, `payment_id`/`payment_url`/`qr_image_url` NULL; buyer tak terlihat UUID mentah

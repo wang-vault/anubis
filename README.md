@@ -31,6 +31,12 @@ tidak ada VPS. Semuanya serverless di Vercel.
 | Notifikasi | **Telegram Bot API** (ke penjual saja) | Klaim transfer & order lunas; gagal kirim ≠ pembayaran gagal |
 | Keamanan tambahan | **Cloudflare (opsional)** DNS/proxy/WAF/rate limit | Lihat `docs/cloudflare.md` |
 
+**Pencarian produk** ada di dua tempat dengan mesin yang sama
+(`src/lib/product-search.ts`): katalog pembeli `/products` dan daftar produk
+penjual `/admin/products`. Bentuknya form GET (`?q=…`) — tanpa JS klien, hasil
+bisa di-bookmark, dan filter dikerjakan di memori atas daftar produk yang sudah
+dibaca server (nama + deskripsi + harga, min 2 huruf, hasil disorot).
+
 ## Arsitektur (satu halaman)
 
 ```
@@ -109,6 +115,7 @@ src/
 │   ├── whatsapp.ts          template pesan & link wa.me (murni, ter-unit-test)
 │   ├── orders.ts            DOMAIN LOGIC: create order, state machine, idempotensi, statistik
 │   ├── products.ts          katalog + cache tag 'products' (60 dtk, revalidasi saat admin ubah)
+│   ├── product-search.ts    pencarian produk murni (katalog publik + dashboard penjual) — filter di memori, aman dari metakarakter PostgREST
 │   ├── authz.ts             requireUser / requireVerifiedUser / requireAdmin (server-side)
 │   ├── auth-redirects.ts    aturan routing halaman auth (tamu/login/belum-verifikasi/baru-daftar) — murni, dipakai middleware + guard
 │   ├── auth-guards.ts       guardAuthPage: pengulangan aturan itu di Server Component (defense-in-depth)

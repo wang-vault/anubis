@@ -21,6 +21,17 @@ harus Anda sentuh.
 Catatan gambar: gunakan URL https yang bisa diakses publik (mis. upload ke
 CDN/Drive direct link Anda). Format JPG/WebP ±200 KB agar cepat di HP.
 
+## B2. Mencari produk di daftar (dashboard)
+Di **Produk** ada kotak **Cari produk** di kanan judul:
+1. Ketik kata kunci (minimal **2 huruf**) → **Cari**/Enter.
+2. Nama, deskripsi, dan harga ikut dicari; kata yang cocok disorot, dan
+   deskripsi ringkas muncul sebagai keterangan.
+3. Hasilnya juga menyebut jumlahnya, mis. "3 dari 16 produk cocok dengan 'kopi'".
+4. Produk **nonaktif** tetap ikut ditemukan (katalog pembeli tidak menampilkannya).
+5. Tekan **Hapus** untuk kembali ke daftar penuh. Menonaktifkan/mengaktifkan
+   produk dari hasil pencarian membawa Anda kembali ke hasil yang sama.
+Mesin pencariannya sama dengan katalog pembeli (`?q=…`, tanpa akses DB tambahan).
+
 ## C. Mengubah harga
 Produk → **Edit** → ganti harga → Simpan.
 Harga baru hanya berlaku untuk **order berikutnya**. Order lama tetap memakai

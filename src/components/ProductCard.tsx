@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { formatRupiah } from "@/lib/money";
+import { descriptionSnippet, type ProductSearchState } from "@/lib/product-search";
+import { HighlightText } from "@/components/HighlightText";
 import type { ProductRow } from "@/lib/types";
 
 /**
@@ -26,7 +28,17 @@ function ProductImage({ src, alt }: { src: string | null; alt: string }) {
   );
 }
 
-export function ProductCard({ product }: { product: ProductRow }) {
+export function ProductCard({
+  product,
+  search,
+}: {
+  product: ProductRow;
+  /** Keadaan pencarian halaman; bila aktif, judul disorot & deskripsi ringkas tampil. */
+  search?: ProductSearchState | null;
+}) {
+  const tokens = search?.active ? search.tokens : [];
+  const snippet = tokens.length > 0 ? descriptionSnippet(product.description, tokens) : null;
+
   return (
     <Link
       href={`/products/${product.id}`}
@@ -38,8 +50,15 @@ export function ProductCard({ product }: { product: ProductRow }) {
         <span className="product-card-ribbon">Katalog</span>
       </div>
       <div className="product-card-body">
-        <p className="product-card-kicker">Berita produk</p>
-        <h3 className="product-card-title line-clamp-2">{product.name}</h3>
+        <p className="product-card-kicker">{tokens.length > 0 ? "Hasil pencarian" : "Berita produk"}</p>
+        <h3 className="product-card-title line-clamp-2">
+          <HighlightText text={product.name} tokens={tokens} />
+        </h3>
+        {snippet && (
+          <p className="product-card-snippet line-clamp-3">
+            <HighlightText text={snippet} tokens={tokens} />
+          </p>
+        )}
         <p className="product-card-price">{formatRupiah(product.price)}</p>
         <div className="product-card-footer">
           <span>{product.is_active ? "Siap dipesan" : "Tidak tersedia"}</span>

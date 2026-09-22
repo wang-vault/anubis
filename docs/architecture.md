@@ -142,6 +142,11 @@ produk diedit nanti. Indexes: katalog aktif, order per-account, antrian
   pembayaran (polling 8 dtk). First Load JS ±106 kB.
 - Katalog di-cache via `unstable_cache` (60 detik, tag `products`); mutation
   admin memanggil `revalidateTag('products')` → perubahan instan tanpa rebuild.
+- Pencarian produk (`/products`, `/admin/products`) memakai form GET (`?q=`) dan
+  menyaring **di memori** daftar produk yang sudah dibaca (maks 200/500 baris) —
+  tidak ada query `ilike` tambahan, tidak butuh index baru, dan tidak ada nilai
+  user yang dirakit ke filter PostgREST. Logikanya murni & ter-unit-test di
+  `src/lib/product-search.ts` (normalisasi + token AND + peringkat + sorotan).
 - Polling status kini murni baca DB (tanpa panggilan keluar): limiter
   30/menit/user untuk `/api/payments/status`, dan probe kelengkapan skema
   `checkStoreSchema()` di-cache 60 detik per instance.
