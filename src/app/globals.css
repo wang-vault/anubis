@@ -390,6 +390,9 @@
 .front-page-hero {
   position: relative;
   display: grid;
+  /* Mobile: satu kolom penuh. Eksplisit agar .hero-brief (container query)
+     tetap dapat lebar pasti, bukan track "auto" yang bergantung konten. */
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
   border-top: 7px solid var(--accent);
   background: var(--paper-light);
@@ -513,6 +516,11 @@
   padding: 1.4rem;
   color: var(--paper-light);
   background: var(--ink);
+  /* Kontainer ukuran untuk .hero-brief-title: font headline mengikuti lebar
+     kotak ini (satuan cqw), bukan lebar viewport — dulu font membesar terus
+     (6vw s.d. 4.7rem) sementara kolom berhenti di batas container, sehingga
+     "TRANSFER." terpotong oleh overflow: hidden. */
+  container: hero-brief / inline-size;
 }
 
 .hero-brief::after {
@@ -540,10 +548,14 @@
 .hero-brief-title {
   position: relative;
   z-index: 1;
-  max-width: 16rem;
   margin-top: auto;
   font-family: var(--font-serif);
-  font-size: clamp(2.4rem, 6vw, 4.7rem);
+  /* Fallback (tanpa container query): tetap muat di kolom tersempit (±195px). */
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  /* Ukuran sebenarnya: proporsional terhadap lebar kotak hero-brief.
+     17cqw membuat baris terpanjang ("TRANSFER.") selalu muat dengan margin
+     aman lintas font fallback (Georgia/Times/DejaVu). */
+  font-size: clamp(2rem, 17cqw, 4rem);
   font-weight: 900;
   letter-spacing: -0.07em;
   line-height: 0.8;
@@ -1019,7 +1031,9 @@
 
 @media (min-width: 768px) {
   .front-page-hero {
-    grid-template-columns: minmax(0, 1.65fr) minmax(15rem, 0.75fr);
+    /* Kolom kanan diberi ruang lebih (0.75fr → 0.8fr, min 16rem) supaya
+       headline "Pesan. Transfer. Selesai." punya panggung cukup. */
+    grid-template-columns: minmax(0, 1.6fr) minmax(16rem, 0.8fr);
   }
 
   .hero-brief {
