@@ -25,6 +25,19 @@ tidak akan ditampilkan lagi — kamu otomatis dikembalikan ke beranda.
 Menu **Produk** atau beranda. Produk dengan label **● Tersedia** bisa dibeli.
 "Tidak tersedia" berarti stok/dijual dihentikan penjual.
 
+### Mencari produk
+Di halaman **Produk** ada kotak **Cari produk** di bawah judul:
+
+1. Ketik kata kunci (minimal **2 huruf**) lalu tekan **Cari** atau Enter.
+2. Yang dicari: **nama, deskripsi, dan angka harga** — mis. `kopi`, `gayo`,
+   `sepatu kulit`, `50000`. Huruf besar/kecil tidak berpengaruh.
+3. Kata yang cocok **disorot** di kartu produk, lengkap dengan potongan
+   deskripsinya supaya terlihat alasan produk itu muncul.
+4. Di atas hasil ada hitungannya, mis. "3 dari 14 produk cocok dengan 'kopi'".
+   Tidak ketemu? Coba kata yang lebih pendek, atau tekan **Hapus**.
+5. Hasil pencarian muncul di alamat halaman (`/products?q=kopi`) — aman
+   di-bookmark atau dibagikan, dan tombol back browser tetap bekerja.
+
 ## 5–6. Membeli & checkout
 1. Buka produk → **Beli Sekarang**.
 2. Pilih jumlah (maks 20/order).

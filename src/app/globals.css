@@ -790,6 +790,68 @@
 }
 
 /* -------------------------------------------------------------------------- */
+/* Pencarian (katalog publik & daftar produk admin)                           */
+/* -------------------------------------------------------------------------- */
+.search-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1.1rem;
+}
+
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.search-bar-input {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Firefox/Safari: sembunyikan ikon silang bawaan type="search" agar seragam
+   dengan tautan "Hapus" milik kita sendiri. */
+.search-bar-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-count {
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.search-count strong {
+  color: var(--ink);
+  font-weight: 900;
+}
+
+/* Kata kunci yang cocok — stabilo mustard, senada aksen koran toko. */
+.search-hit {
+  padding: 0 1px;
+  color: inherit;
+  background: rgb(211 148 43 / 0.42);
+  box-shadow: inset 0 -0.35em 0 rgb(211 148 43 / 0.22);
+}
+
+.product-card-snippet {
+  margin-top: 0.4rem;
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+@media (min-width: 640px) {
+  .search-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Shared editorial surfaces                                                  */
 /* -------------------------------------------------------------------------- */
 .paper-inset {
