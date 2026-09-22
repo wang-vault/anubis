@@ -13,9 +13,13 @@ Setelah mendaftar: **cek inbox (juga folder spam/promotions)** → klik tombol
 **Verifikasi Email**. Belum klik link = akun belum aktif dan **tidak bisa
 membeli**. Link tidak datang? Buka halaman verifikasi → **Kirim ulang**.
 
+Catatan: selama email belum diverifikasi, membuka halaman **Daftar** lagi akan
+langsung diarahkan ke halaman verifikasi (tidak perlu mengisi form dua kali).
+
 ## 3. Login
 **Masuk** → email + password. Setelah login, session tersimpan di browser
-(cookie aman) sampai kamu keluar.
+(cookie aman) sampai kamu keluar. Selama masih login, halaman Daftar/Masuk
+tidak akan ditampilkan lagi — kamu otomatis dikembalikan ke beranda.
 
 ## 4. Melihat produk
 Menu **Produk** atau beranda. Produk dengan label **● Tersedia** bisa dibeli.
@@ -68,6 +72,13 @@ Penjual mendapat notifikasi begitu lunas, lalu:
 **Pesanan Saya → (buka order)** menampilkan timeline:
 `✓ Order dibuat → ✓ Pembayaran berhasil → ✓ Pesanan diproses → ✓ Pesanan selesai`.
 Semua data order (harga, tanggal, kode) tersimpan permanen di riwayat kamu.
+
+## 12. Testimoni otomatis (halaman publik)
+Menu **Testimoni** menampilkan kabar pesanan yang telah selesai — dirangkum
+otomatis dari maksimal **20 pesanan selesai terakhir**. Halaman ini terbuka
+untuk siapa saja, **tanpa perlu daftar/login**. Nama pembeli ditulis singkat
+(mis. "Budi S.") dan tidak ada data pribadi (nomor WhatsApp, email, kode
+pesanan, nominal) yang ditampilkan.
 
 ## FAQ buyer
 | Tanya | Jawab |

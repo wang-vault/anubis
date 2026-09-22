@@ -3,6 +3,7 @@ import { accountServer } from "@/lib/supabase/server";
 import { log } from "@/lib/logger";
 import { serverEnv } from "@/lib/env";
 import { sanitizeNextPath } from "@/lib/next-url";
+import { PENDING_REGISTER_COOKIE } from "@/lib/auth-redirects";
 
 export const dynamic = "force-dynamic";
 
@@ -57,5 +58,8 @@ function redirectWithWelcome(next: string, url: URL): NextResponse {
   } else {
     target.searchParams.set("verified", "1");
   }
-  return NextResponse.redirect(target);
+  const res = NextResponse.redirect(target);
+  // Verifikasi/recovery sukses → hapus penanda "baru mendaftar" bila ada.
+  res.cookies.delete(PENDING_REGISTER_COOKIE);
+  return res;
 }

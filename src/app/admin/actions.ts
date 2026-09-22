@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { getAuthContext } from "@/lib/authz";
 import { HttpError } from "@/lib/api";
@@ -11,6 +12,7 @@ import {
   adminTransition,
 } from "@/lib/orders";
 import { saveManualPaymentSettings } from "@/lib/payment-config";
+import { TESTIMONIALS_CACHE_TAG } from "@/lib/testimonials";
 import { manualSettingsSchema, productInputSchema } from "@/lib/validation";
 import { rethrowNextControlFlow } from "@/lib/action-errors";
 import { log } from "@/lib/logger";
@@ -146,6 +148,10 @@ export async function orderTransitionAction(formData: FormData): Promise<void> {
 
   try {
     await adminTransition(parsed.data.orderId, parsed.data.action, ctx);
+    // Testimoni publik berasal dari order DONE → segarkan segera (bukan
+    // menunggu cache 60 dtk) setelah status order berubah.
+    revalidateTag(TESTIMONIALS_CACHE_TAG);
+    revalidatePath("/testimoni");
   } catch (err) {
     rethrowNextControlFlow(err);
     if (err instanceof HttpError) {

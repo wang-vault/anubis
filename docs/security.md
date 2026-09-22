@@ -9,7 +9,9 @@ mengubah status apa pun. Masing-masing pintu punya gerbang sendiri:
 | Pintu | Gerbang |
 |---|---|
 | Halaman `/checkout`, `/orders`, `/pay` | Middleware: ada session → **server action/halaman tetap cek ulang** session + `email_confirmed_at` + kepemilikan |
+| Halaman auth (`/auth/login`, `/auth/register`, `/auth/forgot-password`, `/auth/verify`) | **Khusus tamu**: user login diarahkan keluar oleh middleware **dan diulang di Server Component** (`guardAuthPage` → `resolveAuthRedirect`) — aturan tunggal di `lib/auth-redirects.ts`. Baru-daftar-belum-verifikasi → cookie penanda httpOnly (umur 1 jam) mengarahkan `/auth/register` ke `/auth/verify` |
 | `/api/orders*` | `requireVerifiedUser()`: `getUser()` ke Supabase (verifikasi token, bukan decode) + profil |
+| Halaman `/testimoni` (publik, tamu boleh baca) | Query server-side via service role HANYA memilih kolom non-sensitif (nama snapshot → dimasker jadi "Budi S.", nama produk, jumlah, tanggal) — WhatsApp/email/order_code/nominal TIDAK PERNAH di-select; error DB → daftar kosong, bukan 500 |
 | `/api/admin*` | `requireAdmin()`: `profiles.role='admin'` dibaca dari DB via service role di SETIAP request — bukan dari frontend, bukan dari email hardcoded |
 | `/api/payments/status`, `/api/orders*` (baca status) | `requireUser()` + filter kepemilikan; endpoint **hanya membaca** — tidak ada jalur yang bisa menulis status pembayaran dari klien |
 

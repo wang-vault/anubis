@@ -1,6 +1,12 @@
 import Link from "next/link";
+import { getAuthContext, isAdmin } from "@/lib/authz";
 
-export function Footer() {
+/** Footer publik (server component). Link akun menyesuaikan status login:
+ *  tamu melihat masuk/daftar, user login melihat pesanan/dashboard — bukan
+ *  link "daftar" yang cuma memantul kembali (halaman auth khusus tamu). */
+export async function Footer() {
+  const ctx = await getAuthContext();
+
   return (
     <footer className="site-footer">
       <div className="container-x grid gap-8 py-8 sm:grid-cols-[1.4fr_0.8fr_0.8fr]">
@@ -20,23 +26,41 @@ export function Footer() {
             <Link href="/products" className="site-footer-link">
               Katalog produk
             </Link>
+            <Link href="/testimoni" className="site-footer-link">
+              Testimoni pembeli
+            </Link>
             <Link href="/orders" className="site-footer-link">
               Pesanan saya
             </Link>
           </div>
         </div>
         <div>
-          <p className="site-footer-heading">Bantuan akun</p>
+          <p className="site-footer-heading">{ctx ? "Akun kamu" : "Bantuan akun"}</p>
           <div className="mt-2 grid gap-1.5">
-            <Link href="/auth/login" className="site-footer-link">
-              Masuk
-            </Link>
-            <Link href="/auth/register" className="site-footer-link">
-              Buat akun
-            </Link>
-            <Link href="/auth/forgot-password" className="site-footer-link">
-              Lupa password
-            </Link>
+            {ctx ? (
+              <>
+                <Link href="/orders" className="site-footer-link">
+                  Pesanan saya
+                </Link>
+                {isAdmin(ctx) && (
+                  <Link href="/admin" className="site-footer-link">
+                    Dashboard penjual
+                  </Link>
+                )}
+              </>
+            ) : (
+              <>
+                <Link href="/auth/login" className="site-footer-link">
+                  Masuk
+                </Link>
+                <Link href="/auth/register" className="site-footer-link">
+                  Buat akun
+                </Link>
+                <Link href="/auth/forgot-password" className="site-footer-link">
+                  Lupa password
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
 import { ForgotForm } from "@/components/AuthForms";
+import { guardAuthPage } from "@/lib/auth-guards";
 
 export const metadata: Metadata = { title: "Lupa Password" };
 
-export default function ForgotPasswordPage() {
+export default async function ForgotPasswordPage() {
+  // Halaman khusus tamu: user yang sudah login diarahkan keluar.
+  await guardAuthPage({ pathname: "/auth/forgot-password" });
+
   return (
     <div className="container-x mx-auto max-w-md">
       <div className="card p-6 sm:p-7">

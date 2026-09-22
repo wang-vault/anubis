@@ -1,9 +1,14 @@
 import type { Metadata } from "next";
 import { RegisterForm } from "@/components/AuthForms";
+import { guardAuthPage } from "@/lib/auth-guards";
 
 export const metadata: Metadata = { title: "Daftar" };
 
-export default function RegisterPage() {
+export default async function RegisterPage() {
+  // Sudah login → redirect keluar; BARU daftar & belum verifikasi → /auth/verify
+  // (form daftar tidak ditampilkan dua kali untuk pendaftaran yang sama).
+  await guardAuthPage({ pathname: "/auth/register" });
+
   return (
     <div className="container-x mx-auto max-w-md">
       <div className="card p-6 sm:p-7">

@@ -1,8 +1,10 @@
 import type { NextRequest } from "next/server";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { ErrorCodes, handleApi, HttpError, ok } from "@/lib/api";
 import { requireAdmin } from "@/lib/authz";
 import { adminOrderActionSchema } from "@/lib/validation";
 import { adminTransition, findOrderByCodeOrId } from "@/lib/orders";
+import { TESTIMONIALS_CACHE_TAG } from "@/lib/testimonials";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +30,10 @@ export async function PATCH(
     }
     const body = adminOrderActionSchema.parse(await request.json());
     const updated = await adminTransition(order.id, body.action, ctx);
+    // Testimoni publik berasal dari order DONE → segarkan segera setelah
+    // penjual menandai pesanan selesai (bukan menunggu cache 60 dtk).
+    revalidateTag(TESTIMONIALS_CACHE_TAG);
+    revalidatePath("/testimoni");
     return {
       order: {
         order_code: updated.order_code,

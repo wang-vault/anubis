@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ResendForm } from "@/components/AuthForms";
+import { guardAuthPage } from "@/lib/auth-guards";
 
 export const metadata: Metadata = { title: "Verifikasi Email" };
 
@@ -10,6 +11,10 @@ interface Props {
 
 export default async function VerifyPage({ searchParams }: Props) {
   const { registered: _registered, unverified, verified } = await searchParams;
+
+  // User yang sudah login & terverifikasi tidak perlu melihat "cek email" —
+  // kecuali justru baru menyelesaikan verifikasi (?verified=1, layar sukses).
+  await guardAuthPage({ pathname: "/auth/verify", verifiedFlag: verified === "1" });
 
   return (
     <div className="container-x mx-auto max-w-md space-y-4">

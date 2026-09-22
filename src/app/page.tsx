@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listActiveProducts } from "@/lib/products";
+import { getAuthContext } from "@/lib/authz";
 import { ProductCard } from "@/components/ProductCard";
 
 const HOW_IT_WORKS = [
@@ -10,6 +11,9 @@ const HOW_IT_WORKS = [
 
 export default async function HomePage() {
   const products = (await listActiveProducts()).slice(0, 8);
+  // User yang sudah login tidak lagi disuguhi CTA "daftar/masuk" (dead link).
+  // getAuthContext() di-cache per-request — Header sudah memanggilnya.
+  const ctx = await getAuthContext();
 
   return (
     <div className="container-x space-y-10">
@@ -123,9 +127,15 @@ export default async function HomePage() {
             tepat.
           </p>
         </div>
-        <Link href="/auth/register" className="btn-secondary btn-sm justify-self-start sm:justify-self-end">
-          Daftar sekarang
-        </Link>
+        {ctx ? (
+          <Link href="/orders" className="btn-secondary btn-sm justify-self-start sm:justify-self-end">
+            Lihat Pesanan Saya →
+          </Link>
+        ) : (
+          <Link href="/auth/register" className="btn-secondary btn-sm justify-self-start sm:justify-self-end">
+            Daftar sekarang
+          </Link>
+        )}
       </section>
     </div>
   );
