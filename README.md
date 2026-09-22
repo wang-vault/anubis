@@ -94,7 +94,7 @@ tidak ada VPS. Semuanya serverless di Vercel.
 ```
 src/
 ├── app/
-│   ├── (halaman publik)     page.tsx, products/, checkout/, pay/, orders/, auth/
+│   ├── (halaman publik)     page.tsx, products/, testimoni/, checkout/, pay/, orders/, auth/
 │   ├── admin/               login + (panel)/ dashboard, orders, products, settings
 │   │   └── (panel)/*        guard role admin di layout + ulang di setiap aksi
 │   └── api/
@@ -112,6 +112,7 @@ src/
 │   ├── authz.ts             requireUser / requireVerifiedUser / requireAdmin (server-side)
 │   ├── auth-redirects.ts    aturan routing halaman auth (tamu/login/belum-verifikasi/baru-daftar) — murni, dipakai middleware + guard
 │   ├── auth-guards.ts       guardAuthPage: pengulangan aturan itu di Server Component (defense-in-depth)
+│   ├── testimonials.ts      testimoni otomatis dari order DONE (publik, maks 20, kolom non-sensitif saja)
 │   ├── supabase/            klien server (anon, service-role) — dijamin tak masuk bundle browser
 │   ├── integrations/        telegram.ts (satu-satunya integrasi eksternal)
 │   ├── api.ts               HttpError + handler terpusat (pesan user aman, detail ke log)

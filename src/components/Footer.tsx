@@ -26,6 +26,9 @@ export async function Footer() {
             <Link href="/products" className="site-footer-link">
               Katalog produk
             </Link>
+            <Link href="/testimoni" className="site-footer-link">
+              Testimoni pembeli
+            </Link>
             <Link href="/orders" className="site-footer-link">
               Pesanan saya
             </Link>

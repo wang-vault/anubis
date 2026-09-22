@@ -73,6 +73,13 @@ Penjual mendapat notifikasi begitu lunas, lalu:
 `✓ Order dibuat → ✓ Pembayaran berhasil → ✓ Pesanan diproses → ✓ Pesanan selesai`.
 Semua data order (harga, tanggal, kode) tersimpan permanen di riwayat kamu.
 
+## 12. Testimoni otomatis (halaman publik)
+Menu **Testimoni** menampilkan kabar pesanan yang telah selesai — dirangkum
+otomatis dari maksimal **20 pesanan selesai terakhir**. Halaman ini terbuka
+untuk siapa saja, **tanpa perlu daftar/login**. Nama pembeli ditulis singkat
+(mis. "Budi S.") dan tidak ada data pribadi (nomor WhatsApp, email, kode
+pesanan, nominal) yang ditampilkan.
+
 ## FAQ buyer
 | Tanya | Jawab |
 |---|---|

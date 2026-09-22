@@ -4,7 +4,7 @@ Legenda: [AUTO] unit test (`npm test`) · [MANUAL] lewat browser/Telegram.
 Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 
 ## 0. Pra-syarat
-- [ ] `npm run typecheck`, `npm run build`, `npm test` hijau (18 file / 214 test)
+- [ ] `npm run typecheck`, `npm run build`, `npm test` hijau (19 file / 227 test)
 - [ ] 2 Supabase terpasang + SQL dijalankan (cek trigger & RLS — lihat docs masing-masing)
 - [ ] Supabase #2 sudah menjalankan `002_manual_payment.sql` (kolom `orders.payment_method` ada) **dan** `004_whatsapp_payment.sql` (kolom `manual_payment_settings.whatsapp_number` ada) — bila tidak, `/admin` menampilkan banner migrasi
 - [ ] Nomor WhatsApp penjual sudah diisi di `/admin/settings` (atau `WHATSAPP_SELLER_NUMBER`)
@@ -37,6 +37,13 @@ Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 - [ ] [MANUAL] Transisi admin: PAID→Proses→Selesai; tombol hilang saat tidak relevan; API PATCH action salah → 409
 - [ ] [MANUAL] Admin access: buyer buka /admin/* → redirect; API admin → 403
 - [ ] [AUTO] order-code format & charset anti-karakter-tukar
+
+## 3b. TESTIMONI OTOMATIS (halaman publik /testimoni)
+- [ ] [MANUAL] Buka `/testimoni` TANPA login → tampil (tidak diarahkan ke login); link ada di header ("Testimoni") & footer
+- [ ] [MANUAL] Hanya pesanan DONE yang tampil, maksimal 20, terbaru di urutan pertama
+- [ ] [MANUAL] Nama pembeli tampil singkat (mis. "Budi S.") — TIDAK ada nomor WhatsApp, email, kode pesanan, atau nominal di halaman
+- [ ] [MANUAL] Admin menandai pesanan "Selesai" → testimoni baru muncul langsung di `/testimoni` (cache direvalidasi, tak perlu tunggu 60 dtk)
+- [ ] [AUTO] Query hanya DONE + limit 20 + urut terbaru; nama dimasker; kolom sensitif tidak pernah di-select; error DB → daftar kosong bukan 500 (`test/testimonials.test.ts`)
 - [ ] [MANUAL] Quantity 0/99/abc/UUID palsu → ditolak 400, tidak ada order yatim
 - [ ] [MANUAL] Belum ada nomor WA penjual → checkout menolak 503 "penjual belum mengatur nomor WhatsApp", **tidak ada** baris order baru
 

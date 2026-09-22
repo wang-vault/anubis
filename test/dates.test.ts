@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { jakartaDayStartISO, jakartaMonthStartISO, formatDateTimeId } from "@/lib/dates";
+import { jakartaDayStartISO, jakartaMonthStartISO, formatDateId, formatDateTimeId } from "@/lib/dates";
 
 describe("jakartaDayStartISO", () => {
   it("11 Sep 00:30 WIB → hari mulai 10 Sep 17:00 UTC", () => {
@@ -28,5 +28,17 @@ describe("formatDateTimeId", () => {
   });
   it("null → dash", () => {
     expect(formatDateTimeId(null)).toBe("-");
+  });
+});
+
+describe("formatDateId (tanggal saja, untuk tampilan publik)", () => {
+  it("memformat tanggal WIB tanpa jam", () => {
+    const s = formatDateId("2026-09-11T17:00:00.000Z"); // = 12 Sep 2026 WIB
+    expect(s).toContain("2026");
+    expect(s).toContain("12");
+    expect(s).not.toContain(":"); // tanpa jam
+  });
+  it("null → dash", () => {
+    expect(formatDateId(null)).toBe("-");
   });
 });

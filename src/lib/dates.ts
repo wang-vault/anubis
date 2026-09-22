@@ -31,3 +31,12 @@ export function formatDateTimeId(iso: string | null): string {
     timeStyle: "short",
   }).format(new Date(iso));
 }
+
+/** Tanggal saja (tanpa jam) — mis. "22 Sep 2026" — untuk tampilan publik. */
+export function formatDateId(iso: string | null): string {
+  if (!iso) return "-";
+  return new Intl.DateTimeFormat("id-ID", {
+    timeZone: "Asia/Jakarta",
+    dateStyle: "medium",
+  }).format(new Date(iso));
+}
