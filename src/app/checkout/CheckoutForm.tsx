@@ -1,19 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { checkoutAction, type ActionState } from "@/app/checkout/actions";
 import { useActionState } from "react";
+import { checkoutAction, type ActionState } from "@/app/checkout/actions";
 import { formatRupiah } from "@/lib/money";
-import {
-  PAYMENT_METHOD_AUTO,
-  PAYMENT_METHOD_MANUAL,
-  type AvailablePaymentMethod,
-} from "@/lib/payment-methods";
 
 /**
  * Form checkout (komponen klien kecil — hanya untuk qty + preview total).
  * Nilai qty & harga HANYA tampilan: total final dihitung ulang server-side
  * dari database (lihat lib/orders.createOrderForBuyer).
+ *
+ * Metode bayar TIDAK lagi dipilih di sini: toko hanya menerima transfer manual
+ * yang dikoordinasikan lewat WhatsApp, jadi buyer cukup melihat satu cara bayar
+ * yang jelas — lengkap dengan langkahnya.
  */
 export function CheckoutForm({
   productId,
@@ -21,40 +20,26 @@ export function CheckoutForm({
   unitPrice,
   maxQuantity = 20,
   whatsapp,
-  methods,
-  defaultMethod,
+  paymentLabel,
+  sellerName,
 }: {
   productId: string;
   productName: string;
   unitPrice: number;
   maxQuantity?: number;
   whatsapp: string;
-  /** Metode yang ditampilkan (termasuk status ongoing). */
-  methods: AvailablePaymentMethod[];
-  defaultMethod: string;
+  /** Nama metode bayar dari pengaturan penjual (mis. "Transfer Manual (WhatsApp)"). */
+  paymentLabel: string;
+  /** Nama penerima/penjual yang tampil (opsional). */
+  sellerName: string;
 }) {
   const [qty, setQty] = useState(1);
-  const activeMethods = useMemo(() => methods.filter((m) => !m.disabled), [methods]);
-  const initialMethod = useMemo(() => {
-    const found = methods.find((m) => !m.disabled && m.id === defaultMethod);
-    return found ? found.id : (activeMethods[0]?.id ?? PAYMENT_METHOD_MANUAL);
-  }, [methods, defaultMethod, activeMethods]);
-
-  const [method, setMethod] = useState<string>(initialMethod);
-  const [state, formAction, pending] = useActionState<ActionState, FormData>(
-    checkoutAction,
-    {},
-  );
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(checkoutAction, {});
   const safeQuantity = clamp(qty, maxQuantity);
   const previewTotal = useMemo(
     () => formatRupiah(unitPrice * safeQuantity),
     [unitPrice, safeQuantity],
   );
-
-  const selected = methods.find((m) => m.id === method && !m.disabled) ?? activeMethods[0];
-  /** Nama singkat metode terpilih — dipakai label tombol & catatan di bawah. */
-  const selectedShortLabel =
-    selected?.id === PAYMENT_METHOD_AUTO ? "QRIS Otomatis" : "Transfer Manual";
 
   return (
     <form action={formAction} className="space-y-4">
@@ -113,66 +98,26 @@ export function CheckoutForm({
         <p className="hint">Nominal final dihitung & divalidasi server sesuai harga produk di database.</p>
       </div>
 
-      <fieldset className="card p-4 sm:p-5">
-        <legend className="section-kicker">Cara bayar</legend>
-        <div className="mt-3 space-y-2">
-          {methods.map((m) => {
-            const isMethodDisabled = Boolean(m.disabled);
-            const checked = !isMethodDisabled && (selected?.id ?? "") === m.id;
-            return (
-              <label
-                key={m.id}
-                onClick={(e) => {
-                  if (isMethodDisabled) e.preventDefault();
-                }}
-                className={`flex items-start gap-3 border p-3 transition-colors ${
-                  isMethodDisabled
-                    ? "cursor-not-allowed border-slate-200 bg-slate-50 opacity-80"
-                    : checked
-                      ? "cursor-pointer border-slate-900 bg-amber-50"
-                      : "cursor-pointer border-dotted border-slate-300 bg-white hover:bg-slate-50"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="paymentMethod"
-                  value={m.id}
-                  checked={checked}
-                  onChange={() => {
-                    if (!isMethodDisabled) setMethod(m.id);
-                  }}
-                  disabled={pending || isMethodDisabled}
-                  className="mt-1 size-4 shrink-0 accent-brand-700"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-bold text-slate-800">{m.label}</span>
-                    {m.statusBadge && (
-                      <span className="inline-flex items-center rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-900">
-                        {m.statusBadge}
-                      </span>
-                    )}
-                  </span>
-                  <span className="mt-0.5 block text-xs leading-5 text-slate-500">{m.note}</span>
-                </span>
-              </label>
-            );
-          })}
+      <section className="card p-4 sm:p-5">
+        <p className="section-kicker">Cara bayar</p>
+        <div className="mt-3 border border-slate-900 bg-amber-50 p-3">
+          <p className="text-sm font-bold text-slate-800">{paymentLabel}</p>
+          <p className="mt-0.5 text-xs leading-5 text-slate-600">
+            Pembayaran dibantu langsung lewat chat WhatsApp{sellerName ? ` oleh ${sellerName}` : ""} —
+            detail pembayaran (QRIS / rekening / e-wallet) dikirim penjual di chat.
+          </p>
+          <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs leading-5 text-slate-700">
+            <li>Buat pesanan, lalu buka halaman pembayaran.</li>
+            <li>Tekan tombol WhatsApp — pesan sudah berisi kode order & nominalnya.</li>
+            <li>Bayar sesuai petunjuk penjual, lalu tekan “Saya sudah transfer”.</li>
+            <li>Penjual mencocokkan mutasi dan menandai pesananmu LUNAS.</li>
+          </ol>
         </div>
-        {selected?.id === PAYMENT_METHOD_MANUAL && (
-          <p className="hint mt-3">
-            Kamu akan melihat instruksi / QR penjual, transfer sendiri dengan nominal persis (termasuk kode
-            unik), lalu menekan tombol konfirmasi. Penjual memverifikasi mutasi sebelum pesanan
-            diproses.
-          </p>
-        )}
-        {selected?.id === PAYMENT_METHOD_AUTO && (
-          <p className="hint mt-3">
-            QR dibuat otomatis dengan nominal yang sudah terisi. Setelah kamu membayar, status lunas
-            terdeteksi sistem dalam beberapa saat — tidak perlu konfirmasi ke penjual.
-          </p>
-        )}
-      </fieldset>
+        <p className="hint mt-3">
+          Tidak ada pembayaran otomatis di website: seluruh proses dikonfirmasi penjual setelah uang
+          benar-benar masuk.
+        </p>
+      </section>
 
       <div className="card p-4 sm:p-5">
         <p className="section-kicker">Alamat kabar</p>
@@ -196,8 +141,8 @@ export function CheckoutForm({
 
       {state.error && <p role="alert" className="alert-error">{state.error}</p>}
 
-      <button type="submit" className="btn-primary w-full" disabled={pending || !selected}>
-        {pending ? "Menyusun pesanan…" : `Buat Pesanan & Lanjut Bayar (${selectedShortLabel}) →`}
+      <button type="submit" className="btn-primary w-full" disabled={pending}>
+        {pending ? "Menyusun pesanan…" : "Buat Pesanan & Lanjut Bayar →"}
       </button>
       <p className="hint text-center">
         Dengan membayar, kamu menyetujui pesanan diproses manual oleh penjual via WhatsApp.

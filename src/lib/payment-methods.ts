@@ -5,69 +5,83 @@
  * File ini sengaja TIDAK meng-import apa pun agar bisa dipakai komponen klien
  * maupun di-unit-test. Konfigurasi yang butuh env/DB ada di ./payment-config.ts.
  *
- * Dua metode:
- *  - STENLY : QRIS dinamis, dibuat via API Stenly (StenlyPay), lunas
- *             diverifikasi otomatis (webhook / polling ke provider).
- *  - MANUAL : QRIS statis milik penjual (mis. QR GoPay Merchant). Buyer scan
- *             & transfer sendiri, lalu menekan "Saya sudah transfer";
- *             penjual mencocokkan mutasi lalu mengonfirmasi di dashboard.
+ * SATU METODE: **MANUAL via WhatsApp**.
+ *   Buyer membuat order → halaman pembayaran menampilkan tombol chat WhatsApp
+ *   ke penjual (pesan sudah terisi kode order + nominal) → penjual mengirim
+ *   detail pembayaran (QRIS statis / rekening / e-wallet) DI CHAT → buyer
+ *   transfer → buyer menekan "Saya sudah transfer" (masuk antrian verifikasi)
+ *   → penjual mencocokkan mutasi lalu menandai lunas di dashboard.
  *
- * KOMPATIBILITAS HISTORIS: order lama dibuat saat provider otomatis masih
- * YoBasePay dan menyimpan `payment_method = 'YOBASEPAY'` di database. Nilai itu
- * TIDAK dimigrasikan (histori transaksi tidak boleh diubah) — ia tetap dikenali
- * sebagai "QRIS otomatis" untuk keperluan baca/tampil saja. Order BARU selalu
- * memakai STENLY.
+ *   Tidak ada provider pembayaran, tidak ada webhook, tidak ada QR yang
+ *   dirender aplikasi: seluruh koordinasi pembayaran terjadi di WhatsApp.
+ *
+ * KOMPATIBILITAS HISTORIS (baca-saja).
+ *   Order lama bisa menyimpan `payment_method = 'STENLY'` (QRIS otomatis
+ *   terakhir) atau `'YOBASEPAY'` (provider sebelumnya). Nilai itu TIDAK
+ *   dimigrasikan — histori transaksi tidak boleh diubah — dan tetap dikenali
+ *   sebagai "QRIS otomatis (lama)" untuk keperluan baca/tampil saja.
+ *   Order BARU selalu 'MANUAL'.
  */
 
-export const PAYMENT_METHODS = ["STENLY", "MANUAL"] as const;
+export const PAYMENT_METHODS = ["MANUAL"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
-/**
- * Metode otomatis pada order lama (provider sebelumnya). Hanya untuk dibaca —
- * tidak pernah dipakai untuk order baru dan tidak bisa dipilih buyer.
- */
+/** Provider QRIS otomatis terakhir yang pernah dipakai (arsip, baca-saja). */
+export const LEGACY_PAYMENT_METHOD_STENLY = "STENLY";
+/** Provider QRIS otomatis sebelum Stenly (arsip, baca-saja). */
 export const LEGACY_PAYMENT_METHOD_AUTO = "YOBASEPAY";
 
-/** Nilai `payment_method` yang pernah/boleh ada di database (baca-saja). */
-export type StoredPaymentMethod = PaymentMethod | typeof LEGACY_PAYMENT_METHOD_AUTO;
+export const LEGACY_PAYMENT_METHODS = [
+  LEGACY_PAYMENT_METHOD_STENLY,
+  LEGACY_PAYMENT_METHOD_AUTO,
+] as const;
+export type LegacyPaymentMethod = (typeof LEGACY_PAYMENT_METHODS)[number];
 
-export const PAYMENT_METHOD_AUTO: PaymentMethod = "STENLY";
+/** Nilai `payment_method` yang pernah/boleh ada di database (baca-saja). */
+export type StoredPaymentMethod = PaymentMethod | LegacyPaymentMethod;
+
 export const PAYMENT_METHOD_MANUAL: PaymentMethod = "MANUAL";
 
 /** Label singkat yang dipakai UI & notifikasi. */
-export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  STENLY: "QRIS Otomatis",
-  MANUAL: "Transfer Manual",
+export const PAYMENT_METHOD_LABELS: Record<StoredPaymentMethod, string> = {
+  MANUAL: "Transfer Manual (WhatsApp)",
+  STENLY: "QRIS Otomatis (lama)",
+  YOBASEPAY: "QRIS Otomatis (lama)",
 };
 
-export function isPaymentMethod(value: unknown): value is PaymentMethod {
-  return typeof value === "string" && (PAYMENT_METHODS as readonly string[]).includes(value);
+/** Label aman untuk nilai apa pun yang datang dari database. */
+export function paymentMethodLabel(value: unknown): string {
+  return isStoredPaymentMethod(value)
+    ? PAYMENT_METHOD_LABELS[value]
+    : PAYMENT_METHOD_LABELS[PAYMENT_METHOD_MANUAL];
+}
+
+export function isStoredPaymentMethod(value: unknown): value is StoredPaymentMethod {
+  return (
+    typeof value === "string" &&
+    (value === PAYMENT_METHOD_MANUAL ||
+      (LEGACY_PAYMENT_METHODS as readonly string[]).includes(value))
+  );
 }
 
 /**
- * true bila nilai `payment_method` berarti "QRIS otomatis" — termasuk order
- * lama bernilai YOBASEPAY. Dipakai UI/telegram agar histori tetap terbaca
- * benar tanpa menyentuh datanya.
+ * true bila nilai `payment_method` berarti "QRIS otomatis" — hanya mungkin pada
+ * order ARSIP. Dipakai UI/telegram agar histori tetap terbaca benar tanpa
+ * menyentuh datanya.
  */
-export function isAutoMethod(value: unknown): boolean {
+export function isLegacyAutoMethod(value: unknown): boolean {
   if (typeof value !== "string") return false;
   const upper = value.trim().toUpperCase();
-  return upper === PAYMENT_METHOD_AUTO || upper === LEGACY_PAYMENT_METHOD_AUTO;
+  return (LEGACY_PAYMENT_METHODS as readonly string[]).includes(upper);
 }
 
 /**
- * Normalisasi input metode pembayaran. Nilai tak dikenal → fallback
- * (fallback ditentukan konfigurasi server, BUKAN dari klien).
+ * Normalisasi input dari klien. Karena sekarang hanya ada SATU metode, apa pun
+ * nilai yang dikirim selalu jatuh ke MANUAL — klien tidak pernah bisa memilih
+ * jalur pembayaran lain.
  */
-export function normalizePaymentMethod(
-  value: unknown,
-  fallback: PaymentMethod,
-): PaymentMethod {
-  if (typeof value === "string") {
-    const upper = value.trim().toUpperCase();
-    if (isPaymentMethod(upper)) return upper;
-  }
-  return fallback;
+export function normalizePaymentMethod(_value?: unknown): PaymentMethod {
+  return PAYMENT_METHOD_MANUAL;
 }
 
 /** true bila pembayaran diverifikasi manual oleh penjual. */
@@ -78,10 +92,10 @@ export function isManualMethod(method: PaymentMethod | string | null | undefined
 /**
  * Kode unik nominal untuk transfer MANUAL (1..max, default 1..999).
  *
- * Kenapa perlu: QRIS statis tidak bisa mengisi nominal otomatis, jadi buyer
- * mengetik nominal sendiri. Tambahan beberapa ratus rupiah membuat setiap mutasi
- * punya "sidik jari" unik → penjual bisa mencocokkan transfer dengan order tanpa
- * bertanya ke buyer.
+ * Kenapa perlu: pembayaran dilakukan di luar aplikasi (transfer/QRIS statis),
+ * jadi buyer mengetik nominal sendiri. Tambahan beberapa ratus rupiah membuat
+ * setiap mutasi punya "sidik jari" unik → penjual bisa mencocokkan transfer
+ * dengan order tanpa harus bertanya ke buyer.
  *
  * Deterministik dari order_code (FNV-1a) agar nominal yang sama selalu muncul
  * walau halaman di-render ulang, tanpa perlu menyimpan angka acak tambahan.
@@ -105,8 +119,8 @@ export function manualChargedAmount(totalAmount: number, orderCode: string): num
 
 /**
  * Apakah nominal yang masuk cocok dengan order manual?
- * Nominal manual tidak punya webhook, jadi penjual yang memverifikasi — helper
- * ini hanya dipakai untuk menolak salah ketik yang jelas (kurang dari total).
+ * Nominal manual diverifikasi manusia, jadi helper ini hanya dipakai untuk
+ * menolak salah ketik yang jelas (kurang dari total order).
  */
 export function manualAmountAcceptable(
   received: number,
@@ -120,12 +134,10 @@ export function manualAmountAcceptable(
   );
 }
 
-/** Deskripsi satu metode untuk dipilih buyer di halaman checkout. */
+/** Deskripsi metode pembayaran yang ditampilkan di UI checkout. */
 export interface AvailablePaymentMethod {
   id: PaymentMethod;
   label: string;
   note: string;
   disabled?: boolean;
-  isOngoing?: boolean;
-  statusBadge?: string;
 }

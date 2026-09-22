@@ -13,15 +13,23 @@ region Singapore. Ambil **URL**, **anon**, **service_role** →
 
 ## 2. Jalankan SQL
 
-SQL Editor → paste `supabase/store/001_schema.sql` → Run, lalu paste
-`supabase/store/002_manual_payment.sql` → Run.
+SQL Editor → paste `supabase/store/001_schema.sql` → Run, lalu (untuk project
+lama) `supabase/store/002_manual_payment.sql` dan
+`supabase/store/004_whatsapp_payment.sql` → Run.
 
-File `002` adalah migrasi pembayaran manual (kolom `payment_method`,
-`manual_*`, tabel `manual_payment_settings`). Untuk project baru isinya sudah
-tercakup `001` sehingga `002` menjadi no-op; untuk project lama `002` inilah
-yang menambahkan kolomnya. Keduanya idempoten (aman diulang). Bila `002`
+- `002` = migrasi pembayaran manual (kolom `payment_method`, `manual_*`, tabel
+  `manual_payment_settings`).
+- `004` = migrasi WhatsApp: kolom `whatsapp_number` + `whatsapp_message_template`,
+  default `payment_method = 'MANUAL'`, dan label default versi WhatsApp.
+
+Untuk project baru keduanya sudah tercakup `001` sehingga menjadi no-op; untuk
+project lama keduanya inilah yang menambahkan kolomnya. Semua idempoten (aman
+diulang) dan tidak pernah mengubah/menghapus baris order. Bila `002`/`004`
 dilewati, aplikasi gagal dengan `column orders.payment_method does not exist`
-(`docs/troubleshooting.md` §18).
+(`docs/troubleshooting.md` §18) atau menampilkan status `schema_missing` di
+`/admin/settings`. File `003_stenly_payment.sql` hanya riwayat migrasi provider
+QRIS otomatis yang sudah dihapus dari kode — tidak perlu dijalankan untuk
+instalasi baru.
 
 Hasil:
 
@@ -40,15 +48,16 @@ Snapshot (`product_name_snapshot`, `unit_price_snapshot`,
 `buyer_*_snapshot`) dibuat **saat order dibuat** → edit produk tidak mengubah
 histori. Status: `payment_status` ∈ PENDING/PAID/FAILED/EXPIRED,
 `order_status` ∈ PENDING/PAID/PROCESSING/DONE/EXPIRED (check constraints —
-status liar ditolak DB). `payment_id` (= `order_id` di Stenly, yaitu
-`order_code` kita) **unique partial** —
-satu transaksi provider hanya untuk satu order. `telegram_notified_at` =
+status liar ditolak DB). `payment_id` (warisan: dulu berisi `order_id` provider)
+tetap ada dengan **unique partial index** demi order arsip, tetapi **selalu
+NULL** untuk order baru. `telegram_notified_at` =
 kunci anti-notifikasi-ganda. Indexes untuk katalog, riwayat per-buyer, antrian
 kerja admin, lookup webhook, scan expiry, dan antrian klaim manual.
 
-Kolom **metode pembayaran**: `payment_method` ∈ `STENLY` / `MANUAL`
-(check constraint; `YOBASEPAY` tetap diizinkan untuk order arsip provider lama
-— lihat `supabase/store/003_stenly_payment.sql`). Untuk order `MANUAL`: `charged_amount` = total + kode unik,
+Kolom **metode pembayaran**: `payment_method` default `'MANUAL'`
+(check constraint mengizinkan `MANUAL` + nilai arsip `STENLY`/`YOBASEPAY` agar
+order lama tetap valid dibaca; tidak ada baris order yang pernah ditulis ulang).
+Untuk order `MANUAL`: `charged_amount` = total + kode unik,
 `payment_id` selalu NULL, dan kolom `manual_claim_at`, `manual_claim_note`,
 `manual_claim_reference`, `manual_claim_notified_at` (klaim buyer) serta
 `manual_reviewed_at`, `manual_reviewed_by`, `manual_review_status`
@@ -56,10 +65,14 @@ Kolom **metode pembayaran**: `payment_method` ∈ `STENLY` / `MANUAL`
 hanya ditulis server-side. Detail alur: `docs/manual-payment.md`.
 
 ### Tabel `manual_payment_settings` (satu baris, `id = 1`)
-Konfigurasi pembayaran manual: `is_enabled`, `label`, `account_name`,
-`instructions`, `expiry_minutes` (10–4320), `qr_image_mime`,
-`qr_image_base64`, `qr_image_size`, `updated_at`. Gambar QR disimpan base64
-(disajikan via `GET /api/manual-qr`) sehingga tidak perlu bucket storage.
+Konfigurasi pembayaran manual via WhatsApp: `is_enabled`, `label`,
+`account_name`, `instructions`, `expiry_minutes` (10–4320), `whatsapp_number`
+(nomor penjual, dinormalisasi `62…`), `whatsapp_message_template`
+(placeholder `{toko} {kode} {produk} {jumlah} {total} {nama}`), `updated_at`.
+
+Kolom warisan `qr_image_mime`, `qr_image_base64`, `qr_image_size` **dibiarkan
+ada** (migrasi 004 tidak menghapusnya) agar data lama tidak hilang, tetapi tidak
+pernah dibaca/ditulis kode baru dan tidak ada lagi endpoint gambar QR.
 RLS aktif tanpa policy — hanya service role (server) yang bisa baca/tulis.
 
 ### RLS (inti keamanannya)
@@ -87,8 +100,8 @@ values ('Uji Produk', 'untuk tes', 10000, true) returning id;
 
 -- 2) simulasikan order + payment (UUID account_id = id user uji Anda di #1):
 insert into public.orders (order_code, account_id, product_id, product_name_snapshot,
-  unit_price_snapshot, quantity, total_amount, payment_id)
-values ('ORD-20260911-TEST01','<uuid-user-#1>','<uuid-produk>','Uji Produk',10000,1,10000,'YO-TEST01')
+  unit_price_snapshot, quantity, total_amount, charged_amount, payment_method)
+values ('ORD-20260911-TEST01','<uuid-user-#1>','<uuid-produk>','Uji Produk',10000,1,10000,10417,'MANUAL')
 returning id;
 
 -- 3) transisi "lunas" seperti dilakukan aplikasi:

@@ -68,17 +68,28 @@ describe("sanitizeAdminSearchQuery", () => {
   });
 });
 
-describe("checkoutSchema.paymentMethod", () => {
+describe("checkoutSchema", () => {
   const base = { productId: "11111111-1111-4111-8111-111111111111", quantity: 2 };
 
-  it("opsional — tidak diisi tetap valid (server yang memilih default)", () => {
-    const r = checkoutSchema.parse(base);
-    expect(r.paymentMethod).toBeUndefined();
+  it("menerima produk + jumlah, jumlah dikonversi dari string form", () => {
+    const r = checkoutSchema.parse({ ...base, quantity: "3" });
+    expect(r.productId).toBe(base.productId);
+    expect(r.quantity).toBe(3);
   });
-  it("meneruskan nilai mentah apa adanya untuk diputuskan server", () => {
-    expect(checkoutSchema.parse({ ...base, paymentMethod: "MANUAL" }).paymentMethod).toBe("MANUAL");
-    // Nilai ngawur dari klien TIDAK ditolak di sini — ditolak resolvePaymentMethod.
-    expect(checkoutSchema.parse({ ...base, paymentMethod: "GOPAY" }).paymentMethod).toBe("GOPAY");
+
+  it("TIDAK lagi menerima pilihan metode bayar dari klien (hanya satu metode)", () => {
+    // Kolom metode bukan lagi bagian kontrak; nilai lama dari tab yang belum
+    // di-refresh dibuang diam-diam, bukan disimpan sebagai pilihan.
+    const r = checkoutSchema.parse({ ...base, ...( { paymentMethod: "STENLY" } as object) });
+    expect(r).toEqual(base);
+    expect(r).not.toHaveProperty("paymentMethod");
+  });
+
+  it("menolak productId bukan uuid & jumlah di luar rentang", () => {
+    expect(checkoutSchema.safeParse({ ...base, productId: "produk-1" }).success).toBe(false);
+    expect(checkoutSchema.safeParse({ ...base, quantity: 0 }).success).toBe(false);
+    expect(checkoutSchema.safeParse({ ...base, quantity: 21 }).success).toBe(false);
+    expect(checkoutSchema.safeParse({ ...base, quantity: 1.5 }).success).toBe(false);
   });
 });
 
@@ -103,18 +114,44 @@ describe("manualClaimSchema", () => {
   });
 });
 
-describe("manualSettingsSchema", () => {
-  it("default masuk akal bila field kosong", () => {
-    const r = manualSettingsSchema.parse({});
+describe("manualSettingsSchema (WhatsApp)", () => {
+  it("default masuk akal bila field opsional kosong", () => {
+    const r = manualSettingsSchema.parse({ whatsapp_number: "081234567890" });
     expect(r.is_enabled).toBe(true);
-    expect(r.label).toBe("Transfer Manual (QRIS)");
+    expect(r.label).toBe("Transfer Manual (WhatsApp)");
     expect(r.expiry_minutes).toBe(120);
+    expect(r.account_name).toBe("");
+    expect(r.whatsapp_message_template).toBe("");
   });
+
+  it("nomor penjual WAJIB — form tanpa nomor ditolak (jangan simpan metode yang tak bisa dipakai)", () => {
+    expect(manualSettingsSchema.safeParse({}).success).toBe(false);
+    expect(manualSettingsSchema.safeParse({ whatsapp_number: "   " }).success).toBe(false);
+    expect(
+      manualSettingsSchema.safeParse({ whatsapp_number: "12345" }).success,
+    ).toBe(false);
+  });
+
+  it("nomor dinormalisasi ke format 62… (spasi/tanda hubung dibuang)", () => {
+    expect(manualSettingsSchema.parse({ whatsapp_number: "+62 812-3456-7890" }).whatsapp_number).toBe(
+      "6281234567890",
+    );
+    expect(manualSettingsSchema.parse({ whatsapp_number: "0812 3456 7890" }).whatsapp_number).toBe(
+      "6281234567890",
+    );
+  });
+
   it("is_enabled string false berarti mati (bukan truthy)", () => {
-    expect(manualSettingsSchema.parse({ is_enabled: "false" }).is_enabled).toBe(false);
+    const r = manualSettingsSchema.parse({ is_enabled: "false", whatsapp_number: "081234567890" });
+    expect(r.is_enabled).toBe(false);
   });
-  it("menolak batas waktu di luar rentang", () => {
-    expect(manualSettingsSchema.safeParse({ expiry_minutes: 5 }).success).toBe(false);
-    expect(manualSettingsSchema.safeParse({ expiry_minutes: 99999 }).success).toBe(false);
+
+  it("menolak batas waktu di luar rentang & template pesan kepanjangan", () => {
+    const wa = { whatsapp_number: "081234567890" };
+    expect(manualSettingsSchema.safeParse({ ...wa, expiry_minutes: 5 }).success).toBe(false);
+    expect(manualSettingsSchema.safeParse({ ...wa, expiry_minutes: 99999 }).success).toBe(false);
+    expect(
+      manualSettingsSchema.safeParse({ ...wa, whatsapp_message_template: "x".repeat(601) }).success,
+    ).toBe(false);
   });
 });

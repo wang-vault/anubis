@@ -59,7 +59,9 @@ Gagal `chat not found` → bot belum di-start / chat ID salah.
 ## 5. Test notifikasi "order PAID"
 
 1. Pastikan env terisi + deploy selesai.
-2. Buat order uji → bayar (atau tembak webhook sah per `docs/stenly.md` §7.3).
+2. Buat order uji → tekan "Saya sudah transfer" (penjual akan menerima 🧾 KLAIM
+   TRANSFER MANUAL), lalu konfirmasi dari `/admin/orders?status=CLAIM`
+   (penjual menerima 🔔 PESANAN BARU … LUNAS).
 3. ✅ Pesan masuk ke chat penjual:
    ```
    🔔 PESANAN BARU
@@ -70,11 +72,12 @@ Gagal `chat not found` → bot belum di-start / chat ID salah.
    Produk: Kopi Gayo 250g
    Jumlah: 1
    Total: Rp85.000
+   Metode: Transfer Manual (WhatsApp)
    Status: LUNAS ✅
 
    Silakan proses pesanan.
    ```
-4. Kirim webhook yang sama dua kali → pesan **tidak** dobel (klaim
+4. Konfirmasi order yang sama dua kali → pesan **tidak** dobel (klaim
    `orders.telegram_notified_at`; lihat `src/lib/orders.ts` → `applyPaid`).
 
 ## 6. Perilaku bila Telegram gagal (by design)
@@ -84,8 +87,9 @@ Gagal `chat not found` → bot belum di-start / chat ID salah.
   otomatis; order `telegram_notified_at` sudah terisi → tidak spam.
 - Penjual tetap bisa lihat order di dashboard (itu sumber datanya).
 - Kirim ulang manual: SQL → `update orders set telegram_notified_at=null where
-  order_code='…';` lalu kirim ulang webhook dari dashboard Stenly (Webhook
-  Logs → resend) / tekan tombol cek status.
+  order_code='…';` lalu buka detail order di dashboard dan konfirmasi ulang
+  (tombol konfirmasi tetap tersedia selama order belum PAID; pesan akan
+  terkirim lagi saat status bertransisi).
   (Boleh juga tidak apa-apa — order sudah terlihat di dashboard.)
 
 ## 7. Keamanan

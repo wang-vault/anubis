@@ -7,8 +7,8 @@ export function Footer() {
         <div>
           <p className="site-footer-masthead">Kabar Toko</p>
           <p className="site-footer-copy mt-2 max-w-sm">
-            Belanja ringkas dengan rasa koran pagi: pilih produk, pilih cara bayar (transfer manual atau
-            QRIS otomatis bila tersedia), lalu biarkan penjual mengabarkan pesananmu lewat WhatsApp.
+            Belanja ringkas dengan rasa koran pagi: pilih produk, selesaikan transfer manual lewat
+            WhatsApp bersama penjual, lalu biarkan penjual mengabarkan pesananmu.
           </p>
         </div>
         <div>
@@ -42,7 +42,7 @@ export function Footer() {
       </div>
       <div className="site-footer-bottom">
         <div className="container-x flex flex-wrap items-center justify-between gap-2 py-3">
-          <span>Pembayaran via Transfer Manual · QRIS Otomatis (bila tersedia)</span>
+          <span>Pembayaran transfer manual via WhatsApp</span>
           <span>Pesanan dikonfirmasi penjual melalui WhatsApp</span>
         </div>
       </div>

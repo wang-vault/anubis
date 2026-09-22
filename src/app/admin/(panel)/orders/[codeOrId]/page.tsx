@@ -8,7 +8,7 @@ import { OrderStatusBadge, PaymentStatusBadge } from "@/components/StatusBadge";
 import { OrderActions } from "@/components/admin/OrderActions";
 import { OrderTimeline } from "@/components/OrderTimeline";
 import { ManualVerificationForm } from "@/components/admin/ManualVerificationForm";
-import { LEGACY_PAYMENT_METHOD_AUTO } from "@/lib/payment-methods";
+import { paymentMethodLabel } from "@/lib/payment-methods";
 
 export const metadata: Metadata = { title: "Detail Order — Admin" };
 
@@ -23,10 +23,9 @@ export default async function AdminOrderDetailPage({ params, searchParams }: Pro
   const order = await findOrderByCodeOrId(decodeURIComponent(codeOrId));
   if (!order) notFound();
   const isManual = order.payment_method === "MANUAL";
-  // Order lama (provider otomatis sebelumnya) tetap ditampilkan apa adanya —
-  // histori transaksi tidak dimigrasikan, hanya dibaca.
-  const providerLabel =
-    order.payment_method === LEGACY_PAYMENT_METHOD_AUTO ? "YoBasePay · QRIS (arsip)" : "Stenly · QRIS";
+  // Order lama dari masa QRIS otomatis tetap ditampilkan apa adanya — histori
+  // transaksi tidak dimigrasikan, hanya dibaca (ditandai "arsip").
+  const methodLabel = paymentMethodLabel(order.payment_method);
 
   const profile = await getProfileForAdmin(order.account_id);
 
@@ -62,10 +61,7 @@ export default async function AdminOrderDetailPage({ params, searchParams }: Pro
 
           <section className="paper-inset p-4 text-sm">
             <h2 className="paper-heading-kicker mb-2">Pembayaran</h2>
-            <KV
-              k="Metode"
-              v={isManual ? "Transfer manual · QRIS penjual" : "QRIS otomatis"}
-            />
+            <KV k="Metode" v={methodLabel} />
             {isManual ? (
               <>
                 <KV k="Ditagihkan" v={formatRupiah(order.charged_amount ?? order.total_amount)} strong />
@@ -82,10 +78,10 @@ export default async function AdminOrderDetailPage({ params, searchParams }: Pro
                 />
               </>
             ) : (
-              <KV k="Provider" v={providerLabel} />
+              <KV k="Catatan" v="Order arsip QRIS otomatis (tidak dipakai lagi)" />
             )}
             {!isManual && (
-              <KV k="ID transaksi" v={<span className="break-all font-mono text-xs">{order.payment_id ?? "-"}</span>} />
+              <KV k="ID transaksi (arsip)" v={<span className="break-all font-mono text-xs">{order.payment_id ?? "-"}</span>} />
             )}
             <KV k="Batas bayar" v={formatDateTimeId(order.payment_expired_at)} />
             <KV k="Lunas pukul" v={formatDateTimeId(order.paid_at)} />
@@ -94,11 +90,6 @@ export default async function AdminOrderDetailPage({ params, searchParams }: Pro
               k="Notifikasi Telegram"
               v={order.telegram_notified_at ? `✓ terkirim/dicoba ${formatDateTimeId(order.telegram_notified_at)}` : "belum"}
             />
-            {order.payment_url && (
-              <a href={order.payment_url} target="_blank" rel="noopener noreferrer" className="paper-link mt-2 inline-block text-sm font-semibold">
-                Buka halaman pembayaran ↗
-              </a>
-            )}
           </section>
 
           {isManual && (

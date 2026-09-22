@@ -20,23 +20,10 @@ import { createFakeDb, type FakeDb, type Row } from "./helpers/fake-store";
 const h = vi.hoisted(() => ({
   db: null as unknown as ReturnType<typeof createFakeDb>,
   env: {
-    STENLY_EXPIRY_MINUTES: 15,
     MANUAL_PAYMENT_ENABLED: true,
-    DEFAULT_PAYMENT_METHOD: "MANUAL",
-    MANUAL_PAYMENT_QR_IMAGE_URL: null,
+    WHATSAPP_SELLER_NUMBER: "",
   } as Record<string, unknown>,
-  stenly: false,
   telegram: false,
-  provider: {
-    createPayment: vi.fn(async () => ({
-      paymentId: "YO-TEST123",
-      paymentUrl: "https://pay.example/YO-TEST123",
-      qrImageUrl: "https://qr.example/YO-TEST123.png",
-      expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
-      chargedAmount: 40417,
-    })),
-    checkStatus: vi.fn(async () => ({ state: "pending", amount: null })),
-  },
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -48,11 +35,6 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/env", () => ({
   serverEnv: () => h.env,
   telegramConfigured: () => h.telegram,
-  stenlyConfigured: () => h.stenly,
-}));
-
-vi.mock("@/lib/integrations/payment", () => ({
-  getPaymentProvider: () => h.provider,
 }));
 
 vi.mock("@/lib/integrations/telegram", () => ({
@@ -139,13 +121,12 @@ function settings(): Row {
   return {
     id: 1,
     is_enabled: true,
-    label: "Transfer Manual (QRIS)",
+    label: "Transfer via WhatsApp",
     account_name: "Toko Saya",
     instructions: "",
     expiry_minutes: 120,
-    qr_image_mime: "image/png",
-    qr_image_base64: "iVBORw0KGgoAAAANSUhEUg==",
-    qr_image_size: 42,
+    whatsapp_number: "628111222333",
+    whatsapp_message_template: "",
     updated_at: "2026-09-12T02:00:00.000Z",
   };
 }
@@ -166,9 +147,7 @@ function migratedDb(orders: Row[] = []): FakeDb {
 beforeEach(() => {
   resetStoreSchemaCache();
   h.env.MANUAL_PAYMENT_ENABLED = true;
-  h.env.DEFAULT_PAYMENT_METHOD = "MANUAL";
-  h.stenly = false;
-  h.provider.createPayment.mockClear();
+  h.env.WHATSAPP_SELLER_NUMBER = "";
 });
 
 // ---------------------------------------------------------------------------
@@ -222,7 +201,7 @@ describe("database belum di-migrasi (kolom orders.payment_method tidak ada)", ()
 
     const row = await getAdminOrder("11111111-1111-4111-8111-111111111111");
 
-    expect(row?.payment_method).toBe("STENLY");
+    expect(row?.payment_method).toBe("MANUAL");
     expect(row?.manual_claim_at).toBeNull();
     expect(row?.manual_claim_note).toBe("");
     expect(row?.manual_review_note).toBe("");
@@ -232,32 +211,10 @@ describe("database belum di-migrasi (kolom orders.payment_method tidak ada)", ()
     h.db = outdatedDb([]);
 
     await expect(
-      createOrderForBuyer(buyerCtx, { productId: PRODUCT_ID, quantity: 1, paymentMethod: "MANUAL" }),
+      createOrderForBuyer(buyerCtx, { productId: PRODUCT_ID, quantity: 1 }),
     ).rejects.toMatchObject({ status: 503 });
 
     expect(h.db.tables.orders).toHaveLength(0);
-  });
-
-  it("checkout QRIS otomatis tetap jalan & tidak mengirim kolom yang belum ada", async () => {
-    h.db = outdatedDb([]);
-    h.stenly = true;
-    h.env.DEFAULT_PAYMENT_METHOD = "STENLY";
-
-    const res = await createOrderForBuyer(buyerCtx, {
-      productId: PRODUCT_ID,
-      quantity: 1,
-      paymentMethod: "STENLY",
-    });
-
-    expect(res.order.order_code).toMatch(/^ORD-/);
-    expect(res.order.payment_id).toBe("YO-TEST123");
-    expect(res.order.charged_amount).toBe(40417);
-    // payment_method tidak dikirim → insert tidak ditolak PGRST204.
-    const insertCall = h.db.calls.find((c) => c.startsWith("insert(orders)"));
-    expect(insertCall).toBeDefined();
-    expect(insertCall).not.toContain("payment_method");
-    // UI tetap membaca nilai default yang aman.
-    expect(res.order.payment_method).toBe("STENLY");
   });
 
   it("daftar order buyer tetap termuat walau skema belum siap", async () => {
@@ -266,7 +223,7 @@ describe("database belum di-migrasi (kolom orders.payment_method tidak ada)", ()
     const orders = await listOrdersForBuyer(BUYER_ID);
 
     expect(orders).toHaveLength(2);
-    expect(orders[0]?.payment_method).toBe("STENLY");
+    expect(orders[0]?.payment_method).toBe("MANUAL");
   });
 });
 
@@ -299,7 +256,7 @@ describe("schema cache PostgREST basi (kolom dikenal cache, tidak ada di tabel)"
     expect(list).toHaveLength(1);
     expect(list[0]?.order_code).toBe("ORD-20260916-AAAAAA");
     // kolom hantu tidak ikut terbawa → dinormalkan ke default aman
-    expect(list[0]?.payment_method).toBe("STENLY");
+    expect(list[0]?.payment_method).toBe("MANUAL");
     expect(warn.mock.calls.join(" ")).toContain("admin_order_list_schema_gap");
     warn.mockRestore();
   });
@@ -351,7 +308,6 @@ describe("setelah penjual menjalankan 002_manual_payment.sql", () => {
     const res = await createOrderForBuyer(buyerCtx, {
       productId: PRODUCT_ID,
       quantity: 1,
-      paymentMethod: "MANUAL",
     });
 
     expect(res.paymentMethod).toBe("MANUAL");
@@ -360,78 +316,24 @@ describe("setelah penjual menjalankan 002_manual_payment.sql", () => {
 });
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 /**
- * MIGRASI PROVIDER (003_stenly_payment.sql) BELUM DIJALANKAN.
+ * KOMPATIBILITAS ARSIP — order dari masa QRIS otomatis.
  *
- * Skema lama membatasi `orders.payment_method` ke ('YOBASEPAY','MANUAL').
- * Saat aplikasi baru menulis 'STENLY', Postgres menolak dengan SQLSTATE 23514.
- * Yang TIDAK BOLEH terjadi: 500 "Application error" tanpa penjelasan, atau
- * order setengah jadi. Yang harus terjadi: 503 + arahan memakai Transfer
- * Manual, plus nama file migrasi di log untuk penjual.
+ * Order lama (STENLY / YOBASEPAY) TIDAK BOLEH ditulis ulang maupun disembunyikan:
+ * histori transaksi harus tetap terbaca di dashboard, dan order baru selalu
+ * MANUAL — yang diterima oleh constraint versi mana pun.
  */
-describe("database belum menjalankan migrasi Stenly (CHECK constraint lama)", () => {
-  /** Database lama: constraint hanya mengenal YOBASEPAY + MANUAL. */
-  function preStenlyDb(orders: Row[] = []): FakeDb {
+describe("order arsip QRIS otomatis tetap terbaca", () => {
+  function db(orders: Row[], extra: Parameters<typeof createFakeDb>[1] = {}): FakeDb {
     return createFakeDb(
       { products: [product()], orders, manual_payment_settings: [settings()] },
-      { checkConstraints: { orders: { payment_method: ["YOBASEPAY", "MANUAL"] } } },
+      extra,
     );
   }
 
-  it("fixture valid: insert payment_method='STENLY' memang ditolak 23514", async () => {
-    const db = preStenlyDb();
-    const { error } = await db
-      .from("orders")
-      .insert({ order_code: "ORD-X", payment_method: "STENLY" });
-
-    expect(error).toMatchObject({ code: "23514" });
-    expect(error?.message).toContain("violates check constraint");
-  });
-
-  it("checkout QRIS otomatis → 503 + arahan Transfer Manual (bukan 500)", async () => {
-    h.stenly = true;
-    h.env.DEFAULT_PAYMENT_METHOD = "STENLY";
-    h.db = preStenlyDb();
-    const err = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    await expect(
-      createOrderForBuyer(buyerCtx, {
-        productId: PRODUCT_ID,
-        quantity: 1,
-        paymentMethod: "STENLY",
-      }),
-    ).rejects.toMatchObject({ status: 503, code: "PAYMENT_UNAVAILABLE" });
-
-    // Log menyebut file migrasi → penjual tahu langkah perbaikannya.
-    const logged = err.mock.calls.map((c) => String(c[0])).join(" ");
-    expect(logged).toContain("order_insert_payment_method_rejected");
-    expect(logged).toContain("003_stenly_payment.sql");
-    err.mockRestore();
-
-    // Tidak ada order setengah jadi & provider tidak pernah ditagih.
-    expect(h.db.tables.orders).toEqual([]);
-    expect(h.provider.createPayment).not.toHaveBeenCalled();
-  });
-
-  it("Transfer Manual tetap bisa dipakai walau migrasi Stenly belum jalan", async () => {
-    h.db = preStenlyDb();
-
-    const res = await createOrderForBuyer(buyerCtx, {
-      productId: PRODUCT_ID,
-      quantity: 1,
-      paymentMethod: "MANUAL",
-    });
-
-    expect(res.paymentMethod).toBe("MANUAL");
-    expect(h.db.tables.orders?.[0]?.payment_method).toBe("MANUAL");
-  });
-
-  /**
-   * Kompatibilitas arsip: order YoBasePay lama tidak pernah ditulis ulang, jadi
-   * harus tetap bisa dibaca apa adanya (nilai payment_method tetap YOBASEPAY).
-   */
-  it("order YoBasePay lama tetap terbaca utuh oleh buyer maupun admin", async () => {
-    h.db = preStenlyDb([
+  it("order YoBasePay lama tetap utuh dibaca buyer maupun admin", async () => {
+    h.db = db([
       order({
         payment_method: "YOBASEPAY",
         payment_status: "PAID",
@@ -450,24 +352,17 @@ describe("database belum menjalankan migrasi Stenly (CHECK constraint lama)", ()
     expect(detail?.payment_status).toBe("PAID");
   });
 
-  it("setelah 003 dijalankan, checkout QRIS otomatis normal kembali", async () => {
-    h.stenly = true;
-    h.db = createFakeDb(
-      { products: [product()], orders: [], manual_payment_settings: [settings()] },
-      {
-        // Constraint hasil migrasi 003: STENLY diizinkan, YOBASEPAY tetap valid.
-        checkConstraints: { orders: { payment_method: ["STENLY", "MANUAL", "YOBASEPAY"] } },
-      },
+  it("checkout baru tetap MANUAL walau constraint masih versi lama", async () => {
+    h.db = db(
+      [],
+      // Constraint versi paling lama: hanya mengenal YOBASEPAY + MANUAL.
+      { checkConstraints: { orders: { payment_method: ["YOBASEPAY", "MANUAL"] } } },
     );
 
-    const res = await createOrderForBuyer(buyerCtx, {
-      productId: PRODUCT_ID,
-      quantity: 1,
-      paymentMethod: "STENLY",
-    });
+    const res = await createOrderForBuyer(buyerCtx, { productId: PRODUCT_ID, quantity: 1 });
 
-    expect(res.paymentMethod).toBe("STENLY");
-    expect(h.db.tables.orders?.[0]?.payment_method).toBe("STENLY");
+    expect(res.paymentMethod).toBe("MANUAL");
+    expect(h.db.tables.orders?.[0]?.payment_method).toBe("MANUAL");
   });
 });
 

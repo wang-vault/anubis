@@ -3,7 +3,7 @@ import { serverEnv, telegramConfigured } from "@/lib/env";
 import { log } from "@/lib/logger";
 import { formatRupiah } from "@/lib/money";
 import type { OrderRow } from "@/lib/types";
-import { PAYMENT_METHOD_LABELS } from "@/lib/payment-methods";
+import { paymentMethodLabel } from "@/lib/payment-methods";
 
 /**
  * Notifikasi Telegram — HANYA ke penjual (owner), bukan ke buyer, tanpa OTP.
@@ -12,8 +12,9 @@ import { PAYMENT_METHOD_LABELS } from "@/lib/payment-methods";
  * Kebijakan kegagalan (sesuai requirement):
  *   - Telegram gagal TIDAK boleh membatalkan status PAID.
  *   - Error dicatat ke log.
- *   - Duplicate prevented: order ditandai `telegram_notified_at` saat
- *     notifikasi "diklaim", webhook retry tidak akan mengirim dua kali.
+ *   - Duplicate prevented: order ditandai `telegram_notified_at` /
+ *     `manual_claim_notified_at` begitu notifikasi terkirim, sehingga klik
+ *     ulang dari dashboard tidak mengirim pesan kedua.
  */
 const TELEGRAM_TIMEOUT_MS = 6_000;
 
@@ -84,9 +85,7 @@ export function formatPaidMessage(order: PaidOrderInfo): string {
     `Produk: ${order.productName}`,
     `Jumlah: ${order.quantity}`,
     `Total: ${formatRupiah(order.totalAmount)}`,
-    order.paymentMethod === "MANUAL"
-      ? "Metode: Transfer manual (sudah kamu verifikasi) 🧾"
-      : `Metode: ${PAYMENT_METHOD_LABELS.STENLY}`,
+    `Metode: ${paymentMethodLabel(order.paymentMethod)}`,
     "Status: LUNAS ✅",
     "",
     "Silakan proses pesanan.",
@@ -94,8 +93,8 @@ export function formatPaidMessage(order: PaidOrderInfo): string {
 }
 
 /**
- * Pesan "buyer mengklaim sudah transfer" — penjual harus cek mutasi QRIS/
- * rekening lalu menekan "Konfirmasi Pembayaran" di dashboard.
+ * Pesan "buyer mengklaim sudah transfer" — penjual harus cek mutasi rekening/
+ * e-wallet lalu menekan "Konfirmasi Pembayaran" di dashboard.
  */
 export function formatManualClaimMessage(claim: ManualClaimInfo): string {
   const claimedAt = new Intl.DateTimeFormat("id-ID", {
@@ -115,7 +114,7 @@ export function formatManualClaimMessage(claim: ManualClaimInfo): string {
     claim.note ? `Catatan buyer: ${claim.note}` : null,
     `Diklaim: ${claimedAt} WIB`,
     "",
-    "Cek mutasi QRIS-mu. Kalau uangnya masuk, buka dashboard → order ini →",
+    "Cek mutasi rekening/e-wallet-mu. Kalau uangnya masuk, buka dashboard → order ini →",
     "tekan \"Konfirmasi Pembayaran\".",
   ]
     .filter((line): line is string => line !== null)

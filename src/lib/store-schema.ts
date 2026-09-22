@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { log } from "@/lib/logger";
 import { storeDb } from "@/lib/supabase/server";
-import { PAYMENT_METHOD_AUTO } from "@/lib/payment-methods";
+import { PAYMENT_METHOD_MANUAL } from "@/lib/payment-methods";
 import type { OrderRow } from "@/lib/types";
 
 /**
@@ -25,9 +25,10 @@ import type { OrderRow } from "@/lib/types";
  *     belum ada (undefined) menjadi nilai default yang aman bagi UI.
  *
  * PENTING: ini BUKAN pengganti migrasi. Pembayaran manual tetap non-aktif
- * sampai penjual menjalankan `supabase/store/002_manual_payment.sql`
- * (SQL-nya ikut ditampilkan di banner /admin lewat MANUAL_PAYMENT_MIGRATION_SQL).
- * Tujuan modul ini hanya satu: situs tidak mati total sementara menunggu.
+ * sampai penjual menjalankan `supabase/store/002_manual_payment.sql` DAN
+ * `supabase/store/004_whatsapp_payment.sql` (kedua SQL-nya ikut ditampilkan di
+ * banner /admin). Tujuan modul ini hanya satu: situs tidak mati total
+ * sementara menunggu penjual menjalankan migrasi.
  */
 
 /** SQLSTATE Postgres: kolom tidak ada. */
@@ -61,25 +62,37 @@ export const MANUAL_ORDER_COLUMNS = [
   "manual_review_note",
 ] as const;
 
-/** Nama file migrasi yang harus dijalankan penjual (disebut di log & banner). */
+/**
+ * Kolom `manual_payment_settings` yang ditambahkan migrasi 004 —
+ * konfigurasi pembayaran manual via WhatsApp.
+ */
+export const MANUAL_SETTINGS_COLUMNS = [
+  "whatsapp_number",
+  "whatsapp_message_template",
+] as const;
+
+/** Nama file migrasi pembayaran manual (disebut di log & banner /admin). */
 export const MANUAL_PAYMENT_MIGRATION_FILE = "supabase/store/002_manual_payment.sql";
 
 /**
- * Migrasi provider pembayaran otomatis YoBasePay → Stenly.
+ * Migrasi pembayaran manual via WhatsApp.
  *
- * Skema lama membatasi `orders.payment_method` ke ('YOBASEPAY','MANUAL'),
- * sehingga order QRIS otomatis yang baru (nilai 'STENLY') ditolak database
- * dengan SQLSTATE 23514. File ini melonggarkan constraint tersebut TANPA
- * mengubah satu pun baris order lama.
+ * Sejak metode QRIS otomatis (provider + webhook) dihapus, satu-satunya metode
+ * bayar adalah transfer manual yang dikoordinasikan lewat WhatsApp. File ini:
+ *  1. menambah kolom nomor WA & template pesan penjual di
+ *     `manual_payment_settings`,
+ *  2. menetapkan default kolom `orders.payment_method` ke 'MANUAL',
+ *  3. tetap MENGIZINKAN nilai arsip 'STENLY' / 'YOBASEPAY' agar order lama
+ *     tetap valid dibaca dashboard (tidak ada satu baris pun yang diubah).
  */
-export const STENLY_MIGRATION_FILE = "supabase/store/003_stenly_payment.sql";
+export const WHATSAPP_PAYMENT_MIGRATION_FILE = "supabase/store/004_whatsapp_payment.sql";
 
 /**
- * SQL minimal migrasi Stenly — ditampilkan apa adanya ke penjual bila checkout
- * QRIS otomatis ditolak constraint lama. Setara dengan STENLY_MIGRATION_FILE
+ * SQL minimal migrasi WhatsApp — ditampilkan apa adanya di banner /admin.
+ * Setara dengan WHATSAPP_PAYMENT_MIGRATION_FILE
  * (dijaga test/schema-migration.test.ts).
  */
-export const STENLY_MIGRATION_SQL = `do $$
+export const WHATSAPP_PAYMENT_MIGRATION_SQL = `do $$
 begin
   if exists (
     select 1 from pg_constraint
@@ -90,12 +103,25 @@ begin
 
   alter table public.orders
     add constraint orders_payment_method_check
-    check (payment_method in ('STENLY', 'MANUAL', 'YOBASEPAY'));
+    check (payment_method in ('MANUAL', 'STENLY', 'YOBASEPAY'));
 end
 $$;
 
 alter table public.orders
-  alter column payment_method set default 'STENLY';
+  alter column payment_method set default 'MANUAL';
+
+alter table public.manual_payment_settings
+  add column if not exists whatsapp_number text not null default '';
+
+alter table public.manual_payment_settings
+  add column if not exists whatsapp_message_template text not null default '';
+
+alter table public.manual_payment_settings
+  alter column label set default 'Transfer Manual (WhatsApp)';
+
+update public.manual_payment_settings
+  set label = 'Transfer Manual (WhatsApp)'
+  where id = 1 and label = 'Transfer Manual (QRIS)';
 
 notify pgrst, 'reload schema';`;
 
@@ -203,18 +229,8 @@ export function isMissingColumnError(err: PostgrestErrorLike | null | undefined)
 }
 
 /**
- * Error "nilai payment_method ditolak CHECK constraint" — penanda database
- * masih memakai constraint lama yang belum mengenal 'STENLY'.
+ * Error "tabel tidak ada" (schema #2 belum dijalankan sama sekali).
  */
-export function isPaymentMethodConstraintError(
-  err: PostgrestErrorLike | null | undefined,
-): boolean {
-  if (!err) return false;
-  if ((err.code ?? "") !== PG_CHECK_VIOLATION) return false;
-  return matches(err.message ?? "", /orders_payment_method_check|payment_method/i);
-}
-
-/** Error "tabel tidak ada" (schema #2 belum dijalankan sama sekali). */
 export function isMissingTableError(err: PostgrestErrorLike | null | undefined): boolean {
   if (!err) return false;
   const code = err.code ?? "";
@@ -279,17 +295,43 @@ async function runStoreSchemaCheck(db: SupabaseClient): Promise<StoreSchemaCheck
     .select(MANUAL_ORDER_COLUMNS.join(","))
     .limit(1);
 
-  if (!error) {
-    return { ready: true, reason: "ok", message: null, checkedAt };
+  if (error) {
+    if (isMissingTableError(error)) {
+      return { ready: false, reason: "missing_table", message: error.message ?? null, checkedAt };
+    }
+    if (isMissingColumnError(error)) {
+      return { ready: false, reason: "missing_column", message: error.message ?? null, checkedAt };
+    }
+    // Error lain (jaringan, RLS, dsb): jangan simpulkan skema basi.
+    return { ready: true, reason: "unknown", message: error.message ?? null, checkedAt };
   }
-  if (isMissingTableError(error)) {
-    return { ready: false, reason: "missing_table", message: error.message ?? null, checkedAt };
+
+  // Kolom konfigurasi WhatsApp (migrasi 004) — tanpa ini penjual tidak bisa
+  // menyimpan nomor WA, sehingga pembayaran manual tidak akan pernah siap.
+  const settings = await db
+    .from("manual_payment_settings")
+    .select(MANUAL_SETTINGS_COLUMNS.join(","))
+    .limit(1);
+  if (settings.error) {
+    if (isMissingTableError(settings.error)) {
+      return {
+        ready: false,
+        reason: "missing_table",
+        message: settings.error.message ?? null,
+        checkedAt,
+      };
+    }
+    if (isMissingColumnError(settings.error)) {
+      return {
+        ready: false,
+        reason: "missing_column",
+        message: settings.error.message ?? null,
+        checkedAt,
+      };
+    }
   }
-  if (isMissingColumnError(error)) {
-    return { ready: false, reason: "missing_column", message: error.message ?? null, checkedAt };
-  }
-  // Error lain (jaringan, RLS, dsb): jangan simpulkan skema basi.
-  return { ready: true, reason: "unknown", message: error.message ?? null, checkedAt };
+
+  return { ready: true, reason: "ok", message: null, checkedAt };
 }
 
 /**
@@ -323,7 +365,7 @@ export async function checkStoreSchema(client?: SupabaseClient): Promise<StoreSc
     log.warn("store_schema_outdated", {
       reason: check.reason,
       message: check.message,
-      hint: `Jalankan ${MANUAL_PAYMENT_MIGRATION_FILE} di Supabase #2 → SQL Editor, lalu reload schema cache.`,
+      hint: `Jalankan ${MANUAL_PAYMENT_MIGRATION_FILE} lalu ${WHATSAPP_PAYMENT_MIGRATION_FILE} di Supabase #2 → SQL Editor, lalu reload schema cache.`,
     });
   }
   return check;
@@ -341,7 +383,7 @@ export async function isManualPaymentSchemaReady(): Promise<boolean> {
  */
 export const ORDER_ROW_DEFAULTS = {
   charged_amount: null,
-  payment_method: PAYMENT_METHOD_AUTO,
+  payment_method: PAYMENT_METHOD_MANUAL,
   manual_claim_at: null,
   manual_claim_note: "",
   manual_claim_reference: "",

@@ -1,38 +1,44 @@
 import "server-only";
 import { ErrorCodes, HttpError } from "@/lib/api";
-import { serverEnv, stenlyConfigured } from "@/lib/env";
+import { serverEnv } from "@/lib/env";
 import { log } from "@/lib/logger";
 import { storeDb } from "@/lib/supabase/server";
 import { MANUAL_PAYMENT_MIGRATION_FILE, checkStoreSchema } from "@/lib/store-schema";
 import {
-  PAYMENT_METHOD_AUTO,
   PAYMENT_METHOD_MANUAL,
-  isPaymentMethod,
-  normalizePaymentMethod,
+  isManualMethod,
   type AvailablePaymentMethod,
   type PaymentMethod,
 } from "@/lib/payment-methods";
+import { formatWhatsappDisplay, normalizeWhatsapp } from "@/lib/phone";
+import { DEFAULT_PAYMENT_MESSAGE_TEMPLATE } from "@/lib/whatsapp";
 
 /**
  * ===========================================================================
- * KONFIGURASI METODE PEMBAYARAN (server-side)
+ * KONFIGURASI PEMBAYARAN MANUAL VIA WHATSAPP (server-side)
  * ===========================================================================
- * Sumber konfigurasi pembayaran MANUAL = tabel `manual_payment_settings`
- * (Supabase #2) + env opsional. Di-edit penjual lewat /admin/settings tanpa
- * perlu deploy ulang.
+ * Sumber konfigurasi = tabel `manual_payment_settings` (Supabase #2) + env
+ * opsional. Di-edit penjual lewat /admin/settings tanpa perlu deploy ulang.
  *
- * Gambar QR disimpan sebagai base64 di DB dan disajikan lewat
- * GET /api/manual-qr, jadi:
- *  - tidak perlu bucket storage / hosting eksternal,
- *  - halaman bayar tidak meng-embed data URI besar di HTML.
+ * Isi pengaturan:
+ *  - whatsapp_number          : nomor WhatsApp penjual (tujuan chat buyer).
+ *  - whatsapp_message_template: pesan yang sudah terisi saat buyer membuka chat.
+ *  - label / account_name     : nama metode & nama penjual yang tampil di UI.
+ *  - instructions             : instruksi tambahan (opsional) untuk buyer.
+ *  - expiry_minutes           : batas waktu bayar sebelum order kadaluarsa.
+ *
+ * TIDAK ADA lagi gambar QR / kredensial provider: detail pembayaran (QRIS
+ * statis, nomor rekening, atau e-wallet) dikirim penjual langsung di chat
+ * WhatsApp, sehingga selalu bisa diperbarui tanpa menyentuh aplikasi.
  */
 
-/** Batas ukuran gambar QR yang diterima (Next.js server action default 1 MB). */
-export const MANUAL_QR_MAX_BYTES = 900 * 1024;
-/** MIME yang diizinkan untuk gambar QR. */
-export const MANUAL_QR_ALLOWED_MIME = ["image/png", "image/jpeg", "image/webp"] as const;
-/** Endpoint gambar QR statis (dipakai <img src> & panel admin). */
-export const MANUAL_QR_ENDPOINT = "/api/manual-qr";
+/** Label default bila penjual belum mengubahnya. */
+export const MANUAL_DEFAULT_LABEL = "Transfer Manual (WhatsApp)";
+/** Instruksi default yang tampil di halaman pembayaran buyer. */
+export const MANUAL_DEFAULT_INSTRUCTIONS =
+  "Detail pembayaran (QRIS / rekening / e-wallet) dikirim penjual lewat chat WhatsApp.";
+/** Batas panjang instruksi & template pesan (dijaga validation.ts juga). */
+export const MANUAL_TEXT_MAX = 600;
 
 export interface ManualSettingsRow {
   id: number;
@@ -41,36 +47,40 @@ export interface ManualSettingsRow {
   account_name: string;
   instructions: string;
   expiry_minutes: number;
-  qr_image_mime: string;
-  qr_image_base64: string | null;
-  qr_image_size: number;
+  whatsapp_number: string;
+  whatsapp_message_template: string;
   updated_at: string;
 }
 
-/** Ringkasan aman untuk UI (tanpa isi gambar). */
+/** Ringkasan aman untuk UI (tanpa data rahasia — nomor WA memang publik). */
 export interface ManualPaymentView {
-  /** Metode manual bisa dipakai buyer? (enabled + QR tersedia + skema siap) */
+  /** Metode bisa dipakai buyer? (enabled + nomor WA valid + skema siap) */
   available: boolean;
-  /** Kolom pembayaran manual ada di database (migrasi 002 sudah dijalankan). */
+  /** Kolom pembayaran manual ada di database (migrasi 002 & 004 sudah jalan). */
   schemaReady: boolean;
   /** Kenapa tidak tersedia — untuk pesan di dashboard admin. */
-  reason: "disabled" | "no_qr" | "schema_missing" | null;
+  reason: "disabled" | "no_whatsapp" | "schema_missing" | null;
   /** Saklar di DB (form /admin/settings). */
   isEnabled: boolean;
   /** Saklar env MANUAL_PAYMENT_ENABLED. */
   envEnabled: boolean;
+  /** Nomor WA dari DB diisi? (kalau tidak, env WHATSAPP_SELLER_NUMBER dipakai) */
+  numberFromDatabase: boolean;
   label: string;
-  accountName: string;
+  sellerName: string;
   instructions: string;
   expiryMinutes: number;
-  /** Nilai untuk atribut src <img> — null bila belum ada QR. */
-  qrSrc: string | null;
-  hasUploadedImage: boolean;
+  /** Nomor ternormalisasi (62…) atau null bila belum diatur/tidak valid. */
+  whatsappNumber: string | null;
+  /** Nomor siap tampil (+62 …) atau null. */
+  whatsappDisplay: string | null;
+  /** Template pesan buyer → penjual (default dipakai bila kosong). */
+  messageTemplate: string;
   updatedAt: string | null;
 }
 
 const SETTINGS_SELECT =
-  "id,is_enabled,label,account_name,instructions,expiry_minutes,qr_image_mime,qr_image_base64,qr_image_size,updated_at";
+  "id,is_enabled,label,account_name,instructions,expiry_minutes,whatsapp_number,whatsapp_message_template,updated_at";
 
 export async function getManualPaymentSettings(): Promise<ManualSettingsRow | null> {
   const db = await storeDb();
@@ -80,207 +90,132 @@ export async function getManualPaymentSettings(): Promise<ManualSettingsRow | nu
     .eq("id", 1)
     .maybeSingle<ManualSettingsRow>();
   if (error) {
-    // Tabel belum di-migrate → jangan jatuhkan seluruh app; metode manual
-    // dianggap belum dikonfigurasi, metode lain tetap jalan.
+    // Tabel/kolom belum di-migrate → jangan jatuhkan seluruh app; metode
+    // manual dianggap belum dikonfigurasi dan banner /admin menjelaskan
+    // migrasi yang harus dijalankan.
     log.error("manual_settings_fetch_failed", { message: error.message });
     return null;
   }
   return data;
 }
 
+/** Nomor WA efektif: kolom DB lebih diutamakan, env hanya cadangan. */
+export function resolveSellerNumber(
+  row: ManualSettingsRow | null,
+  fallbackFromEnv: string,
+): { number: string | null; fromDatabase: boolean } {
+  const fromDb = row?.whatsapp_number?.trim() ?? "";
+  const raw = fromDb || fallbackFromEnv.trim();
+  return { number: raw ? normalizeWhatsapp(raw) : null, fromDatabase: fromDb.length > 0 };
+}
+
 export async function getManualPaymentView(): Promise<ManualPaymentView> {
   const env = serverEnv();
   const [row, schema] = await Promise.all([getManualPaymentSettings(), checkStoreSchema()]);
 
-  const label = row?.label?.trim() || "Transfer Manual (QRIS)";
-  const accountName = row?.account_name ?? "";
-  const instructions = row?.instructions ?? "";
+  const label = row?.label?.trim() || MANUAL_DEFAULT_LABEL;
+  const sellerName = row?.account_name ?? "";
+  const instructions = row?.instructions?.trim() || MANUAL_DEFAULT_INSTRUCTIONS;
   const expiryMinutes = row?.expiry_minutes ?? 120;
-  const hasUploadedImage = Boolean(row?.qr_image_base64);
-  const externalUrl = env.MANUAL_PAYMENT_QR_IMAGE_URL || null;
+  const messageTemplate = row?.whatsapp_message_template?.trim() || DEFAULT_PAYMENT_MESSAGE_TEMPLATE;
 
-  const qrSrc = externalUrl
-    ? externalUrl
-    : hasUploadedImage
-      ? `${MANUAL_QR_ENDPOINT}?v=${encodeURIComponent(row?.updated_at ?? "1")}`
-      : null;
+  const { number: whatsappNumber, fromDatabase } = resolveSellerNumber(
+    row,
+    env.WHATSAPP_SELLER_NUMBER,
+  );
 
   const isEnabled = row?.is_enabled ?? false;
   const envEnabled = env.MANUAL_PAYMENT_ENABLED;
   const enabled = envEnabled && isEnabled;
-  // Kolom pembayaran manual (payment_method, manual_*) harus ada di database;
-  // tanpa itu order manual tidak bisa disimpan maupun diverifikasi.
+  // Kolom pembayaran manual (payment_method, manual_*, whatsapp_number) harus
+  // ada di database; tanpa itu order manual tidak bisa disimpan/diverifikasi.
   const schemaReady = schema.ready;
   const reason: ManualPaymentView["reason"] = !schemaReady
     ? "schema_missing"
     : !enabled
       ? "disabled"
-      : qrSrc
+      : whatsappNumber
         ? null
-        : "no_qr";
+        : "no_whatsapp";
 
   return {
-    available: schemaReady && enabled && qrSrc !== null,
+    available: schemaReady && enabled && whatsappNumber !== null,
     schemaReady,
     reason,
     isEnabled,
     envEnabled,
+    numberFromDatabase: fromDatabase,
     label,
-    accountName,
+    sellerName,
     instructions,
     expiryMinutes,
-    qrSrc,
-    hasUploadedImage,
+    whatsappNumber,
+    whatsappDisplay: whatsappNumber ? formatWhatsappDisplay(whatsappNumber) : null,
+    messageTemplate,
     updatedAt: row?.updated_at ?? null,
   };
 }
 
 /**
- * Daftar metode yang boleh dipilih buyer (sudah disaring yang tidak tersedia).
- * Tipe AvailablePaymentMethod ada di lib/payment-methods.ts (modul murni) agar
- * aman di-import komponen klien.
- * Selalu mengembalikan minimal satu metode; bila tidak ada yang tersedia,
- * kembalikan daftar kosong dan biarkan pemanggil menolak checkout.
+ * Daftar metode yang boleh dipakai untuk membuat order BARU.
+ * Isinya 0 atau 1 elemen (MANUAL) — bila kosong, checkout ditolak dengan
+ * pesan jelas alih-alih membuat order yang tidak bisa dibayar.
  */
 export async function getAvailablePaymentMethods(): Promise<AvailablePaymentMethod[]> {
-  const env = serverEnv();
   const manual = await getManualPaymentView();
-  const list: AvailablePaymentMethod[] = [];
-
-  if (stenlyConfigured(env)) {
-    list.push({
-      id: PAYMENT_METHOD_AUTO,
-      label: "QRIS Otomatis",
-      note: "QR dibuat otomatis · status lunas terdeteksi sistem.",
-    });
-  }
-  if (manual.available) {
-    list.push({
+  if (!manual.available) return [];
+  return [
+    {
       id: PAYMENT_METHOD_MANUAL,
       label: manual.label,
-      note: "Scan QR penjual · transfer sendiri · konfirmasi di halaman ini.",
-    });
-  }
-  return list;
+      note: "Chat penjual di WhatsApp · bayar sesuai petunjuk · konfirmasi di halaman ini.",
+    },
+  ];
 }
 
 /**
- * Daftar metode pembayaran yang ditampilkan di halaman checkout kepada pembeli.
+ * Daftar metode pembayaran untuk halaman checkout.
  *
- * Kedua opsi SELALU ditampilkan supaya pembeli tahu metode apa yang tersedia:
- *  - Pembayaran manual: opsi utama & default (aktif bila penjual sudah
- *    mengaktifkan saklar + mengunggah QR).
- *  - QRIS Otomatis: **bisa dipilih** bila kredensial Stenly terisi
- *    (`STENLY_API_KEY` + `STENLY_WEBHOOK_SECRET`). Bila belum terisi,
- *    opsi ini tampil ber-badge **"Ongoing"** dan tidak bisa dipilih (disabled)
- *    agar pembeli tidak mengira tokonya rusak — mereka diarahkan ke Transfer
- *    Manual, persis seperti sebelum integrasi QRIS dibuka.
- *
- * Catatan: keputusan "boleh dieksekusi server" tetap di
- * `getAvailablePaymentMethods()`/`resolvePaymentMethod()`, jadi ketika QRIS
- * otomatis tampil aktif di UI, server sudah pasti menerimanya (dan
- * sebaliknya).
+ * Selalu berisi SATU opsi (manual via WhatsApp) supaya pembeli tahu persis
+ * bagaimana cara membayar. Bila penjual belum mengatur nomor WhatsApp, opsi
+ * ditampilkan NON-AKTIF dengan alasan yang bisa dimengerti — bukan tombol
+ * rusak yang gagal setelah diklik.
  */
 export async function getCheckoutPaymentMethods(): Promise<AvailablePaymentMethod[]> {
-  const env = serverEnv();
   const manual = await getManualPaymentView();
-  const autoReady = stenlyConfigured(env);
-  const list: AvailablePaymentMethod[] = [];
-
-  // 1. Opsi Manual DULU (aktif untuk proses belanja, jadi pilihan default)
-  const manualLabel = manual.label?.trim() || "Transfer Manual";
-  list.push({
-    id: PAYMENT_METHOD_MANUAL,
-    label: manualLabel,
-    note: manual.schemaReady
-      ? "Transfer mandiri via rekening/e-wallet/QRIS statis penjual · konfirmasi di halaman pembayaran."
-      : "Metode ini sedang tidak tersedia. Silakan hubungi penjual.",
-    disabled: !manual.available,
-  });
-
-  // 2. Opsi QRIS — aktif bila terkonfigurasi, selain itu status ongoing
-  list.push(
-    autoReady
-      ? {
-          id: PAYMENT_METHOD_AUTO,
-          label: "QRIS Otomatis",
-          note: "QR dibuat otomatis · nominal terisi sendiri · status lunas terdeteksi sistem (tanpa konfirmasi penjual).",
-        }
-      : {
-          id: PAYMENT_METHOD_AUTO,
-          label: "QRIS Otomatis",
-          note: "Metode pembayaran QRIS sedang dalam proses (status ongoing). Silakan gunakan opsi Transfer Manual terlebih dahulu.",
-          disabled: true,
-          isOngoing: true,
-          statusBadge: "Ongoing",
-        },
-  );
-
-  return list;
+  return [
+    {
+      id: PAYMENT_METHOD_MANUAL,
+      label: manual.label,
+      note: manual.available
+        ? "Kamu akan diarahkan chat WhatsApp penjual: detail pembayaran (QRIS / rekening) dikirim di chat, lalu kamu konfirmasi di halaman pembayaran."
+        : "Metode ini sedang tidak tersedia. Silakan hubungi penjual.",
+      disabled: !manual.available,
+    },
+  ];
 }
 
 /**
- * Tentukan metode untuk order baru.
- *  - tidak diisi        → default dari env (bila tersedia), selain itu satu-satunya
- *    metode yang tersedia.
- *  - diisi tapi tidak tersedia → 409 (pesan jelas ke buyer, bukan 500).
+ * Tentukan metode untuk order baru. Karena hanya ada satu metode, fungsi ini
+ * mengabaikan nilai dari klien dan selalu memakai MANUAL — atau menolak
+ * dengan 503 bila penjual belum menyiapkan nomor WhatsApp.
  */
-export async function resolvePaymentMethod(requested: unknown): Promise<PaymentMethod> {
-  const available = await getAvailablePaymentMethods();
-  if (available.length === 0) {
+export async function resolvePaymentMethod(_requested?: unknown): Promise<PaymentMethod> {
+  const manual = await getManualPaymentView();
+  if (!manual.available) {
+    log.warn("manual_payment_unavailable", {
+      reason: manual.reason,
+      schemaReady: manual.schemaReady,
+    });
     throw new HttpError(
       503,
       ErrorCodes.paymentUnavailable,
-      "Pembayaran sedang tidak tersedia. Silakan hubungi penjual.",
+      manual.reason === "no_whatsapp"
+        ? "Penjual belum mengatur nomor WhatsApp untuk pembayaran. Silakan hubungi penjual."
+        : "Pembayaran sedang tidak tersedia. Silakan hubungi penjual.",
     );
   }
-
-  const env = serverEnv();
-  const first = available[0]?.id ?? PAYMENT_METHOD_MANUAL;
-  const preferred = isPaymentMethod(env.DEFAULT_PAYMENT_METHOD)
-    ? env.DEFAULT_PAYMENT_METHOD
-    : first;
-  const fallback = available.some((m) => m.id === preferred) ? preferred : first;
-
-  if (requested === undefined || requested === null || requested === "") return fallback;
-
-  const chosen = normalizePaymentMethod(requested, fallback);
-  if (!available.some((m) => m.id === chosen)) {
-    const schema = await checkStoreSchema();
-    if (!schema.ready) {
-      // Pesan untuk buyer tetap umum; detail teknis hanya ke log.
-      log.warn("payment_method_unavailable_schema_gap", {
-        chosen,
-        reason: schema.reason,
-        migration: MANUAL_PAYMENT_MIGRATION_FILE,
-      });
-    }
-    throw new HttpError(
-      409,
-      ErrorCodes.conflict,
-      chosen === PAYMENT_METHOD_AUTO
-        ? "Pembayaran QRIS otomatis sedang dalam proses (status ongoing). Silakan gunakan opsi Transfer Manual terlebih dahulu."
-        : schema.ready
-          ? "Pembayaran manual belum dikonfigurasi penjual. Pilih metode lain."
-          : "Pembayaran manual sedang tidak tersedia. Silakan hubungi penjual.",
-    );
-  }
-  return chosen;
-}
-
-/** Baca gambar QR statis untuk disajikan sebagai image response. */
-export async function getManualQrImage(): Promise<
-  { mime: string; base64: string; version: string } | null
-> {
-  const env = serverEnv();
-  if (env.MANUAL_PAYMENT_QR_IMAGE_URL) return null; // pakai URL eksternal
-  const row = await getManualPaymentSettings();
-  if (!row?.qr_image_base64) return null;
-  return {
-    mime: row.qr_image_mime || "image/png",
-    base64: row.qr_image_base64,
-    version: row.updated_at ?? "1",
-  };
+  return PAYMENT_METHOD_MANUAL;
 }
 
 export interface ManualSettingsInput {
@@ -289,8 +224,9 @@ export interface ManualSettingsInput {
   account_name?: string;
   instructions?: string;
   expiry_minutes?: number;
-  /** Ganti gambar QR; null = biarkan gambar lama; "" (kosong) = hapus gambar. */
-  qr_image?: { mime: string; base64: string; size: number } | null | "clear";
+  /** Nomor WA penjual; wajib valid Indonesia (08… / +62… / 62…). */
+  whatsapp_number?: string;
+  whatsapp_message_template?: string;
 }
 
 /** Simpan konfigurasi pembayaran manual (dipanggil server action admin). */
@@ -304,15 +240,19 @@ export async function saveManualPaymentSettings(
   if (input.account_name !== undefined) patch.account_name = input.account_name;
   if (input.instructions !== undefined) patch.instructions = input.instructions;
   if (input.expiry_minutes !== undefined) patch.expiry_minutes = input.expiry_minutes;
-
-  if (input.qr_image === "clear") {
-    patch.qr_image_base64 = null;
-    patch.qr_image_mime = "image/png";
-    patch.qr_image_size = 0;
-  } else if (input.qr_image) {
-    patch.qr_image_base64 = input.qr_image.base64;
-    patch.qr_image_mime = input.qr_image.mime;
-    patch.qr_image_size = input.qr_image.size;
+  if (input.whatsapp_message_template !== undefined) {
+    patch.whatsapp_message_template = input.whatsapp_message_template;
+  }
+  if (input.whatsapp_number !== undefined) {
+    const normalized = normalizeWhatsapp(input.whatsapp_number);
+    if (!normalized) {
+      throw new HttpError(
+        400,
+        ErrorCodes.validation,
+        "Nomor WhatsApp penjual tidak valid. Gunakan format 081234567890.",
+      );
+    }
+    patch.whatsapp_number = normalized;
   }
 
   // Pastikan baris id=1 ada (schema sudah insert default, tapi aman bila belum).
@@ -326,11 +266,16 @@ export async function saveManualPaymentSettings(
     .single<ManualSettingsRow>();
   if (error) {
     log.error("manual_settings_save_failed", { message: error.message });
-    throw new HttpError(500, ErrorCodes.internal, "Gagal menyimpan pengaturan pembayaran manual.");
+    throw new HttpError(500, ErrorCodes.internal, "Gagal menyimpan pengaturan pembayaran.");
   }
   log.info("manual_settings_saved", {
     fields: Object.keys(patch),
-    imageSize: patch.qr_image_size ?? undefined,
+    whatsappChanged: patch.whatsapp_number !== undefined,
   });
   return data;
 }
+
+/** Nama file migrasi yang harus dijalankan penjual (dipakai pesan admin). */
+export const MANUAL_PAYMENT_MIGRATION_HINT = MANUAL_PAYMENT_MIGRATION_FILE;
+
+export { isManualMethod };

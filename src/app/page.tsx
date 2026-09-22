@@ -4,7 +4,7 @@ import { ProductCard } from "@/components/ProductCard";
 
 const HOW_IT_WORKS = [
   { n: "01", t: "Pilih berita utama", d: "Buka katalog, baca detailnya, lalu pilih produk yang paling cocok." },
-  { n: "02", t: "Bayar sesuai pilihanmu", d: "Pilih transfer manual atau QRIS otomatis (bila tersedia), lalu laporkan pembayaranmu di website." },
+  { n: "02", t: "Bayar lewat WhatsApp", d: "Chat penjual dengan tombol sekali klik (kode order & nominal sudah terisi), transfer sesuai petunjuk, lalu konfirmasi di website." },
   { n: "03", t: "Pesanan diberitakan", d: "Penjual memproses pesanan dan mengabarkan kabar baik lewat WhatsApp." },
 ] as const;
 
@@ -20,8 +20,8 @@ export default async function HomePage() {
             Belanja gampang, <em>kabar</em> pembayaran datang cepat.
           </h1>
           <p className="front-page-deck">
-            Pilih barang favoritmu, lakukan pembayaran (transfer manual atau QRIS otomatis bila tersedia), dan biarkan kami mengurus kabar berikutnya. Semua
-            proses dibuat singkat, jelas, dan terasa seperti halaman depan yang menyenangkan.
+            Pilih barang favoritmu, selesaikan pembayaran bersama penjual lewat WhatsApp, dan biarkan kami mengurus kabar berikutnya. Semua proses
+            dibuat singkat, jelas, dan terasa seperti halaman depan yang menyenangkan.
           </p>
           <div className="hero-actions">
             <Link href="/products" className="btn-primary">
@@ -34,11 +34,11 @@ export default async function HomePage() {
           <div className="hero-facts" aria-label="Keunggulan toko">
             <div className="hero-fact">
               <strong>Manual</strong>
-              <span>Transfer utama</span>
+              <span>Cara bayar tunggal</span>
             </div>
             <div className="hero-fact">
-              <strong>QRIS</strong>
-              <span>Otomatis (bila aktif)</span>
+              <strong>WhatsApp</strong>
+              <span>Detail pembayaran</span>
             </div>
             <div className="hero-fact">
               <strong>WhatsApp</strong>
@@ -51,8 +51,8 @@ export default async function HomePage() {
           <div>
             <p className="hero-brief-title">Pesan.<br />Transfer.<br />Selesai.</p>
             <p className="hero-brief-copy">
-              Pilih transfer manual atau QRIS otomatis di halaman checkout. Bila QRIS otomatis belum
-              aktif, opsinya bertanda “Ongoing” dan pembeli memakai Transfer Manual.
+              Satu metode bayar, tanpa bingung memilih: buat pesanan, chat penjual lewat WhatsApp
+              (pesan sudah berisi kode order & nominal), bayar, lalu penjual memverifikasi mutasinya.
             </p>
           </div>
         </aside>

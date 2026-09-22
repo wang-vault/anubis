@@ -3,8 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthContext } from "@/lib/authz";
 import { getProduct } from "@/lib/products";
-import { getAvailablePaymentMethods, getCheckoutPaymentMethods } from "@/lib/payment-config";
-import { PAYMENT_METHOD_MANUAL } from "@/lib/payment-methods";
+import { getManualPaymentView } from "@/lib/payment-config";
 import { CheckoutForm } from "@/app/checkout/CheckoutForm";
 import { EmptyState } from "@/components/UiBits";
 
@@ -46,9 +45,7 @@ export default async function CheckoutPage({ searchParams }: Props) {
     );
   }
 
-  const product = await getProduct(productId);
-  const available = await getAvailablePaymentMethods();
-  const methods = await getCheckoutPaymentMethods();
+  const [product, manual] = await Promise.all([getProduct(productId), getManualPaymentView()]);
 
   if (!product || !product.is_active) {
     return (
@@ -67,14 +64,19 @@ export default async function CheckoutPage({ searchParams }: Props) {
     );
   }
 
-  // Tidak ada metode bayar yang siap
-  if (available.length === 0) {
+  // Pembayaran belum siap (saklar mati / nomor WA penjual belum diatur /
+  // database belum dimigrasi) → jangan buat order yang tidak bisa dibayar.
+  if (!manual.available) {
     return (
       <div className="container-x mx-auto max-w-lg">
         <EmptyState
           icon="!"
           title="Pembayaran belum tersedia"
-          desc="Metode pembayaran toko sedang disiapkan penjual. Silakan coba lagi sebentar atau hubungi penjual lewat WhatsApp."
+          desc={
+            manual.reason === "no_whatsapp"
+              ? "Penjual belum mengatur nomor WhatsApp untuk pembayaran. Silakan coba lagi sebentar atau hubungi penjual lewat kanal lain."
+              : "Metode pembayaran toko sedang disiapkan penjual. Silakan coba lagi sebentar."
+          }
           action={
             <Link href="/products" className="btn-primary">
               Kembali ke Katalog →
@@ -84,11 +86,6 @@ export default async function CheckoutPage({ searchParams }: Props) {
       </div>
     );
   }
-
-  // Opsi manual sebagai pilihan utama pembelian; bila manual belum siap
-  // (saklar mati / QR belum diunggah), jatuh ke metode yang tersedia.
-  const defaultMethod =
-    available.find((m) => m.id === PAYMENT_METHOD_MANUAL)?.id ?? available[0]?.id ?? PAYMENT_METHOD_MANUAL;
 
   return (
     <div className="container-x mx-auto max-w-lg">
@@ -105,8 +102,8 @@ export default async function CheckoutPage({ searchParams }: Props) {
           productName={product.name}
           unitPrice={product.price}
           whatsapp={ctx.profile.whatsapp}
-          methods={methods}
-          defaultMethod={defaultMethod}
+          paymentLabel={manual.label}
+          sellerName={manual.sellerName}
         />
       </div>
     </div>

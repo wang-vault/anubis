@@ -3,22 +3,41 @@ import { normalizeWhatsapp } from "@/lib/phone";
 
 /** Semua input user/API divalidasi dengan schema terpusat ini. */
 
+/** Nomor WA → digit 62… ; pesan error bisa dikustomisasi pemanggil. */
+function normalizeWhatsappField(v: string, ctx: z.RefinementCtx, message: string) {
+  const n = normalizeWhatsapp(v);
+  if (!n) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+    return z.NEVER;
+  }
+  return n;
+}
+
 export const whatsappSchema = z
   .string()
   .min(8)
   .max(20)
-  .transform((v, ctx) => {
-    const n = normalizeWhatsapp(v);
-    if (!n) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          "Nomor WhatsApp tidak valid. Gunakan nomor Indonesia, contoh 081234567890.",
-      });
-      return z.NEVER;
-    }
-    return n;
-  });
+  .transform((v, ctx) =>
+    normalizeWhatsappField(
+      v,
+      ctx,
+      "Nomor WhatsApp tidak valid. Gunakan nomor Indonesia, contoh 081234567890.",
+    ),
+  );
+
+/** Nomor WA penjual (form /admin/settings) — wajib & harus valid. */
+export const sellerWhatsappSchema = z
+  .string()
+  .min(1, "Nomor WhatsApp penjual wajib diisi.")
+  .min(8, "Nomor WhatsApp penjual tidak valid. Contoh: 081234567890.")
+  .max(20, "Nomor WhatsApp penjual terlalu panjang.")
+  .transform((v, ctx) =>
+    normalizeWhatsappField(
+      v,
+      ctx,
+      "Nomor WhatsApp penjual tidak valid. Gunakan format 081234567890.",
+    ),
+  );
 
 export const passwordSchema = z
   .string()
@@ -52,17 +71,12 @@ export const checkoutSchema = z.object({
     .int("Jumlah harus bilangan bulat")
     .min(1)
     .max(20, "Maksimal 20 pcs per order"),
-  /**
-   * Metode bayar pilihan buyer. Sengaja `unknown`: daftar metode yang benar-benar
-   * tersedia ditentukan server (env + pengaturan penjual), bukan oleh klien.
-   * Lihat lib/payment-config.resolvePaymentMethod().
-   */
-  paymentMethod: z.unknown().optional(),
 });
 
 /**
- * Klaim pembayaran manual: buyer menyatakan "sudah transfer" lalu mengisi
- * nama pengirim / nomor referensi agar penjual mudah mencocokkan mutasi.
+ * Klaim pembayaran manual: buyer menyatakan "sudah transfer" (biasanya setelah
+ * berkoordinasi di WhatsApp) lalu mengisi nama pengirim / nomor referensi agar
+ * penjual mudah mencocokkan mutasi.
  */
 export const manualClaimSchema = z.object({
   orderCode: z.string().regex(/^ORD-\d{8}-[A-Z0-9]{6}$/, "Kode order tidak valid"),
@@ -92,17 +106,23 @@ export const looseBooleanSchema = z.preprocess((val) => {
   return val;
 }, z.boolean());
 
-/** Pengaturan pembayaran manual (form /admin/settings). */
+/** Pengaturan pembayaran manual via WhatsApp (form /admin/settings). */
 export const manualSettingsSchema = z.object({
   is_enabled: looseBooleanSchema.default(true),
+  whatsapp_number: sellerWhatsappSchema,
   label: z
     .string()
     .trim()
     .min(3, "Label minimal 3 karakter")
     .max(60, "Label maksimal 60 karakter")
-    .default("Transfer Manual (QRIS)"),
-  account_name: z.string().trim().max(80, "Nama penerima maksimal 80 karakter").default(""),
+    .default("Transfer Manual (WhatsApp)"),
+  account_name: z.string().trim().max(80, "Nama penjual maksimal 80 karakter").default(""),
   instructions: z.string().trim().max(600, "Instruksi maksimal 600 karakter").default(""),
+  whatsapp_message_template: z
+    .string()
+    .trim()
+    .max(600, "Template pesan maksimal 600 karakter")
+    .default(""),
   expiry_minutes: z.coerce
     .number()
     .int("Batas waktu harus bilangan bulat menit")

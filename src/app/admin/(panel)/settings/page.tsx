@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { MANUAL_QR_MAX_BYTES, getManualPaymentView } from "@/lib/payment-config";
-import { serverEnv, stenlyConfigured } from "@/lib/env";
-import { ManualPaymentSettingsForm } from "@/components/admin/ManualPaymentSettingsForm";
-import { PaymentDiagnostics } from "@/components/admin/PaymentDiagnostics";
+import { getManualPaymentView } from "@/lib/payment-config";
+import { serverEnv } from "@/lib/env";
+import { normalizeWhatsapp } from "@/lib/phone";
+import { formatWhatsappDisplay } from "@/lib/phone";
+import { WhatsAppPaymentSettingsForm } from "@/components/admin/WhatsAppPaymentSettingsForm";
 
 export const metadata: Metadata = { title: "Pembayaran — Admin" };
 export const dynamic = "force-dynamic";
@@ -14,23 +15,25 @@ interface Props {
 /**
  * Halaman pengaturan pembayaran penjual.
  *
- * Fokus: metode TRANSFER MANUAL (QRIS statis milik penjual). Semua nilai di
- * sini disimpan di Supabase #2 → berubah tanpa perlu deploy ulang.
+ * Fokus: pembayaran MANUAL via WhatsApp (satu-satunya metode bayar). Semua
+ * nilai di sini disimpan di Supabase #2 → berubah tanpa perlu deploy ulang.
  */
 export default async function AdminPaymentSettingsPage({ searchParams }: Props) {
   const sp = await searchParams;
   const view = await getManualPaymentView();
   const env = serverEnv();
-  const autoConfigured = stenlyConfigured(env);
-  const manualVisibleToBuyer = view.available;
+  const envFallback = env.WHATSAPP_SELLER_NUMBER
+    ? normalizeWhatsapp(env.WHATSAPP_SELLER_NUMBER)
+    : null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="paper-heading">
         <p className="section-kicker">Kantor redaksi · Pembayaran</p>
-        <h1 className="paper-heading-title">Metode pembayaran</h1>
+        <h1 className="paper-heading-title">Pembayaran via WhatsApp</h1>
         <p className="mt-2 text-sm text-slate-500">
-          Atur QR transfer manual yang dipakai buyer. Perubahan langsung berlaku tanpa deploy ulang.
+          Atur nomor WhatsApp tujuan chat buyer. Detail pembayaran (QRIS statis / rekening /
+          e-wallet) kamu kirim langsung di chat. Perubahan berlaku tanpa deploy ulang.
         </p>
       </div>
 
@@ -40,51 +43,44 @@ export default async function AdminPaymentSettingsPage({ searchParams }: Props) 
         <p className="section-kicker">Status saat ini</p>
         <div className="mt-3 grid gap-2 text-sm">
           <StatusRow
-            ok={manualVisibleToBuyer}
-            label="Transfer Manual (QRIS statis)"
+            ok={view.available}
+            label={view.label}
             detail={
               view.reason === "schema_missing"
-                ? "Kolom pembayaran manual belum ada di database — jalankan migrasi (lihat banner merah di atas)."
-                : !env.MANUAL_PAYMENT_ENABLED
+                ? "Kolom pembayaran manual / nomor WhatsApp belum ada di database — jalankan migrasi (lihat banner merah di atas)."
+                : !view.envEnabled
                   ? "Dimatikan lewat env MANUAL_PAYMENT_ENABLED=false."
-                  : view.reason === "no_qr"
-                    ? "Aktif, tetapi gambar QR belum diunggah → buyer belum bisa memilihnya."
+                  : view.reason === "no_whatsapp"
+                    ? "Aktif, tetapi nomor WhatsApp penjual belum diisi → buyer belum bisa checkout."
                     : view.reason === "disabled"
                       ? "Saklar di form bawah sedang mati."
-                      : "Tampil di halaman checkout."
-            }
-          />
-          <StatusRow
-            ok={autoConfigured}
-            label="QRIS Otomatis (Stenly)"
-            detail={
-              autoConfigured
-                ? "Terkonfigurasi · dapat dipilih pembeli di halaman checkout (berdampingan dengan Transfer Manual)."
-                : "Status saat ini: ONGOING (sedang disiapkan) — di checkout tampil ber-badge “Ongoing” dan belum bisa dipilih; pembeli memakai Transfer Manual. Isi STENLY_API_KEY + STENLY_WEBHOOK_SECRET lalu redeploy untuk membukanya."
+                      : `Tampil di halaman checkout · chat masuk ke ${view.whatsappDisplay ?? "-"}.`
             }
           />
         </div>
-        {!manualVisibleToBuyer && !autoConfigured && (
+        {!view.available && (
           <p className="alert-error mt-3">
-            Tidak ada metode pembayaran yang bisa dipilih buyer — checkout akan menampilkan
-            “Pembayaran belum tersedia”. Unggah gambar QR di bawah lalu simpan.
+            Belum ada metode pembayaran yang bisa dipakai buyer. Isi nomor WhatsApp di bawah lalu
+            simpan — checkout baru akan aktif setelah itu.
           </p>
         )}
+        <p className="hint mt-3">
+          Karena pembayaran manual satu-satunya metode, matikan saklar di bawah hanya bila toko
+          memang sedang tutup.
+        </p>
       </div>
 
-      <PaymentDiagnostics />
-
-      <ManualPaymentSettingsForm
+      <WhatsAppPaymentSettingsForm
         initial={{
           isEnabled: view.isEnabled,
           label: view.label,
-          accountName: view.accountName,
+          sellerName: view.sellerName,
           instructions: view.instructions,
           expiryMinutes: view.expiryMinutes,
-          qrSrc: view.qrSrc,
-          hasUploadedImage: view.hasUploadedImage,
-          qrIsExternal: Boolean(env.MANUAL_PAYMENT_QR_IMAGE_URL),
-          maxImageKb: Math.round(MANUAL_QR_MAX_BYTES / 1024),
+          whatsappNumber: view.whatsappNumber ?? "",
+          messageTemplate: view.messageTemplate,
+          numberFromEnvFallback: !view.numberFromDatabase && Boolean(view.whatsappNumber),
+          envFallbackDisplay: envFallback ? formatWhatsappDisplay(envFallback) : null,
         }}
       />
     </div>

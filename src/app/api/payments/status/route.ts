@@ -10,14 +10,12 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/payments/status?order=ORD-...
  *
- * Sinkronisasi status: server menanyakan status ke Stenly (API privat, pakai
- * secret key di server) lalu menyimpan hasilnya. Ini FALLBACK yang jalan di
- * SAMPING webhook — bukan pengganti. Browser TIDAK pernah bisa menandai order
- * lunas lewat endpoint ini; sumber kebenaran hanya jawaban provider.
+ * Status pembayaran dibaca dari database toko (sumber kebenaran server) dan
+ * sekalian menjalankan pengecekan kadaluarsa. Browser TIDAK pernah bisa
+ * menandai order lunas lewat endpoint ini — status PAID hanya lahir dari
+ * verifikasi penjual di dashboard.
  *
- * Throttle 2 lapis:
- *  - 30 req/menit per user (limiter)
- *  - provider hanya dipanggil maks 1x/10 detik per order (DB last_payment_checked_at)
+ * Throttle: 30 req/menit per user (limiter route ini).
  */
 export async function GET(request: NextRequest) {
   return handleApi(async () => {
@@ -40,7 +38,7 @@ export async function GET(request: NextRequest) {
     if (!order && isAdmin(ctx)) order = await findOrderByCodeOrId(orderCode);
     if (!order) throw new HttpError(404, ErrorCodes.notFound, "Order tidak ditemukan.");
 
-    const { order: refreshed, checkedProvider } = await refreshOrderStatus(order);
+    const { order: refreshed } = await refreshOrderStatus(order);
     return {
       order_code: refreshed.order_code,
       payment_status: refreshed.payment_status,
@@ -53,7 +51,6 @@ export async function GET(request: NextRequest) {
       manual_claim_at: refreshed.manual_claim_at,
       manual_review_status: refreshed.manual_review_status,
       manual_review_note: refreshed.manual_review_note,
-      checked_provider: checkedProvider,
       server_time: new Date().toISOString(),
     };
   }, (data) => ok(data));

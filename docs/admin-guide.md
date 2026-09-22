@@ -41,20 +41,22 @@ Tiap kartu menampilkan: kode, badge pembayaran+status, produk×jumlah, total,
 buyer + WA, waktu, status notifikasi Telegram, tombol aksi.
 
 ## F. Status PENDING
-= order dibuat, **belum ada pembayaran terverifikasi**.
-- Bukan berarti buyer tidak bayar — webhook bisa telat beberapa menit.
-- Order **QRIS otomatis**: tekan **⟳ Cek Pembayaran** (menanyakan status
-  langsung ke Stenly; maks 1x/10 detik). Bila ternyata lunas → otomatis PAID.
-- Order **transfer manual**: tombol cek provider tidak ada (memang tidak ada
-  provider). Order baru berubah setelah kamu memverifikasi mutasi — lihat §P.
-- Order tak terbayar kedaluwarsa sendiri pada `payment_expired_at` → menjadi
-  **EXPIRED**; atau tekan **✕ Expire** untuk membatalkan order mati lebih awal.
+= order dibuat, **belum ada pembayaran yang kamu verifikasi**.
+- Bukan berarti buyer tidak bayar — buyer biasanya baru saja chat dan transfer;
+  cek antrian **Verifikasi Manual** (§P) sebelum menyimpulkan apa pun.
+- Tidak ada tombol "cek ke provider": toko ini tidak punya provider. Satu-satunya
+  cara order jadi PAID adalah verifikasi mutasi olehmu.
+- Order yang **belum diklaim** buyer kedaluwarsa sendiri pada
+  `payment_expired_at` (default 120 menit) → **EXPIRED**; atau tekan **✕ Expire**
+  untuk membatalkan order mati lebih awal.
+- Order yang **sudah diklaim** tidak pernah kedaluwarsa otomatis — keputusan ada
+  di kamu (konfirmasi atau tolak).
 
 ## G. Status PAID
-= uang terverifikasi: webhook/polling untuk QRIS otomatis, atau **konfirmasi
-kamu** untuk pembayaran manual (§P). Di luar dua jalur itu tidak ada tombol
-"tandai lunas" — memang begitu seharusnya. Order PAID masuk antrian
-**🔔 Perlu diproses** di Ringkasan.
+= uang terverifikasi. Hanya ada satu jalur: **konfirmasi kamu** setelah melihat
+mutasi (§P). Tidak ada tombol "tandai lunas" instan dan buyer tidak punya jalur
+apa pun untuk melunasi ordernya sendiri — memang begitu seharusnya. Order PAID
+masuk antrian **🔔 Perlu diproses** di Ringkasan.
 
 ## H. Memproses order
 1. Dari kartu order (atau halaman Detail): klik **▶ Proses Pesanan** → status
@@ -73,8 +75,8 @@ ditampilkan detail order (ada penanda ⚠ bila berbeda).
 ## J. Mengirim pesanan
 Manual: transfer barang/isi pesan digital via chat. Sistem dengan sengaja TIDAK
 mengirim otomatis (tidak ada WhatsApp API di sini) — Anda yang pegang kendali.
-Bila buyer mengirim bukti transfer: jangan ubah status — status sudah PAID dari
-sistem sejak uang masuk (cek Transactions di dashboard Stenly bila ragu).
+Bila buyer mengirim bukti transfer di chat: simpan sebagai arsip, tetapi **status
+hanya berubah dari keputusanmu** di dashboard — cek mutasi, lalu konfirmasi (§P).
 
 ## K. Menandai DONE
 Klik **✓ Tandai Selesai** (di list atau detail). Pembatalan status DONE tidak
@@ -85,18 +87,25 @@ disediakan; kalau salah tekan, catat di pesan buyer. Dashboard ringkasan:
 Buyer belum bayar sampai batas. Penjelasan ke buyer: silakan order ulang.
 Order expired dibiarkan sebagai histori (bisa dicari). Tidak ada biaya.
 
-## M. Pembayaran bermasalah (QRIS otomatis)
+## M. Pembayaran bermasalah (transfer manual)
+Tidak ada provider, jadi semua penyelesaian lewat mutasi + chat.
+
 | Gejala | Langkah |
 |---|---|
-| Buyer yakin sudah bayar, order masih PENDING | Tekan **⟳ Cek Pembayaran**. Kalau tetap PENDING: buka dashboard Stenly → **Transactions**, cari `order_id` = `order_code` order tsb (itu juga isi `payment_id`) — statusnya `paid`? |
-| Nominal beda (kurang/lebih) | Sistem TIDAK akan melunaskan sendiri. QRIS Stenly menagih nominal persis, jadi selisih apa pun ditolak. Dana kurang → minta buyer order ulang. Dana lebih → urus refund lewat dashboard Stenly. Catatan: `webhook_amount_invalid` di log. |
-| Webhook Stenly gagal total | Pembayaran tetap bisa sinkron lewat tombol cek (API privat). Cek **Webhook Logs** di dashboard Stenly (ada tombol resend); cek log `webhook_received`. |
-| Dana masuk tapi order dibatalkan (telat) | Webhook PAID akan menyalakan lagi order EXPIRED→PAID; kirim pesan ke buyer. |
+| Buyer bilang sudah transfer, order masih PENDING | Cek antrian **Verifikasi Manual**. Cocokkan nominal (total + 3 digit kode unik), waktu, dan nama pengirim di mutasi. Ketemu → **✓ Konfirmasi Lunas** |
+| Uang masuk tapi buyer belum menekan "Saya sudah transfer" | Order tidak muncul di antrian. Buka detail order (tautan kode dari chat) → konfirmasi langsung dari sana, atau minta buyer menekan tombolnya |
+| Nominal kurang | Jangan konfirmasi. Isi *nominal masuk* yang benar → sistem menolak (409) bila kurang dari total. Balas chat: minta transfer sisa |
+| Nominal lebih (buyer salah ketik) | Konfirmasi tetap boleh **bila** kelebihannya wajar/sudah kamu sepakati; catat di catatan verifikasi. Kalau ragu, tolak dulu lalu sepakati di chat |
+| Buyer salah transfer ke rekening lama | Detail pembayaran selalu dikirim ulang di chat — minta buyer chat lagi dan kirim nomor terbaru |
+| Order sudah EXPIRED padahal buyer sudah transfer | Buka **detail order** → **✓ Konfirmasi Pembayaran Lunas** (nominal ditagihkan tertera di sana) → order kembali `PAID`. Alternatifnya buat order baru, asalkan buyer **tidak ditagih dua kali** |
+| Buyer menekan "sudah transfer" tanpa transfer | **✕ Tolak Klaim** + alasan singkat. Buyer boleh konfirmasi ulang; status tetap PENDING |
+| Order lama berlabel "QRIS Otomatis (lama)" | Order arsip dari masa provider. Tidak bisa dikonfirmasi lewat jalur manual (409) — kalau uangnya memang masuk, catat manual di luar sistem |
 
 ## N. Mengecek log
 Vercel → Project → **Observability/Logs** (atau Deployments → … → Runtime logs).
-Filter yang berguna: `order_created`, `order_paid`, `webhook_received`,
-`webhook_signature_invalid`, `telegram_notify_failed`, `payment_create_failed`.
+Filter yang berguna: `order_created`, `order_paid`, `manual_claim_received`,
+`manual_payment_confirmed`, `manual_claim_rejected`, `order_expired`,
+`manual_payment_unavailable`, `store_schema_outdated`, `telegram_notify_failed`.
 Log adalah JSON satu baris; tidak memuat secret.
 
 ## O. Notifikasi Telegram
@@ -107,31 +116,36 @@ Tiap order PAID → pesan `🔔 PESANAN BARU …` (buyer, WA, produk, jumlah, to
   (satu kali per order — tidak dobel).
 - Chat ID diganti (mis. pindah grup) → ubah env + redeploy; selesai.
 
-## P. Pembayaran manual (QRIS statis milikmu)
-Metode kedua selain QRIS otomatis — dipakai saat QRIS provider belum aktif atau
-kamu ingin dana masuk langsung ke QRIS merchant sendiri (mis. GoPay Merchant).
-Panduan lengkap: **`docs/manual-payment.md`**.
+## P. Pembayaran manual via WhatsApp (satu-satunya metode)
+Tidak ada payment gateway dan tidak ada pilihan metode di checkout: setiap
+order dibuat sebagai transfer manual, dan **semua detail pembayaran kamu kirim
+lewat chat WhatsApp** (QRIS statis, nomor rekening, atau e-wallet — bebas, bisa
+kamu ganti kapan saja). Panduan lengkap: **`docs/manual-payment.md`**.
 
-**Setup sekali**: menu **Pembayaran** (`/admin/settings`) → aktifkan metode →
-unggah gambar QRIS statis (PNG/JPG/WebP, maks 900 KB) → isi nama penerima &
-batas waktu bayar → **Simpan**. Gambar disimpan di database toko (bukan bucket),
-diganti kapan pun tanpa deploy ulang.
+**Setup sekali**: menu **Pembayaran** (`/admin/settings`) → isi **nomor WhatsApp
+penjual** (wajib; format `081234567890` atau `+62 812…`) → opsional: nama
+penerima, batas waktu bayar (10–4320 menit, default 120), nama metode,
+instruksi tambahan, dan template pesan WhatsApp → **Simpan**. Tanpa deploy
+ulang. Selama nomor belum diisi, checkout menolak order dengan pesan jelas.
 
-Di panel **Status saat ini** kamu akan melihat dua baris: "Transfer Manual
-(QRIS statis)" (✓ tampil di checkout / ✗ dengan alasan `no_qr`/`disabled`) dan
-"QRIS Otomatis (Stenly)" yang mengikuti env. **Terisi** → "dapat dipilih
-pembeli di halaman checkout" (berdampingan dengan Transfer Manual, yang tetap
-jadi default). **Kosong** → **ONGOING**: di checkout opsinya ber-badge
-"Ongoing", tidak bisa dipilih buyer, dan semua pembelian mengalir ke Transfer
-Manual. Untuk membukanya: isi `STENLY_API_KEY` +
-`STENLY_WEBHOOK_SECRET` lalu redeploy — tidak ada perubahan kode
-(panduan lengkap: `docs/stenly.md`).
+Panel **Status saat ini** menjelaskan kesiapan metode:
+
+| Status | Artinya | Tindakan |
+|---|---|---|
+| siap | saklar aktif + nomor WA terisi | — |
+| `no_whatsapp` | nomor WA masih kosong | isi nomor di form (atau set `WHATSAPP_SELLER_NUMBER`) |
+| `disabled` | saklar di DB mati, atau env `MANUAL_PAYMENT_ENABLED=false` | nyalakan salah satunya |
+| `schema_missing` | kolom pembayaran manual / kolom WhatsApp belum ada | jalankan `supabase/store/002_manual_payment.sql` lalu `004_whatsapp_payment.sql` — banner merah di `/admin` memuat SQL-nya |
+
+**Template pesan WhatsApp** yang kosong memakai template bawaan (kode order,
+produk, jumlah, dan nominal tagihan). Placeholder yang tersedia: `{toko}`
+`{kode}` `{produk}` `{jumlah}` `{total}` `{nama}`.
 
 **Harian (verifikasi)**:
 1. Telegram mengirim **🧾 KLAIM TRANSFER MANUAL** (order, nominal ditagihkan,
    nama pengirim, no. referensi).
-2. Buka mutasi QRIS-mu → cari nominal itu (perhatikan **3 digit kode unik**,
-   mis. Rp50.417, dan nama pengirim).
+2. Buka mutasi QRIS/rekeningmu → cari nominal itu (perhatikan **3 digit kode
+   unik**, mis. Rp50.417, dan nama pengirim).
 3. Uang ada → **✓ Konfirmasi Lunas** (di kartu order atau tab *Verifikasi
    Manual*). Detail order menyediakan kolom **nominal masuk** + catatan
    verifikasi; nominal kurang dari total order akan ditolak sistem.
@@ -149,5 +163,5 @@ Ringkasan menampilkan jumlah antrian.
   manual) lalu "Perlu diproses"; balas chat buyer.
 - Mingguan: cek stok vs produk (nonaktifkan yang habis), cek revenue bulan ini.
 - Bulanan: rekap Supabase (Table Editor → export orders), pastikan backup,
-  rotasi API key bila perlu (Stenly/Supabase/Telegram — update env, redeploy),
+  rotasi kredensial bila perlu (Supabase/Telegram — update env, redeploy),
   jalankan ulang `docs/testing.md` setelah upgrade dependensi.

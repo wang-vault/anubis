@@ -62,13 +62,12 @@ create table if not exists public.orders (
   order_status          text not null default 'PENDING'
     check (order_status in ('PENDING', 'PAID', 'PROCESSING', 'DONE', 'EXPIRED')),
 
-  -- Metode bayar: 'STENLY' = QRIS dinamis otomatis (provider aktif),
-  -- 'MANUAL' = QRIS statis milik penjual yang diverifikasi manual dari mutasi
-  -- (lihat bagian 6). 'YOBASEPAY' = provider otomatis LAMA: tetap diizinkan
-  -- constraint agar histori transaksi lama tidak rusak, tetapi tidak pernah
-  -- ditulis lagi oleh aplikasi.
-  payment_method        text not null default 'STENLY'
-    check (payment_method in ('STENLY', 'MANUAL', 'YOBASEPAY')),
+  -- Metode bayar: order BARU selalu 'MANUAL' — transfer manual yang
+  -- dikoordinasikan lewat WhatsApp (lihat bagian 6). 'STENLY' dan 'YOBASEPAY'
+  -- = provider QRIS otomatis LAMA: tetap diizinkan constraint agar histori
+  -- transaksi arsip tidak rusak, tetapi tidak pernah ditulis lagi oleh aplikasi.
+  payment_method        text not null default 'MANUAL'
+    check (payment_method in ('MANUAL', 'STENLY', 'YOBASEPAY')),
 
   -- Pembayaran MANUAL: klaim buyer ("saya sudah transfer") + hasil verifikasi
   -- penjual. Semua kolom ini HANYA ditulis server-side.
@@ -136,20 +135,28 @@ create unique index if not exists orders_payment_id_unique
 create table if not exists public.manual_payment_settings (
   id              int primary key default 1 check (id = 1),
   is_enabled      boolean not null default true,
-  label           text not null default 'Transfer Manual (QRIS)',
-  account_name    text not null default '',   -- a.n. rekening/merchant, mis. "Toko Saya"
+  label           text not null default 'Transfer Manual (WhatsApp)',
+  account_name    text not null default '',   -- nama penjual / a.n. penerima, mis. "Toko Saya"
+  whatsapp_number text not null default '',    -- nomor WA penjual (62…), tujuan chat buyer
+  whatsapp_message_template text not null default '', -- pesan buyer→penjual ({kode},{total},…)
   instructions    text not null default '',   -- catatan tambahan utk buyer (opsional)
   expiry_minutes  int not null default 120 check (expiry_minutes between 10 and 4320),
+  -- Kolom QR di bawah ini WARISAN (dulu QR statis ditampilkan di aplikasi).
+  -- Sejak pembayaran dipindah ke WhatsApp, detail pembayaran dikirim penjual
+  -- di chat sehingga kolom ini tidak dipakai lagi — dibiarkan ada agar data
+  -- penjual dari versi sebelumnya tidak hilang.
   qr_image_mime   text not null default 'image/png',
-  qr_image_base64 text,                       -- isi gambar (base64, tanpa prefix data:)
-  qr_image_size   int not null default 0,     -- ukuran byte gambar asli (untk info admin)
+  qr_image_base64 text,
+  qr_image_size   int not null default 0,
   updated_at      timestamptz not null default now()
 );
 
 comment on table public.manual_payment_settings is
-  'Konfigurasi pembayaran manual (QRIS statis penjual). Satu baris saja (id=1). Hanya service_role.';
-comment on column public.manual_payment_settings.qr_image_base64 is
-  'Gambar QR statis dalam base64. Di-upload dari /admin/settings; disajikan via /api/manual-qr.';
+  'Konfigurasi pembayaran manual via WhatsApp. Satu baris saja (id=1). Hanya service_role.';
+comment on column public.manual_payment_settings.whatsapp_number is
+  'Nomor WhatsApp penjual (62…) — tujuan chat buyer dari halaman pembayaran.';
+comment on column public.manual_payment_settings.whatsapp_message_template is
+  'Template pesan buyer→penjual. Placeholder: {toko} {kode} {produk} {jumlah} {total} {nama}.';
 
 -- Baris default (idempotent) — tanpa baris ini metode manual dianggap belum dikonfigurasi.
 insert into public.manual_payment_settings (id)
@@ -223,7 +230,10 @@ create policy "products_read_active"
 -- ============================================================================
 
 -- ============================================================================
--- 5. MIGRASI LANJUTAN — SETELAH FILE INI, JALANKAN 002_manual_payment.sql
+-- 5. MIGRASI LANJUTAN
+--    - Project baru : tidak ada (semua sudah termasuk di atas).
+--    - Project lama  : jalankan 002_manual_payment.sql (kolom manual_*),
+--                     004_whatsapp_payment.sql (kolom nomor WA + default MANUAL).
 -- ============================================================================
 -- Untuk project BARU, kolom pembayaran manual (payment_method, manual_*) dan
 -- tabel manual_payment_settings sudah termasuk di CREATE TABLE di atas, jadi
@@ -241,5 +251,7 @@ create policy "products_read_active"
 -- (idempotent — aman dijalankan berulang, tidak menghapus data), lalu muat
 -- ulang schema cache PostgREST: `notify pgrst, 'reload schema';`
 --
--- Urutan yang benar selalu: 001_schema.sql → 002_manual_payment.sql.
+-- Urutan yang benar selalu: 001_schema.sql → 002_manual_payment.sql →
+-- 004_whatsapp_payment.sql (file 003 hanya untuk histori migrasi provider QRIS
+-- otomatis yang kini sudah tidak dipakai).
 -- ============================================================================

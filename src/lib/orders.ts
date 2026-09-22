@@ -3,7 +3,6 @@ import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ErrorCodes, HttpError } from "@/lib/api";
 import { accountAdmin, accountServer, storeDb } from "@/lib/supabase/server";
-import { getPaymentProvider } from "@/lib/integrations/payment";
 import { getManualPaymentView, resolvePaymentMethod } from "@/lib/payment-config";
 import {
   PAYMENT_METHOD_MANUAL,
@@ -12,25 +11,19 @@ import {
   type PaymentMethod,
 } from "@/lib/payment-methods";
 import {
-  PaymentProviderError,
-  type PaymentProvider,
-} from "@/lib/integrations/payment/types";
-import {
   buildManualClaimInfo,
   buildPaidOrderInfo,
   getNotifier,
 } from "@/lib/integrations/telegram";
 import { generateOrderCode } from "@/lib/order-code";
-import { amountWithinTolerance } from "@/lib/money";
 import { log } from "@/lib/logger";
 import {
   BASE_ORDER_SELECT,
   MANUAL_PAYMENT_MIGRATION_FILE,
+  WHATSAPP_PAYMENT_MIGRATION_FILE,
   describeDbError,
   isMissingColumnError,
-  isPaymentMethodConstraintError,
   isManualPaymentSchemaReady,
-  STENLY_MIGRATION_FILE,
   normalizeOrderRow,
   resetStoreSchemaCache,
 } from "@/lib/store-schema";
@@ -43,18 +36,22 @@ import type { AdminOrderView, OrderRow, OrderStatus, ProductRow } from "@/lib/ty
  * ===========================================================================
  * Prinsip:
  *  - Harga & total SELALU dihitung server-side dari DB store (client tidak dipercaya).
- *  - Pembayaran menjadi PAID hanya lewat webhook terverifikasi ATAU cek status
- *    server-side ke provider (Stenly) — tidak pernah dari klaim frontend.
+ *  - Satu-satunya jalur pembayaran adalah TRANSFER MANUAL yang dikoordinasikan
+ *    lewat WhatsApp; order menjadi PAID HANYA setelah penjual memverifikasi
+ *    mutasi dari dashboard (adminConfirmManualPayment). Klaim buyer ("saya
+ *    sudah transfer") cuma memindahkan order ke antrian verifikasi.
  *  - Semua transisi status idempotent (guard `where` di query update).
  *  - Notifikasi Telegram diklaim sekali per order (telegram_notified_at).
+ *
+ * Tidak ada integrasi provider pembayaran / webhook lagi — jejaknya sudah
+ * dihapus dari kode. Order ARSIP yang bernilai 'STENLY'/'YOBASEPAY' tetap
+ * terbaca di dashboard apa adanya, tanpa diperlakukan khusus.
  */
 
-/** Jarak minimal antar-cek status ke provider (anti hammering). */
-const PROVIDER_CHECK_THROTTLE_MS = 10_000;
-/** Grasi otomatis-expire setelah batas waktu provider. */
+/** Grasi otomatis-expire setelah batas waktu bayar order manual. */
 const EXPIRY_GRACE_MS = 30_000;
 
-export type PaidSource = "webhook" | "polling" | "manual";
+export type PaidSource = "manual";
 
 /** Hasil query daftar orders (bentuk yang dipakai semua jalur fallback skema). */
 interface OrdersQueryResult {
@@ -70,11 +67,10 @@ export interface CreateOrderResult {
   order: OrderRow;
   paymentMethod: PaymentMethod;
   payment: {
-    /** null untuk pembayaran manual (tidak ada transaksi di provider). */
-    paymentId: string | null;
-    paymentUrl: string | null;
-    qrImageUrl: string | null;
+    /** Batas waktu bayar order (dari pengaturan penjual). */
     expiresAt: string | null;
+    /** Nomor WhatsApp penjual tujuan chat buyer (null bila belum diatur). */
+    sellerWhatsapp: string | null;
   };
 }
 
@@ -84,7 +80,6 @@ export async function createOrderForBuyer(
     productId: string;
     quantity: number;
     whatsappOverride?: string;
-    paymentMethod?: unknown;
   },
 ): Promise<CreateOrderResult> {
   const db = await storeDb();
@@ -111,18 +106,20 @@ export async function createOrderForBuyer(
   // 2. Hitung total server-side.
   const total = product.price * input.quantity;
 
-  // 2b. Metode bayar: yang menentukan boleh/tidaknya = konfigurasi SERVER
-  //     (env + pengaturan penjual), bukan nilai dari klien.
-  const method = await resolvePaymentMethod(input.paymentMethod);
+  // 2b. Metode bayar: SATU-SATUNYA metode adalah transfer manual via WhatsApp.
+  //     Nilai apa pun dari klien diabaikan; boleh/tidaknya ditentukan
+  //     konfigurasi SERVER (env + pengaturan penjual).
+  const method = await resolvePaymentMethod();
 
-  // 2c. Skema database: pembayaran MANUAL butuh kolom manual_* di orders.
-  //     Bila penjual belum menjalankan migrasi, tolak dengan pesan jelas —
-  //     jangan membuat order yang tidak akan pernah bisa diverifikasi.
+  // 2c. Skema database: pembayaran manual butuh kolom manual_* di orders +
+  //     kolom nomor WhatsApp di manual_payment_settings. Bila penjual belum
+  //     menjalankan migrasi, tolak dengan pesan jelas — jangan membuat order
+  //     yang tidak akan pernah bisa dibayar/diverifikasi.
   const schemaReady = await isManualPaymentSchemaReady();
-  if (!schemaReady && method === PAYMENT_METHOD_MANUAL) {
+  if (!schemaReady) {
     log.error("manual_payment_schema_missing", {
-      message: "kolom pembayaran manual belum ada di database store",
-      migration: MANUAL_PAYMENT_MIGRATION_FILE,
+      message: "kolom pembayaran manual / nomor WhatsApp belum ada di database store",
+      migrations: [MANUAL_PAYMENT_MIGRATION_FILE, WHATSAPP_PAYMENT_MIGRATION_FILE],
     });
     throw new HttpError(
       503,
@@ -144,13 +141,11 @@ export async function createOrderForBuyer(
       total_amount: total,
       payment_status: "PENDING",
       order_status: "PENDING",
+      payment_method: method,
       buyer_name_snapshot: profile.name,
       buyer_whatsapp_snapshot: input.whatsappOverride ?? profile.whatsapp,
       buyer_email_snapshot: ctx.user.email ?? profile.email,
     };
-    // Kolom ini baru ada setelah migrasi 002 — jangan dikirim bila belum ada,
-    // kalau tidak insert gagal dengan 42703 dan checkout mati total.
-    if (schemaReady) payload.payment_method = method;
 
     const { data, error } = await db
       .from("orders")
@@ -172,22 +167,6 @@ export async function createOrderForBuyer(
         "Pembayaran sedang tidak tersedia. Silakan hubungi penjual.",
       );
     }
-    if (isPaymentMethodConstraintError(error)) {
-      // Database masih memakai CHECK constraint lama yang hanya mengenal
-      // provider otomatis sebelumnya, sehingga nilai 'STENLY' ditolak. Jangan
-      // balas 500 tanpa penjelasan: sebutkan migrasinya di log agar penjual
-      // tahu satu langkah perbaikannya (banner /admin memuat SQL-nya).
-      log.error("order_insert_payment_method_rejected", {
-        message: error.message,
-        method,
-        migration: STENLY_MIGRATION_FILE,
-      });
-      throw new HttpError(
-        503,
-        ErrorCodes.paymentUnavailable,
-        "Pembayaran QRIS otomatis sedang tidak tersedia. Silakan gunakan Transfer Manual atau hubungi penjual.",
-      );
-    }
     if (error.code !== "23505") {
       log.error("order_insert_failed", { message: error.message });
       throw new HttpError(500, ErrorCodes.internal, "Gagal membuat order.");
@@ -197,81 +176,12 @@ export async function createOrderForBuyer(
     throw new HttpError(500, ErrorCodes.internal, "Gagal membuat order, coba lagi.");
   }
 
-  // 4a. Pembayaran MANUAL: tidak ada provider. Nominal = total + kode unik
-  //     (deterministik dari order_code) supaya mutasi mudah dicocokkan penjual.
-  //     Batas waktu bayar diambil dari pengaturan penjual (bukan dari provider).
-  if (method === PAYMENT_METHOD_MANUAL) {
-    const manual = await getManualPaymentView();
-    if (!manual.available) {
-      log.error("manual_payment_not_configured", { reason: manual.reason });
-      await db
-        .from("orders")
-        .update({ payment_status: "FAILED", order_status: "EXPIRED" })
-        .eq("id", order.id)
-        .eq("payment_status", "PENDING");
-      throw new HttpError(
-        503,
-        ErrorCodes.paymentUnavailable,
-        "Pembayaran manual belum siap. Silakan hubungi penjual.",
-      );
-    }
-    const manualPatch = {
-      charged_amount: manualChargedAmount(total, order.order_code),
-      payment_expired_at: new Date(Date.now() + manual.expiryMinutes * 60_000).toISOString(),
-    };
-    const { data: manualOrder, error: mErr } = await db
-      .from("orders")
-      .update(manualPatch)
-      .eq("id", order.id)
-      .select("*")
-      .single<OrderRow>();
-    if (mErr || !manualOrder) {
-      log.error("order_manual_setup_failed", {
-        orderCode: order.order_code,
-        message: mErr?.message,
-      });
-      throw new HttpError(
-        500,
-        ErrorCodes.internal,
-        "Gagal menyiapkan pembayaran manual. Silakan coba lagi.",
-      );
-    }
-    const manualRow = normalizeOrderRow(manualOrder);
-    log.info("order_created", {
-      orderCode: manualRow.order_code,
-      method,
-      total,
-      charged: manualRow.charged_amount,
-    });
-    return {
-      order: manualRow,
-      paymentMethod: method,
-      payment: {
-        paymentId: null,
-        paymentUrl: null,
-        qrImageUrl: manual.qrSrc,
-        expiresAt: manualRow.payment_expired_at,
-      },
-    };
-  }
-
-  // 4b. Buat pembayaran di provider QRIS otomatis (server-side; API key tak
-  //     pernah ke browser). Nominal = total hasil hitungan DB, bukan dari klien.
-  const provider = getPaymentProvider();
-  let created;
-  try {
-    created = await provider.createPayment({
-      amount: total,
-      orderCode: order.order_code,
-      description: `Order ${order.order_code} - ${product.name}`,
-      customerName: order.buyer_name_snapshot || null,
-      customerEmail: order.buyer_email_snapshot || null,
-      customerPhone: order.buyer_whatsapp_snapshot || null,
-    });
-  } catch (err) {
-    const detail = err instanceof PaymentProviderError ? String(err.detail ?? err.message) : "";
-    log.error("payment_create_failed", { orderCode: order.order_code, detail });
-    // Tandai order agar tidak menggantung selamanya, buyer boleh mencoba lagi.
+  // 4. Nominal & batas waktu bayar untuk order manual:
+  //    nominal = total + kode unik (deterministik dari order_code) supaya mutasi
+  //    mudah dicocokkan penjual; batas waktu dari pengaturan penjual.
+  const manual = await getManualPaymentView();
+  if (!manual.available) {
+    log.error("manual_payment_not_configured", { reason: manual.reason });
     await db
       .from("orders")
       .update({ payment_status: "FAILED", order_status: "EXPIRED" })
@@ -280,62 +190,45 @@ export async function createOrderForBuyer(
     throw new HttpError(
       503,
       ErrorCodes.paymentUnavailable,
-      "Gerbang pembayaran sedang tidak tersedia. Silakan coba lagi sebentar.",
+      "Pembayaran manual belum siap. Silakan hubungi penjual.",
     );
   }
 
-  // 5. Simpan referensi pembayaran pada order (termasuk nominal charged provider).
-  const paymentPatch: Record<string, unknown> = {
-    payment_id: created.paymentId,
-    payment_url: created.paymentUrl,
-    qr_image_url: created.qrImageUrl,
-    payment_expired_at: created.expiresAt,
+  const manualPatch = {
+    charged_amount: manualChargedAmount(total, order.order_code),
+    payment_expired_at: new Date(Date.now() + manual.expiryMinutes * 60_000).toISOString(),
   };
-  if (created.chargedAmount !== null && created.chargedAmount !== undefined) {
-    paymentPatch.charged_amount = created.chargedAmount;
-  }
-
-  const { data: updated, error: uErr } = await db
+  const { data: manualOrder, error: mErr } = await db
     .from("orders")
-    .update(paymentPatch)
+    .update(manualPatch)
     .eq("id", order.id)
     .select("*")
     .single<OrderRow>();
-  if (uErr || !updated) {
-    // Payment sudah hidup di provider — jangan biarkan order PENDING tanpa
-    // payment_id (webhook/polling tidak bisa dicocokkan). Tandai gagal.
-    log.error("order_payment_ref_update_failed", {
+  if (mErr || !manualOrder) {
+    log.error("order_manual_setup_failed", {
       orderCode: order.order_code,
-      paymentId: created.paymentId,
-      message: uErr?.message,
+      message: mErr?.message,
     });
-    await db
-      .from("orders")
-      .update({ payment_status: "FAILED", order_status: "EXPIRED" })
-      .eq("id", order.id)
-      .eq("payment_status", "PENDING");
     throw new HttpError(
       500,
       ErrorCodes.internal,
-      "Order dibuat tetapi informasi pembayaran gagal disimpan. Silakan coba lagi atau hubungi penjual.",
+      "Gagal menyiapkan pembayaran manual. Silakan coba lagi.",
     );
   }
 
-  const updatedRow = normalizeOrderRow(updated);
+  const manualRow = normalizeOrderRow(manualOrder);
   log.info("order_created", {
-    orderCode: updatedRow.order_code,
+    orderCode: manualRow.order_code,
     method,
     total,
-    charged: created.chargedAmount,
+    charged: manualRow.charged_amount,
   });
   return {
-    order: updatedRow,
+    order: manualRow,
     paymentMethod: method,
     payment: {
-      paymentId: created.paymentId,
-      paymentUrl: created.paymentUrl,
-      qrImageUrl: created.qrImageUrl,
-      expiresAt: created.expiresAt,
+      expiresAt: manualRow.payment_expired_at,
+      sellerWhatsapp: manual.whatsappNumber,
     },
   };
 }
@@ -420,7 +313,7 @@ function scheduleTelegramNotify(order: OrderRow): void {
     }
   };
   try {
-    after(run); // kirim setelah response → webhook tidak menahan balasan provider
+    after(run); // kirim setelah response → tidak menahan balasan ke buyer/admin
   } catch {
     void run();
   }
@@ -438,9 +331,8 @@ export async function applyPaid(
   order: OrderRow,
   opts: { source: PaidSource; chargedAmount?: number | null },
 ): Promise<{ changed: boolean; reason?: string }> {
-  // Validasi nominal dilakukan PEMCALLI sebelum memanggil fungsi ini:
-  //  - webhook  → amount WAJIB ada & cocok (handleWebhookEvent)
-  //  - polling  → amount dari API privat check-status, dicocokkan bila ada.
+  // Nominal yang benar-benar masuk divalidasi PEMCALLI sebelum memanggil
+  // fungsi ini (adminConfirmManualPayment menolak transfer kurang dari total).
 
   const nowIso = new Date().toISOString();
 
@@ -530,204 +422,39 @@ export async function applyExpired(db: SupabaseClient, order: OrderRow): Promise
   return Boolean(data);
 }
 
-/**
- * Toleransi nominal untuk order MANUAL: buyer mengetik sendiri nominal
- * (total + kode unik 1..999) karena QRIS statis tidak bisa mengisi angka.
- */
-const MANUAL_AMOUNT_TOLERANCE = 999;
-
-/**
- * Webhook/polling memberitahu "berhasil bayar" dengan nominal: validasi
- * terhadap total order sebelum menandai lunas.
- *
- * QRIS otomatis (Stenly) menagih nominal PERSIS `gross_amount` yang kita kirim
- * (= total order), jadi toleransinya 0 — nominal yang berbeda sedikit pun
- * ditolak. Pembayaran manual tetap memakai toleransi kode unik.
- */
-export function validateWebhookAmount(
-  charged: number | null,
-  order: OrderRow,
-): { ok: boolean; reason?: string } {
-  if (charged === null) {
-    return { ok: false, reason: "amount_missing" };
-  }
-  const tolerance = isManualMethod(order.payment_method) ? MANUAL_AMOUNT_TOLERANCE : 0;
-  if (!amountWithinTolerance(charged, order.total_amount, tolerance)) {
-    return { ok: false, reason: "amount_mismatch" };
-  }
-  return { ok: true };
-}
-
 // ---------------------------------------------------------------------------
-// REFRESH STATUS (dipakai halaman pembayaran & tombol admin)
+// REFRESH STATUS (dipakai halaman pembayaran & tombol muat ulang buyer)
 // ---------------------------------------------------------------------------
 
 export interface RefreshResult {
   order: OrderRow;
-  checkedProvider: boolean;
 }
 
 /**
  * Sinkronkan status satu order.
- *  - Dibatasi 1x/10 detik per order (throttle) agar tidak membanjiri provider.
- *  - Sumber kebenaran: jawaban endpoint status provider (dipanggil server-side
- *    dengan secret key), BUKAN klaim browser.
- *  - Ini FALLBACK: webhook Stenly tetap jalur utama perubahan status.
+ *
+ * Pembayaran manual tidak punya provider untuk ditanya: status hanya bisa
+ * berubah lewat verifikasi penjual (adminConfirmManualPayment). Yang dikerjakan
+ * di sini cuma satu — menandai order KADALUARSA setelah batas waktu bayar
+ * terlewat, dan itu pun TIDAK dilakukan bila buyer sudah mengklaim transfer
+ * (keputusan ada di penjual: konfirmasi atau tolak).
  */
 export async function refreshOrderStatus(order: OrderRow): Promise<RefreshResult> {
+  if (order.payment_status !== "PENDING") return { order };
+  if (order.manual_claim_at) return { order };
+
   const db = await storeDb();
-  if (order.payment_status !== "PENDING" && order.payment_status !== "EXPIRED") {
-    return { order, checkedProvider: false };
-  }
+  const deadline = order.payment_expired_at
+    ? Date.parse(order.payment_expired_at) + EXPIRY_GRACE_MS
+    : null;
+  if (deadline === null || Date.now() <= deadline) return { order };
 
-  // Pembayaran MANUAL tidak punya provider untuk ditanya: status hanya bisa
-  // berubah lewat verifikasi penjual (adminConfirmManualPayment). Di sini
-  // cukup tangani kadaluarsa — dan JANGAN expire otomatis bila buyer sudah
-  // mengklaim transfer (keputusan ada di penjual: konfirmasi atau tolak).
-  // checkedProvider selalu false: memang tidak ada provider yang dihubungi.
-  if (isManualMethod(order.payment_method)) {
-    if (order.manual_claim_at) return { order, checkedProvider: false };
-    const deadline = order.payment_expired_at
-      ? Date.parse(order.payment_expired_at) + EXPIRY_GRACE_MS
-      : null;
-    if (deadline !== null && Date.now() > deadline) {
-      await applyExpired(db, order);
-      return { order: (await loadOrderById(db, order.id)) ?? order, checkedProvider: false };
-    }
-    return { order, checkedProvider: false };
-  }
-
-  const now = Date.now();
-  const last = order.last_payment_checked_at ? Date.parse(order.last_payment_checked_at) : 0;
-  if (now - last < PROVIDER_CHECK_THROTTLE_MS) {
-    return { order, checkedProvider: false };
-  }
-
-  if (!order.payment_id) {
-    // Belum ada referensi pembayaran (pembuatan gagal) → expired-kan via clock saja.
-    // Tetap catat throttle agar clock-check tidak spam DB.
-    await db
-      .from("orders")
-      .update({ last_payment_checked_at: new Date(now).toISOString() })
-      .eq("id", order.id);
-    return expireIfPastDeadline(db, order);
-  }
-
-  let result;
-  try {
-    result = await getPaymentProvider().checkStatus(order.payment_id);
-  } catch (err) {
-    const detail = err instanceof PaymentProviderError ? String(err.detail ?? err.message) : "";
-    log.error("provider_check_failed", { orderCode: order.order_code, detail });
-    // Provider gagal dihubungi: JANGAN set throttle, biarkan retry segera.
-    return { order, checkedProvider: false };
-  }
-
-  // Throttle hanya setelah call provider sukses.
-  await db
-    .from("orders")
-    .update({ last_payment_checked_at: new Date(now).toISOString() })
-    .eq("id", order.id);
-
-  switch (result.state) {
-    case "paid": {
-      if (result.amount !== null && !validateWebhookAmount(result.amount, order).ok) {
-        log.error("polling_amount_mismatch", { orderCode: order.order_code, charged: result.amount });
-        return { order: (await loadOrderById(db, order.id)) ?? order, checkedProvider: true };
-      }
-      await applyPaid(db, order, { source: "polling", chargedAmount: result.amount });
-      break;
-    }
-    case "expired":
-    case "failed":
-      await applyExpired(db, order);
-      break;
-    default:
-      return expireIfPastDeadline(db, order);
-  }
-  return { order: (await loadOrderById(db, order.id)) ?? order, checkedProvider: true };
-}
-
-async function expireIfPastDeadline(db: SupabaseClient, order: OrderRow): Promise<RefreshResult> {
-  if (order.payment_expired_at && Date.now() > Date.parse(order.payment_expired_at) + EXPIRY_GRACE_MS) {
-    await applyExpired(db, order);
-    return { order: (await loadOrderById(db, order.id)) ?? order, checkedProvider: true };
-  }
-  return { order, checkedProvider: true };
+  await applyExpired(db, order);
+  return { order: (await loadOrderById(db, order.id)) ?? order };
 }
 
 // ---------------------------------------------------------------------------
-// WEBHOOK entry
-// ---------------------------------------------------------------------------
-
-export interface WebhookOutcome {
-  /** Untuk response & log; tidak memuat data sensitif. */
-  handled: "paid" | "expired" | "ignored";
-  reason?: string;
-}
-
-export async function handleWebhookEvent(params: {
-  provider: PaymentProvider;
-  paymentId: string | null;
-  orderCode: string | null;
-  state: string;
-  amount: number | null;
-}): Promise<WebhookOutcome> {
-  const db = await storeDb();
-  let order: OrderRow | null = null;
-  if (params.paymentId) {
-    const { data } = await db
-      .from("orders")
-      .select("*")
-      .eq("payment_id", params.paymentId)
-      .maybeSingle<OrderRow>();
-    order = data;
-  }
-  if (!order && params.orderCode) {
-    const { data } = await db
-      .from("orders")
-      .select("*")
-      .eq("order_code", params.orderCode)
-      .maybeSingle<OrderRow>();
-    order = data;
-  }
-  if (!order) {
-    log.warn("webhook_order_not_found", { paymentId: params.paymentId ?? undefined });
-    return { handled: "ignored", reason: "order_not_found" };
-  }
-
-  switch (params.state) {
-    case "paid": {
-      const check = validateWebhookAmount(params.amount, order);
-      if (!check.ok) {
-        // Nominal tak cocok/hilang → JANGAN tandai lunas dari webhook.
-        // Status tetap akan tersinkron oleh pengecekan status server-side.
-        log.error("webhook_amount_invalid", {
-          orderCode: order.order_code,
-          reason: check.reason,
-          charged: params.amount,
-        });
-        return { handled: "ignored", reason: check.reason };
-      }
-      const res = await applyPaid(db, order, {
-        source: "webhook",
-        chargedAmount: params.amount,
-      });
-      return { handled: "paid", reason: res.changed ? undefined : res.reason };
-    }
-    case "expired":
-    case "failed": {
-      const changed = await applyExpired(db, order);
-      return { handled: "expired", reason: changed ? undefined : "already_processed" };
-    }
-    default:
-      log.warn("webhook_unknown_status", { orderCode: order.order_code });
-      return { handled: "ignored", reason: "status_unknown" };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// PEMBAYARAN MANUAL (QRIS statis penjual) — klaim buyer & verifikasi penjual
+// PEMBAYARAN MANUAL (WhatsApp) — klaim buyer & verifikasi penjual
 // ---------------------------------------------------------------------------
 /**
  * Buyer menyatakan "saya sudah transfer".
@@ -747,7 +474,7 @@ export async function claimManualPayment(
     throw new HttpError(
       409,
       ErrorCodes.conflict,
-      "Order ini memakai QRIS otomatis — statusnya terdeteksi sistem, tidak perlu konfirmasi manual.",
+      "Order arsip ini memakai QRIS otomatis (sudah tidak dipakai lagi), jadi tidak perlu konfirmasi manual.",
     );
   }
   if (order.payment_status === "PAID") {
@@ -844,11 +571,22 @@ export async function adminConfirmManualPayment(
     throw new HttpError(
       409,
       ErrorCodes.conflict,
-      "Order ini bukan pembayaran manual — statusnya diverifikasi otomatis oleh provider.",
+      "Order arsip ini bukan pembayaran manual — statusnya tidak bisa diverifikasi dari sini.",
     );
   }
   if (order.payment_status === "PAID") {
     throw new HttpError(409, ErrorCodes.conflict, "Pembayaran sudah diverifikasi sebelumnya.");
+  }
+  // Hanya order yang masih menunggu (atau telanjur kadaluarsa) yang bisa
+  // dikonfirmasi. Tanpa guard ini, mengonfirmasi order FAILED akan menandai
+  // review APPROVED padahal update pembayarannya tidak pernah terjadi
+  // (applyPaid hanya menyentuh PENDING/EXPIRED) — data jadi tidak konsisten.
+  if (order.payment_status !== "PENDING" && order.payment_status !== "EXPIRED") {
+    throw new HttpError(
+      409,
+      ErrorCodes.conflict,
+      `Status pembayaran ${order.payment_status} tidak bisa dikonfirmasi dari dashboard.`,
+    );
   }
 
   const expected = order.charged_amount ?? order.total_amount;
@@ -916,7 +654,7 @@ export async function adminRejectManualClaim(
   const order = await getAdminOrder(orderId);
   if (!order) throw new HttpError(404, ErrorCodes.notFound, "Order tidak ditemukan.");
   if (!isManualMethod(order.payment_method)) {
-    throw new HttpError(409, ErrorCodes.conflict, "Order ini bukan pembayaran manual.");
+    throw new HttpError(409, ErrorCodes.conflict, "Order arsip ini bukan pembayaran manual.");
   }
   if (!order.manual_claim_at) {
     throw new HttpError(409, ErrorCodes.conflict, "Belum ada konfirmasi pembayaran dari buyer.");

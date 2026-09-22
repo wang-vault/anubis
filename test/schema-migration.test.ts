@@ -13,8 +13,9 @@ import { describe, expect, it } from "vitest";
 import {
   BASE_ORDER_COLUMNS,
   MANUAL_ORDER_COLUMNS,
-  STENLY_MIGRATION_FILE,
-  STENLY_MIGRATION_SQL,
+  MANUAL_SETTINGS_COLUMNS,
+  WHATSAPP_PAYMENT_MIGRATION_FILE,
+  WHATSAPP_PAYMENT_MIGRATION_SQL,
 } from "@/lib/store-schema";
 
 const SQL_KEYWORDS = [
@@ -86,36 +87,45 @@ describe("BASE_ORDER_COLUMNS vs 001_schema.sql", () => {
 
 // ---------------------------------------------------------------------------
 /**
- * Migrasi provider Stenly (003): SQL yang ditempel penjual dari banner /admin
- * harus setara dengan file di repo. Kalau keduanya melenceng, penjual bisa
- * menjalankan constraint versi lain dari yang diharapkan kode.
+ * Migrasi WhatsApp (004): SQL yang ditempel penjual dari banner /admin harus
+ * setara dengan file di repo. Kalau keduanya melenceng, penjual bisa menambah
+ * kolom versi lain dari yang diharapkan kode (mis. nomor WhatsApp tersimpan
+ * tapi tetap dianggap "belum diatur").
  */
-describe("STENLY_MIGRATION_SQL vs 003_stenly_payment.sql", () => {
+describe("WHATSAPP_PAYMENT_MIGRATION_SQL vs 004_whatsapp_payment.sql", () => {
   const sqlFile = readFileSync(
-    fileURLToPath(new URL("../supabase/store/003_stenly_payment.sql", import.meta.url)),
+    fileURLToPath(new URL("../supabase/store/004_whatsapp_payment.sql", import.meta.url)),
     "utf-8",
   );
 
   it("nama file yang disebut kode = file yang ada di repo", () => {
-    expect(STENLY_MIGRATION_FILE).toBe("supabase/store/003_stenly_payment.sql");
+    expect(WHATSAPP_PAYMENT_MIGRATION_FILE).toBe("supabase/store/004_whatsapp_payment.sql");
     expect(sqlFile).toContain("AMAN DIJALANKAN BERULANG");
   });
 
-  it("keduanya melonggarkan constraint ke STENLY + MANUAL + YOBASEPAY", () => {
-    for (const sql of [STENLY_MIGRATION_SQL, sqlFile]) {
-      expect(sql).toContain("drop constraint orders_payment_method_check");
-      expect(sql).toContain("add constraint orders_payment_method_check");
-      expect(sql).toContain("check (payment_method in ('STENLY', 'MANUAL', 'YOBASEPAY'))");
-      expect(sql).toContain("alter column payment_method set default 'STENLY'");
+  it("keduanya menambah kolom WA, menjadikan MANUAL default, dan mereload schema cache", () => {
+    for (const sql of [WHATSAPP_PAYMENT_MIGRATION_SQL, sqlFile]) {
+      for (const col of MANUAL_SETTINGS_COLUMNS) {
+        expect(sql, `SQL tidak menambah kolom ${col}`).toContain(
+          `add column if not exists ${col}`,
+        );
+      }
+      expect(sql).toContain("alter column payment_method set default 'MANUAL'");
+      // Label default lama ("Transfer Manual (QRIS)") hanya dirapikan bila
+      // memang masih default — label buatan penjual tidak boleh ditimpa.
+      expect(sql).toContain("alter column label set default 'Transfer Manual (WhatsApp)'");
+      expect(sql).toContain("where id = 1 and label = 'Transfer Manual (QRIS)'");
       expect(sql).toContain("notify pgrst, 'reload schema'");
     }
   });
 
   /**
-   * Order YoBasePay lama HARUS tetap valid & tidak tersentuh. Migrasi yang
-   * menulis ulang baris (update/delete) akan merusak histori transaksi.
+   * Order YoBasePay/Stenly lama HARUS tetap valid & tidak tersentuh. Migrasi
+   * yang menulis ulang baris order (update/delete) akan merusak histori
+   * transaksi; menghapus nilai lama dari CHECK akan membuat baris itu ditolak
+   * saat dibaca ulang.
    */
-  it("tidak menulis ulang atau menghapus baris order yang sudah ada", () => {
+  it("nilai arsip tetap diizinkan & tidak ada baris order yang ditulis ulang", () => {
     const statements = sqlFile
       .split("\n")
       .filter((line) => !line.trim().startsWith("--"))
@@ -127,16 +137,23 @@ describe("STENLY_MIGRATION_SQL vs 003_stenly_payment.sql", () => {
     expect(statements).not.toMatch(/\bdrop\s+table\b/);
     expect(statements).not.toMatch(/\bdrop\s+column\b/);
     expect(statements).not.toMatch(/\btruncate\b/);
-    // 'YOBASEPAY' tetap diizinkan constraint baru → order arsip tetap terbaca.
+    // 'STENLY'/'YOBASEPAY' tetap diizinkan constraint baru → order arsip tetap terbaca.
+    expect(statements).toContain("'stenly'");
     expect(statements).toContain("'yobasepay'");
+    expect(statements).toContain("check (payment_method in ('manual', 'stenly', 'yobasepay'))");
   });
 
-  it("001_schema.sql (project baru) sudah memakai constraint & default yang sama", () => {
+  it("001_schema.sql (project baru) sudah memakai default & kolom yang sama", () => {
     const base = readFileSync(
       fileURLToPath(new URL("../supabase/store/001_schema.sql", import.meta.url)),
       "utf-8",
     );
-    expect(base).toContain("default 'STENLY'");
-    expect(base).toMatch(/payment_method\s+in\s+\('STENLY',\s*'MANUAL',\s*'YOBASEPAY'\)/);
+    expect(base).toContain("default 'MANUAL'");
+    expect(base).toMatch(/payment_method\s+in\s*\(\s*'MANUAL',\s*'STENLY',\s*'YOBASEPAY'\s*\)/);
+    for (const col of MANUAL_SETTINGS_COLUMNS) {
+      expect(base, `001_schema.sql tidak memuat kolom ${col}`).toContain(col);
+    }
+    // Satu-satunya label default metode = versi WhatsApp (bukan QRIS).
+    expect(base).not.toContain("Transfer Manual (QRIS)");
   });
 });

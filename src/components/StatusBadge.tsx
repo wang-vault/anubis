@@ -21,16 +21,16 @@ export function OrderStatusBadge({ status }: { status: OrderStatus }) {
 }
 
 const METHOD_MAP: Record<PaymentMethodId, { label: string; cls: string }> = {
-  STENLY: { label: "QRIS Otomatis", cls: "bg-sky-100 text-sky-800" },
-  MANUAL: { label: "Transfer Manual", cls: "bg-[#f6e6c8] text-amber-900" },
-  // Order lama dari provider otomatis sebelumnya — ditandai "arsip" agar
-  // penjual tahu transaksi itu tidak lagi bisa dicek ke provider.
+  MANUAL: { label: "Transfer via WhatsApp", cls: "bg-[#f6e6c8] text-amber-900" },
+  // Order ARSIP dari masa QRIS otomatis — tidak pernah dibuat lagi, tapi harus
+  // tetap terbaca di dashboard.
+  STENLY: { label: "QRIS Otomatis (arsip)", cls: "bg-slate-200 text-slate-700" },
   YOBASEPAY: { label: "QRIS Otomatis (arsip)", cls: "bg-slate-200 text-slate-700" },
 };
 
 /** Badge metode bayar (memudahkan penjual memisahkan antrian verifikasi). */
 export function PaymentMethodBadge({ method }: { method: PaymentMethodId }) {
-  const s = METHOD_MAP[method] ?? METHOD_MAP.STENLY;
+  const s = METHOD_MAP[method] ?? METHOD_MAP.MANUAL;
   return <span className={`badge ${s.cls}`}>{s.label}</span>;
 }
 
