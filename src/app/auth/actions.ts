@@ -1,6 +1,6 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { accountAdmin, accountServer } from "@/lib/supabase/server";
 import { emailSchema, loginSchema, passwordSchema, registerSchema } from "@/lib/validation";
@@ -8,6 +8,10 @@ import { rateLimit } from "@/lib/ratelimit";
 import { sanitizeNextPath } from "@/lib/next-url";
 import { serverEnv } from "@/lib/env";
 import { log } from "@/lib/logger";
+import {
+  PENDING_REGISTER_COOKIE,
+  PENDING_REGISTER_MAX_AGE,
+} from "@/lib/auth-redirects";
 
 /**
  * Seluruh alur autentikasi berjalan SERVER-SIDE memakai Supabase Auth
@@ -75,6 +79,17 @@ export async function signUpAction(
       return { error: "Pendaftaran gagal. Coba lagi atau hubungi penjual." };
     }
   }
+  // Tandai "baru mendaftar" (httpOnly, umur pendek): selama email belum
+  // diverifikasi, halaman /auth/register mengarahkan ke /auth/verify alih-alih
+  // menampilkan form daftar lagi (dicek di middleware + guardAuthPage).
+  const jar = await cookies();
+  jar.set(PENDING_REGISTER_COOKIE, "1", {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: PENDING_REGISTER_MAX_AGE,
+  });
   redirect("/auth/verify?registered=1");
 }
 
@@ -132,12 +147,19 @@ export async function signInAction(
     }
   }
 
+  // Login sukses & terverifikasi → pendaftaran dianggap selesai: hapus
+  // penanda "baru daftar" supaya form daftar bisa dibuka lagi bila perlu.
+  (await cookies()).delete(PENDING_REGISTER_COOKIE);
+
   redirect(sanitizeNext(formData.get("next"), isAdminRole ? "/admin" : "/"));
 }
 
 export async function signOutAction(): Promise<void> {
   const supabase = await accountServer();
   await supabase.auth.signOut();
+  // Keluar = mulai bersih: penanda "baru daftar" ikut dihapus supaya user
+  // bebas membuka form daftar lagi bila memang ingin mendaftar akun lain.
+  (await cookies()).delete(PENDING_REGISTER_COOKIE);
   redirect("/");
 }
 

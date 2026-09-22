@@ -4,7 +4,7 @@ Legenda: [AUTO] unit test (`npm test`) · [MANUAL] lewat browser/Telegram.
 Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 
 ## 0. Pra-syarat
-- [ ] `npm run typecheck`, `npm run build`, `npm test` hijau (15 file / 166 test)
+- [ ] `npm run typecheck`, `npm run build`, `npm test` hijau (18 file / 214 test)
 - [ ] 2 Supabase terpasang + SQL dijalankan (cek trigger & RLS — lihat docs masing-masing)
 - [ ] Supabase #2 sudah menjalankan `002_manual_payment.sql` (kolom `orders.payment_method` ada) **dan** `004_whatsapp_payment.sql` (kolom `manual_payment_settings.whatsapp_number` ada) — bila tidak, `/admin` menampilkan banner migrasi
 - [ ] Nomor WhatsApp penjual sudah diisi di `/admin/settings` (atau `WHATSAPP_SELLER_NUMBER`)

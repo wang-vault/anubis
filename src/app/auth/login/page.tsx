@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { LoginForm } from "@/components/AuthForms";
+import { guardAuthPage } from "@/lib/auth-guards";
 
 export const metadata: Metadata = { title: "Masuk" };
 
@@ -9,6 +10,11 @@ interface Props {
 
 export default async function LoginPage({ searchParams }: Props) {
   const { error, reset, next } = await searchParams;
+
+  // Sudah login → jangan tampilkan form masuk lagi (redirect ke next/home;
+  // belum verifikasi → /auth/verify). Middleware sudah melakukannya — ini pengulangan
+  // sengaja di server component (defense-in-depth).
+  await guardAuthPage({ pathname: "/auth/login", nextParam: next });
 
   return (
     <div className="container-x mx-auto max-w-md">

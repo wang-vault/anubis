@@ -1,10 +1,25 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import {
+  PENDING_REGISTER_COOKIE,
+  resolveAuthRedirect,
+} from "@/lib/auth-redirects";
 
 /**
  * Middleware (edge):
  *  1. Menyegarkan cookie session Supabase Auth (wajib untuk @supabase/ssr).
  *  2. Gate rute: /orders, /checkout, /pay → login; /admin → login.
+ *  3. Halaman auth hanya untuk TAMU:
+ *     - Sudah login (terverifikasi) → /auth/login, /auth/register,
+ *       /auth/forgot-password diarahkan ke ?next= atau "/",
+ *       /auth/verify diarahkan ke "/" (kecuali ?verified=1 = layar sukses),
+ *       /admin/login diarahkan ke /admin.
+ *     - Sudah login tapi belum verifikasi → diarahkan ke /auth/verify.
+ *     - BARU MENDAFTAR (belum verifikasi, belum bisa login) → /auth/register
+ *       diarahkan ke /auth/verify lewat cookie penanda (lihat auth/actions.ts).
+ *     Aturan ini disatukan di src/lib/auth-redirects.ts dan DIULANG di setiap
+ *     halaman auth (src/lib/auth-guards.ts) — pola defense-in-depth yang sama
+ *     dengan /admin (layout panel).
  *     CATATAN: middleware hanya mengecek ADA session. Verifikasi email,
  *     role admin, dan kepemilikan data SELALU ditegakkan ulang di
  *     server action / API route (requireVerifiedUser / requireAdmin).
@@ -50,24 +65,43 @@ export async function middleware(request: NextRequest) {
   if (!user && (isBuyerArea || isAdminArea)) {
     const loginUrl = new URL(isAdminArea ? "/admin/login" : "/auth/login", request.url);
     loginUrl.searchParams.set("next", pathname + request.nextUrl.search);
-    return NextResponse.redirect(loginUrl);
+    return redirectPreservingSession(request, response, loginUrl);
   }
 
-  // Area auth yang sudah login → lempar ke halaman berikutnya / home.
-  // Admin login page khusus: user yang sudah login diarahkan ke /admin
-  // (role dicek ulang di layout panel).
-  if (user && (pathname === "/auth/login" || pathname === "/auth/register")) {
-    const next = request.nextUrl.searchParams.get("next");
-    if (next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\")) {
-      return NextResponse.redirect(new URL(next, request.url));
-    }
-    return NextResponse.redirect(new URL("/", request.url));
-  }
-  if (user && pathname === "/admin/login") {
-    return NextResponse.redirect(new URL("/admin", request.url));
+  const authRedirect = resolveAuthRedirect({
+    pathname,
+    nextParam: request.nextUrl.searchParams.get("next"),
+    verifiedFlag: request.nextUrl.searchParams.get("verified") === "1",
+    authenticated: Boolean(user),
+    emailVerified: Boolean(user && (user.email_confirmed_at ?? user.confirmed_at)),
+    pendingRegistration: request.cookies.has(PENDING_REGISTER_COOKIE),
+  });
+  if (authRedirect) {
+    return redirectPreservingSession(request, response, new URL(authRedirect, request.url));
   }
 
   return response;
+}
+
+/**
+ * Redirect yang MEMBAWA cookie session hasil rotasi getUser().
+ *
+ * getUser() di middleware dapat memutar token Supabase; cookie baru tertulis
+ * di `response`. Bila redirect dikembalikan polos, cookie itu hilang — browser
+ * menyimpan refresh token LAMA yang sudah dirotasi, sehingga permintaan
+ * berikutnya getUser() gagal dan user yang sebenarnya login terlihat
+ * "logout" (disuguhi halaman daftar/masuk lagi).
+ */
+function redirectPreservingSession(
+  _request: NextRequest,
+  response: NextResponse,
+  location: URL,
+): NextResponse {
+  const redirect = NextResponse.redirect(location);
+  for (const cookie of response.cookies.getAll()) {
+    redirect.cookies.set(cookie);
+  }
+  return redirect;
 }
 
 export const config = {
@@ -78,5 +112,7 @@ export const config = {
     "/admin/:path*",
     "/auth/login",
     "/auth/register",
+    "/auth/forgot-password",
+    "/auth/verify",
   ],
 };
