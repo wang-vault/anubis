@@ -31,9 +31,17 @@ export default async function HomePage() {
             <Link href="/products" className="btn-primary">
               Baca Katalog →
             </Link>
-            <Link href="/auth/register" className="btn-secondary">
-              Buka Akun Gratis
-            </Link>
+            {/* CTA sekunder mengikuti status login — user yang sudah masuk tidak
+                disuguhi tautan daftar lagi (middleware menjadikannya dead link). */}
+            {ctx ? (
+              <Link href="/orders" className="btn-secondary">
+                Lihat Pesanan Saya →
+              </Link>
+            ) : (
+              <Link href="/auth/register" className="btn-secondary">
+                Buka Akun Gratis
+              </Link>
+            )}
           </div>
           <div className="hero-facts" aria-label="Keunggulan toko">
             <div className="hero-fact">
