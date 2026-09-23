@@ -143,9 +143,7 @@ export default function YouTubeDownloaderPage() {
           <div className="mt-4">
             <a
               href={`/api/youtube/download?url=${encodeURIComponent(result.url)}&filename=${encodeURIComponent(result.filename)}`}
-              download
-              target="_blank"
-              rel="noopener noreferrer"
+              download={result.filename}
               className="btn-primary"
               title={`Unduh video: ${result.filename}`}
             >
@@ -158,8 +156,8 @@ export default function YouTubeDownloaderPage() {
             </p>
           )}
           <p className="hint mt-3">
-            Tautan terbuka di tab baru. Bila unduhan tidak mulai otomatis: tekan lama (HP) atau klik kanan
-            (komputer) lalu pilih <em>“Simpan tautan/medianya”</em>.
+            Unduhan berjalan melalui server kami (tanpa membuka tab baru). Bila unduhan tidak mulai otomatis:
+            tekan lama (HP) atau klik kanan (komputer) lalu pilih <em>“Simpan tautan/medianya”</em>.
           </p>
         </article>
       )}
