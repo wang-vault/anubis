@@ -142,7 +142,7 @@ export default function YouTubeDownloaderPage() {
           </p>
           <div className="mt-4">
             <a
-              href={result.url}
+              href={`/api/youtube/download?url=${encodeURIComponent(result.url)}&filename=${encodeURIComponent(result.filename)}`}
               download
               target="_blank"
               rel="noopener noreferrer"
