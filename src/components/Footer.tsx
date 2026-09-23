@@ -29,6 +29,9 @@ export async function Footer() {
             <Link href="/testimoni" className="site-footer-link">
               Testimoni pembeli
             </Link>
+            <Link href="/tiktok" className="site-footer-link">
+              TikTok downloader
+            </Link>
             <Link href="/orders" className="site-footer-link">
               Pesanan saya
             </Link>

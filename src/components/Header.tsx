@@ -62,6 +62,14 @@ export async function Header() {
           <Link href="/testimoni" className="masthead-nav-link">
             Testimoni
           </Link>
+          {/* Alat gratis — ikut di navigasi utama supaya halamannya bisa dibuka
+              sekali klik dari halaman mana pun (tidak perlu mengetik URL). */}
+          <Link href="/tiktok" className="masthead-nav-link masthead-nav-link--tool">
+            <span className="masthead-nav-icon" aria-hidden>
+              ↓
+            </span>
+            TikTok Downloader
+          </Link>
           {ctx && (
             <Link href="/orders" className="masthead-nav-link">
               Pesanan Saya
