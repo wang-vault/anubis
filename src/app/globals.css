@@ -384,6 +384,18 @@
   transform: scaleX(1);
 }
 
+/* Alat gratis (TikTok Downloader): diberi warna aksen + ikon panah unduh agar
+   terbaca sebagai pintu masuk alat, bukan sekadar halaman biasa. */
+.masthead-nav-link--tool {
+  gap: 0.35rem;
+  color: var(--accent-dark);
+}
+
+.masthead-nav-icon {
+  font-size: 0.95em;
+  line-height: 1;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Front page / newspaper stories                                             */
 /* -------------------------------------------------------------------------- */
@@ -852,6 +864,75 @@
 }
 
 /* -------------------------------------------------------------------------- */
+/* Alat gratis (TikTok Downloader) — teaser beranda                           */
+/* -------------------------------------------------------------------------- */
+.tool-teaser {
+  display: grid;
+  gap: 1.1rem;
+  align-items: center;
+  border: 1px solid var(--rule-strong);
+  /* Pita merah di tepi kiri: penanda "alat", bukan berita toko. */
+  border-left: 6px solid var(--accent);
+  background: var(--paper-light);
+  padding: 1.1rem 1.25rem;
+  box-shadow: 4px 4px 0 rgb(33 31 27 / 0.11);
+}
+
+.tool-teaser-title {
+  margin-top: 0.3rem;
+  font-size: clamp(1.15rem, 2.6vw, 1.6rem);
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.tool-teaser-text {
+  margin-top: 0.4rem;
+  max-width: 46rem;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.tool-teaser-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+
+.tool-teaser-list li {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 0.25rem 0.5rem;
+  color: var(--ink-soft);
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tool-teaser-action {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+}
+
+.tool-teaser-note {
+  color: var(--ink-soft);
+  font-size: 0.65rem;
+}
+
+@media (min-width: 640px) {
+  .tool-teaser {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .tool-teaser-action {
+    justify-items: end;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Shared editorial surfaces                                                  */
 /* -------------------------------------------------------------------------- */
 .paper-inset {
@@ -1122,6 +1203,13 @@
 
   .masthead-nav-row::-webkit-scrollbar {
     display: none;
+  }
+
+  /* Di layar sempit baris navigasi bisa di-scroll horizontal (scrollbar
+     disembunyikan), jadi alat gratis ditaruh paling depan supaya tidak perlu
+     di-swipe dulu untuk ketemu. */
+  .masthead-nav-link--tool {
+    order: -1;
   }
 
   .hero-facts {

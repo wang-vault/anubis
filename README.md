@@ -37,6 +37,13 @@ penjual `/admin/products`. Bentuknya form GET (`?q=…`) — tanpa JS klien, has
 bisa di-bookmark, dan filter dikerjakan di memori atas daftar produk yang sudah
 dibaca server (nama + deskripsi + harga, min 2 huruf, hasil disorot).
 
+**TikTok Downloader** (`/tiktok`) adalah alat gratis terpisah dari toko: tempel
+tautan TikTok → unduh video tanpa watermark, dengan watermark, atau audionya.
+Tanpa login dan tanpa menyentuh database; satu-satunya jalur data adalah
+`GET /api/tiktok` (rate limit 10/menit/IP). Pintu masuknya ada di tiga tempat —
+navigasi utama header, daftar "Jelajahi" di footer, dan tombol besar di beranda —
+supaya pengunjung tidak perlu mengetik URL-nya.
+
 ## Arsitektur (satu halaman)
 
 ```
@@ -100,13 +107,14 @@ dibaca server (nama + deskripsi + harga, min 2 huruf, hasil disorot).
 ```
 src/
 ├── app/
-│   ├── (halaman publik)     page.tsx, products/, testimoni/, checkout/, pay/, orders/, auth/
+│   ├── (halaman publik)     page.tsx, products/, testimoni/, tiktok/, checkout/, pay/, orders/, auth/
 │   ├── admin/               login + (panel)/ dashboard, orders, products, settings
 │   │   └── (panel)/*        guard role admin di layout + ulang di setiap aksi
 │   └── api/
 │       ├── orders/          POST buat order, GET list
 │       ├── orders/[code]/   GET detail + /status (polling ringan)
 │       ├── payments/status/ GET status order untuk polling halaman /pay (tanpa provider)
+│       ├── tiktok/          alat gratis: ambil media video TikTok (publik, tanpa DB)
 │       └── admin/           CRUD produk & transisi order (hanya role admin)
 ├── lib/
 │   ├── env.ts               validasi env (fail-fast) — satu-satunya tempat baca process.env

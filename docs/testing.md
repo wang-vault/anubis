@@ -52,6 +52,13 @@ Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 - [ ] [MANUAL] Quantity 0/99/abc/UUID palsu → ditolak 400, tidak ada order yatim
 - [ ] [MANUAL] Belum ada nomor WA penjual → checkout menolak 503 "penjual belum mengatur nomor WhatsApp", **tidak ada** baris order baru
 
+## 3c. TIKTOK DOWNLOADER (alat publik /tiktok)
+- [ ] [MANUAL] Pintu masuknya ada & bisa diklik dari mana saja: menu **TikTok Downloader** di header (beranda, katalog, testimoni), tautan di footer, dan tombol **Buka TikTok Downloader** di beranda
+- [ ] [MANUAL] Di layar HP (≤639 px) tautan header tampil paling depan — tidak perlu di-swipe dulu
+- [ ] [MANUAL] Buka `/tiktok` tanpa login → tempel tautan TikTok → muncul sampul, judul, author, + 3 tombol unduh
+- [ ] [MANUAL] Tautan bukan TikTok / kosong → pesan error jelas; spam 11x dalam semenit → 429 dengan sisa waktu tunggu
+- [ ] [AUTO] Tautan `/tiktok` ada di Header, Footer, dan beranda + halaman `/tiktok` merender form (`test/tiktok-navigation.test.tsx`)
+
 ## 4. PEMBAYARAN MANUAL VIA WHATSAPP
 
 ### Setup & status

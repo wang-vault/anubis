@@ -70,6 +70,32 @@ export default async function HomePage() {
         </aside>
       </section>
 
+      {/* Pintu masuk alat gratis: tombol besar di beranda supaya pengunjung
+          tidak perlu mengetik alamat halaman /tiktok sendiri. */}
+      <section className="tool-teaser" aria-labelledby="tiktok-tool-title">
+        <div>
+          <p className="section-kicker">Alat gratis · Tanpa login</p>
+          <h2 id="tiktok-tool-title" className="tool-teaser-title">
+            TikTok Downloader
+          </h2>
+          <p className="tool-teaser-text">
+            Punya video TikTok yang ingin disimpan? Tempel tautannya di alat kami, lalu unduh videonya
+            tanpa watermark, dengan watermark, atau ambil audionya saja — gratis dan tidak perlu akun.
+          </p>
+          <ul className="tool-teaser-list">
+            <li>Tanpa watermark</li>
+            <li>Dengan watermark</li>
+            <li>Audio saja</li>
+          </ul>
+        </div>
+        <div className="tool-teaser-action">
+          <Link href="/tiktok" className="btn-primary">
+            Buka TikTok Downloader →
+          </Link>
+          <span className="tool-teaser-note">Batas 10 tautan per menit.</span>
+        </div>
+      </section>
+
       <section aria-labelledby="how-it-works-title">
         <div className="section-heading">
           <div>

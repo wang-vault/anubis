@@ -124,6 +124,25 @@ Auth #1** (via server action, cookie session). Link email selalu mendarat di:
 ### GET /auth/callback?token_hash=…&type=email|recovery[&next=/…]
 (juga menerima `?code=…` untuk PKCE) → membuat session → redirect.
 
+## Alat publik: TikTok Downloader
+
+### GET /api/tiktok?url=https://www.tiktok.com/@user/video/…
+**Tanpa login, tanpa database** — halaman `/tiktok` memakainya untuk mengambil
+info & tautan media sebuah video TikTok lewat API pihak ketiga (tikwm.com).
+```jsonc
+{ "ok": true, "title": "…", "cover": "https://…",
+  "play": "https://…",   // tanpa watermark
+  "wmplay": "https://…", // dengan watermark
+  "music": "https://…",  // audio saja
+  "duration": 15, "author": { "nickname": "…", "avatar": "https://…" } }
+```
+- URL divalidasi: hanya host `tiktok.com` (termasuk `vm.`/`vt.`/`m.`); tautan
+  tanpa scheme (`vm.tiktok.com/…`) diterima dan dinormalkan.
+- Rate limit 10 request / 60 detik / IP (429 bila lewat).
+- 422 bila video tidak punya media yang bisa diunduh (postingan foto/privat);
+  502/504 bila server TikTok tidak merespons (timeout 15 detik).
+- Endpoint ini **tidak menyentuh** order, pembayaran, maupun Supabase.
+
 ## Konvensi yang berlaku di semua endpoint
 1. Input divalidasi zod (400 rapi, pesan pertama).
 2. Otorisasi sebelum query (requireUser / requireVerifiedUser / requireAdmin).

@@ -93,6 +93,22 @@ untuk siapa saja, **tanpa perlu daftar/login**. Nama pembeli ditulis singkat
 (mis. "Budi S.") dan tidak ada data pribadi (nomor WhatsApp, email, kode
 pesanan, nominal) yang ditampilkan.
 
+## 13. Alat gratis: TikTok Downloader (tanpa login)
+Selain berbelanja, toko ini punya satu alat gratis: **TikTok Downloader**.
+Membukanya: menu **TikTok Downloader** di navigasi atas, tautan **TikTok
+downloader** di footer, atau tombol **Buka TikTok Downloader** di beranda.
+
+1. Tempel tautan video TikTok (mis. `https://www.tiktok.com/@user/video/…`,
+   atau tautan pendek `vm.tiktok.com/…` / `vt.tiktok.com/…`).
+2. Tekan **Proses →**.
+3. Pilih unduhan: **Video Tanpa Watermark**, **Video + Watermark**, atau
+   **Audio Saja**. Tautan terbuka di tab baru; bila unduhan tidak mulai
+   otomatis, tekan lama (HP) atau klik kanan (komputer) → *Simpan tautannya*.
+4. Ada batas 10 tautan per menit per alamat internet. Alat ini tidak butuh
+   akun dan tidak mengubah data pesananmu.
+
+⚠️ Unduh hanya konten milikmu sendiri atau yang kamu punya izinnya.
+
 ## FAQ buyer
 | Tanya | Jawab |
 |---|---|
