@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { storeDb } from "@/lib/supabase/server";
+import { DeleteProductButton } from "@/components/admin/DeleteProductButton";
 import { ProductForm } from "@/components/admin/ProductForm";
 import type { ProductRow } from "@/lib/types";
 
@@ -39,6 +40,7 @@ export default async function EditProductPage({ params }: Props) {
         <div className="mt-5">
           <ProductForm product={data} />
         </div>
+        <DeleteProductButton productId={data.id} />
       </div>
     </div>
   );

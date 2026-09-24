@@ -196,4 +196,11 @@ describe("/admin/products — pencarian daftar produk penjual", () => {
     const html = await renderAdmin("kopi");
     expect(html).toContain('value="/admin/products?q=kopi"');
   });
+
+  it("menampilkan notifikasi setelah produk dihapus", async () => {
+    const el = await AdminProductsPage({ searchParams: Promise.resolve({ deleted: "1" }) });
+    const html = renderToStaticMarkup(el);
+    expect(html).toContain("🗑️ Produk berhasil dihapus.");
+    expect(html).toContain("alert-info");
+  });
 });

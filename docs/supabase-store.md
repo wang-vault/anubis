@@ -139,8 +139,12 @@ Sebagai buyer, coba `curl -X PATCH /api/admin/products/<id> -b "<cookie buyer>"`
 
 - `price` integer: input form sudah menolak nilai < 1000; jangan pakai sen/pecahan.
 - Non-aktif produk = `is_active=false` (order lama tetap utuh, produk hilang
-  dari katalog & checkout menolak). Jangan `DELETE` produk yang sudah dipesan
-  — FK `on delete restrict` akan menolaknya (disengaja).
+  dari katalog & checkout menolak).
+- Hapus permanen lewat `DELETE /api/admin/products/{id}` (tombol di halaman
+  edit). Ditolak (409) bila masih ada pesanan yang statusnya bukan
+  cancelled/refunded. FK `on delete restrict` tetap menolak penghapusan bila
+  ada baris order yang mereferensi produk — disengaja, agar histori tidak
+  menggantung.
 - Tidak ada backup otomatis? Supabase free/hobby = backup 7 hari; produksi:
   nyalakan PITR bila paket Anda menyediakan. Minimal: rutin
   `pg_dump` via **Database → Database Settings → Connection string**.

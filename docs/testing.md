@@ -27,6 +27,7 @@ Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 - [ ] [MANUAL] Admin tambah produk → langsung tampil di katalog (tag revalidasi bekerja)
 - [ ] [MANUAL] Edit harga → order lama tidak berubah (cek snapshot `unit_price_snapshot`)
 - [ ] [MANUAL] Nonaktifkan produk → hilang dari katalog; `/products/{id}` tampil "Tidak tersedia"; checkout produk tsb ditolak
+- [ ] [MANUAL] Hapus produk dari halaman edit: konfirmasi browser → daftar menampilkan "Produk berhasil dihapus"; produk yang masih punya pesanan aktif ditolak (409, pesan di form, tidak terhapus)
 - [ ] [MANUAL] Buyer view: list, detail, harga format Rp (integer DB)
 - [ ] [MANUAL] Input produk invalid (harga <1000, teks kepanjangan) → ditolak dengan pesan jelas
 - [ ] [MANUAL] Katalog `/products`: cari `kopi` → hasil menyusut + kata kunci disorot + hitungan "N dari M produk cocok"; tekan **Hapus** → daftar penuh kembali
