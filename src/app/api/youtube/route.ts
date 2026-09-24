@@ -202,6 +202,9 @@ async function fetchFromCobalt(videoUrl: string): Promise<CobaltResponse> {
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
+        ...(process.env.COBALT_API_KEY
+          ? { Authorization: `Api-Key ${process.env.COBALT_API_KEY}` }
+          : {}),
       },
       body: JSON.stringify({
         url: videoUrl,
