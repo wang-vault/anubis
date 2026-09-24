@@ -52,12 +52,16 @@ Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 - [ ] [MANUAL] Quantity 0/99/abc/UUID palsu → ditolak 400, tidak ada order yatim
 - [ ] [MANUAL] Belum ada nomor WA penjual → checkout menolak 503 "penjual belum mengatur nomor WhatsApp", **tidak ada** baris order baru
 
-## 3c. TIKTOK DOWNLOADER (alat publik /tiktok)
-- [ ] [MANUAL] Pintu masuknya ada & bisa diklik dari mana saja: menu **TikTok Downloader** di header (beranda, katalog, testimoni), tautan di footer, dan tombol **Buka TikTok Downloader** di beranda
-- [ ] [MANUAL] Di layar HP (≤639 px) tautan header tampil paling depan — tidak perlu di-swipe dulu
+## 3c. DOWNLOADER (alat publik: pemilih /downloader → /tiktok, /youtube, /instagram)
+- [ ] [MANUAL] Satu pintu masuk dari mana saja: tombol **↓ Downloader** di header (beranda, katalog, testimoni, dashboard penjual), tautan **Downloader** di footer, dan tombol **Buka Downloader** di beranda — semuanya membuka `/downloader`
+- [ ] [MANUAL] Header/footer/beranda **tidak** punya tautan langsung ke `/tiktok`, `/youtube`, atau `/instagram` — pilihan platform hanya di `/downloader`
+- [ ] [MANUAL] Di layar < 1024 px (HP/tablet) tombol **↓ Downloader** tampil paling depan di strip navigasi — tidak perlu di-swipe dulu; saat login sebagai penjual (5 tautan) strip bisa di-swipe, tautan tidak patah dua baris, dan halaman tidak ikut scroll horizontal. Di ≥ 1024 px tombolnya di ujung kanan
+- [ ] [MANUAL] `/downloader` tanpa login → 3 kartu (TikTok, YouTube, Instagram), masing-masing dengan tombol **Buka … Downloader** yang membuka halamannya
+- [ ] [MANUAL] Setiap halaman downloader punya tautan **← Pilih downloader lain** kembali ke `/downloader`
 - [ ] [MANUAL] Buka `/tiktok` tanpa login → tempel tautan TikTok → muncul sampul, judul, author, + 3 tombol unduh
-- [ ] [MANUAL] Tautan bukan TikTok / kosong → pesan error jelas; spam 11x dalam semenit → 429 dengan sisa waktu tunggu
-- [ ] [AUTO] Tautan `/tiktok` ada di Header, Footer, dan beranda + halaman `/tiktok` merender form (`test/tiktok-navigation.test.tsx`)
+- [ ] [MANUAL] `/youtube` & `/instagram` (butuh env `COBALT_API_URL`) → tempel tautan → tombol **↓ Download Video**; env kosong → pesan "Layanan downloader sedang tidak tersedia" (bukan crash)
+- [ ] [MANUAL] Tautan bukan dari platformnya / kosong → pesan error jelas; spam 11x dalam semenit → 429 dengan sisa waktu tunggu
+- [ ] [AUTO] Tepat satu tautan `/downloader` (tanpa tautan langsung ke downloader) di Header — tamu & penjual — Footer, dan beranda; `/downloader` menampilkan tombol untuk setiap entri `src/lib/downloaders.ts` yang halamannya benar-benar ada; halaman publik (tidak di-gate middleware); setiap halaman downloader punya tautan kembali + form (`test/downloader-navigation.test.tsx`)
 
 ## 4. PEMBAYARAN MANUAL VIA WHATSAPP
 

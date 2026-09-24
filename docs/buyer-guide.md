@@ -93,19 +93,29 @@ untuk siapa saja, **tanpa perlu daftar/login**. Nama pembeli ditulis singkat
 (mis. "Budi S.") dan tidak ada data pribadi (nomor WhatsApp, email, kode
 pesanan, nominal) yang ditampilkan.
 
-## 13. Alat gratis: TikTok Downloader (tanpa login)
-Selain berbelanja, toko ini punya satu alat gratis: **TikTok Downloader**.
-Membukanya: menu **TikTok Downloader** di navigasi atas, tautan **TikTok
-downloader** di footer, atau tombol **Buka TikTok Downloader** di beranda.
+## 13. Alat gratis: Downloader (tanpa login)
+Selain berbelanja, toko ini punya alat gratis untuk menyimpan video dari
+**TikTok**, **YouTube**, dan **Instagram**. Semuanya dibuka dari satu tempat:
 
-1. Tempel tautan video TikTok (mis. `https://www.tiktok.com/@user/video/…`,
-   atau tautan pendek `vm.tiktok.com/…` / `vt.tiktok.com/…`).
-2. Tekan **Proses →**.
-3. Pilih unduhan: **Video Tanpa Watermark**, **Video + Watermark**, atau
-   **Audio Saja**. Tautan terbuka di tab baru; bila unduhan tidak mulai
-   otomatis, tekan lama (HP) atau klik kanan (komputer) → *Simpan tautannya*.
-4. Ada batas 10 tautan per menit per alamat internet. Alat ini tidak butuh
-   akun dan tidak mengubah data pesananmu.
+1. Tekan tombol **↓ Downloader** di navigasi atas (ada di semua halaman), tautan
+   **Downloader** di footer, atau tombol **Buka Downloader** di beranda.
+2. Halaman **Pilih downloader** muncul. Tekan tombol platform asal videonya:
+   **Buka TikTok Downloader**, **Buka YouTube Downloader**, atau **Buka
+   Instagram Downloader**.
+3. Tempel tautan videonya, lalu tekan **Proses →**:
+
+   | Downloader | Tautan yang diterima | Hasil |
+   |---|---|---|
+   | TikTok | `tiktok.com/@user/video/…`, `vm.tiktok.com/…`, `vt.tiktok.com/…` | **Video Tanpa Watermark**, **Video + Watermark**, atau **Audio Saja** |
+   | YouTube | `youtube.com/watch?v=…`, `youtu.be/…`, `youtube.com/shorts/…` | **Download Video** (MP4) |
+   | Instagram | `instagram.com/reel/…`, `instagram.com/p/…` | **Download Video** |
+
+4. Bila unduhan tidak mulai otomatis, tekan lama (HP) atau klik kanan
+   (komputer) → *Simpan tautannya*.
+5. Mau ganti platform? Tekan **← Pilih downloader lain** di atas halaman.
+
+Tiap downloader dibatasi 10 tautan per menit per alamat internet. Alat ini tidak
+butuh akun dan tidak mengubah data pesananmu.
 
 ⚠️ Unduh hanya konten milikmu sendiri atau yang kamu punya izinnya.
 

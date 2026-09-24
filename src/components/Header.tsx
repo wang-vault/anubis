@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getAuthContext, isAdmin } from "@/lib/authz";
 import { signOutAction } from "@/app/auth/actions";
 import { ActionButton } from "@/components/ActionButton";
+import { DOWNLOADER_HUB_PATH } from "@/lib/downloaders";
 
 /** Header publik (server component — tanpa client JS). */
 export async function Header() {
@@ -62,14 +63,6 @@ export async function Header() {
           <Link href="/testimoni" className="masthead-nav-link">
             Testimoni
           </Link>
-          {/* Alat gratis — ikut di navigasi utama supaya halamannya bisa dibuka
-              sekali klik dari halaman mana pun (tidak perlu mengetik URL). */}
-          <Link href="/tiktok" className="masthead-nav-link masthead-nav-link--tool">
-            <span className="masthead-nav-icon" aria-hidden>
-              ↓
-            </span>
-            TikTok Downloader
-          </Link>
           {ctx && (
             <Link href="/orders" className="masthead-nav-link">
               Pesanan Saya
@@ -83,6 +76,17 @@ export async function Header() {
           <span className="ml-auto hidden pr-1 text-[10px] font-bold tracking-[0.16em] text-slate-400 sm:inline">
             Edisi No. 01
           </span>
+          {/* SATU tombol untuk semua downloader (TikTok, YouTube, Instagram) →
+              halaman pemilih; pengunjung memilih platformnya di sana. Tampil di
+              semua halaman (termasuk dashboard penjual). Layar ≥1024 px: ujung
+              kanan; di bawahnya: paling depan dari strip navigasi yang bisa
+              di-scroll (lihat .masthead-nav-link--tool di globals.css). */}
+          <Link href={DOWNLOADER_HUB_PATH} className="masthead-nav-link masthead-nav-link--tool">
+            <span className="masthead-nav-icon" aria-hidden>
+              ↓
+            </span>
+            Downloader
+          </Link>
         </nav>
       </div>
     </header>

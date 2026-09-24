@@ -384,11 +384,39 @@
   transform: scaleX(1);
 }
 
-/* Alat gratis (TikTok Downloader): diberi warna aksen + ikon panah unduh agar
-   terbaca sebagai pintu masuk alat, bukan sekadar halaman biasa. */
+/* Tombol "Downloader": SATU pintu masuk ke halaman pemilih downloader
+   (/downloader). Dibentuk seperti tombol — bingkai tinta + bayangan offset +
+   ikon panah unduh — bukan tautan teks, supaya terbaca sebagai alat, bukan
+   halaman toko. */
 .masthead-nav-link--tool {
-  gap: 0.35rem;
+  flex: 0 0 auto;
+  gap: 0.4rem;
+  min-height: 1.75rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0.15rem;
   color: var(--accent-dark);
+  background: var(--paper-light);
+  box-shadow: 2px 2px 0 rgb(33 31 27 / 0.16);
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+/* Tanpa garis bawah animasi milik tautan navigasi biasa. */
+.masthead-nav-link--tool::after {
+  content: none;
+}
+
+.masthead-nav-link--tool:hover {
+  border-color: var(--accent-dark);
+  color: var(--paper-light);
+  background: var(--accent);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 rgb(33 31 27 / 0.2);
 }
 
 .masthead-nav-icon {
@@ -864,7 +892,7 @@
 }
 
 /* -------------------------------------------------------------------------- */
-/* Alat gratis (TikTok Downloader) — teaser beranda                           */
+/* Alat gratis (Downloader) — teaser beranda                                  */
 /* -------------------------------------------------------------------------- */
 .tool-teaser {
   display: grid;
@@ -929,6 +957,150 @@
 
   .tool-teaser-action {
     justify-items: end;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Halaman pemilih downloader (/downloader) + tautan kembali                  */
+/* -------------------------------------------------------------------------- */
+.downloader-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.downloader-card {
+  --tone: var(--ink);
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 0.85rem;
+  border: 1px solid var(--rule-strong);
+  /* Pita warna platform di tepi atas — penanda cepat saat memindai kartu. */
+  border-top: 6px solid var(--tone);
+  background: var(--paper-light);
+  padding: 1.1rem 1.2rem 1.25rem;
+  box-shadow: 4px 4px 0 rgb(33 31 27 / 0.11);
+}
+
+.downloader-card--ink {
+  --tone: var(--ink);
+}
+
+.downloader-card--accent {
+  --tone: var(--accent);
+}
+
+.downloader-card--mustard {
+  --tone: var(--mustard);
+}
+
+.downloader-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px dotted var(--rule);
+  padding-bottom: 0.8rem;
+}
+
+/* Monogram platform — sepupu monogram "AN" di masthead. */
+.downloader-mark {
+  display: grid;
+  width: 2.6rem;
+  height: 2.6rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid var(--ink);
+  color: var(--paper-light);
+  background: var(--tone);
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+/* Mustard terlalu terang untuk teks putih — pakai tinta. */
+.downloader-card--mustard .downloader-mark {
+  color: var(--ink);
+}
+
+.downloader-card-kicker {
+  color: var(--ink-soft);
+  font-size: 0.6rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.downloader-card-title {
+  margin-top: 0.2rem;
+  font-size: 1.15rem;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.downloader-card-text {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.downloader-card .tool-teaser-list {
+  margin-top: 0;
+}
+
+.downloader-card-accepts {
+  color: var(--ink-soft);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.downloader-card-accepts-label {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+/* Tombol tiap downloader: selebar kartu & selalu rata bawah, walau panjang
+   teks kartunya berbeda. */
+.downloader-card-action {
+  width: 100%;
+  margin-top: auto;
+  text-align: center;
+}
+
+/* "← Pilih downloader lain" di atas setiap halaman downloader. */
+.downloader-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.9rem;
+  color: var(--accent-dark);
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.downloader-back-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* Tablet: masih satu kolom (tiga kolom di sini membuat label tombol patah dua
+   baris), jadi kartunya lebar — tombol kembali selebar isinya. */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .downloader-card-action {
+    width: auto;
+    align-self: flex-start;
+  }
+}
+
+/* Desktop: tiga kartu berdampingan, mudah dibandingkan sekilas. */
+@media (min-width: 1024px) {
+  .downloader-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -1184,6 +1356,27 @@
   }
 }
 
+/* Baris navigasi di bawah 1024 px: isinya bisa lebih lebar dari layar (user
+   login punya sampai 5 tautan + tombol Downloader), jadi dijadikan strip satu
+   baris yang bisa di-scroll horizontal (scrollbar disembunyikan) — tautan
+   tidak patah jadi dua baris — dan tombol Downloader (di desktop ada di ujung
+   kanan) ditaruh paling depan supaya selalu terlihat tanpa di-swipe. */
+@media (max-width: 1023px) {
+  .masthead-nav-row {
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+  }
+
+  .masthead-nav-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .masthead-nav-link--tool {
+    order: -1;
+  }
+}
+
 @media (max-width: 639px) {
   .masthead-brand-row {
     align-items: flex-start;
@@ -1197,19 +1390,6 @@
 
   .masthead-nav-row {
     gap: 0.8rem;
-    overflow-x: auto;
-    white-space: nowrap;
-  }
-
-  .masthead-nav-row::-webkit-scrollbar {
-    display: none;
-  }
-
-  /* Di layar sempit baris navigasi bisa di-scroll horizontal (scrollbar
-     disembunyikan), jadi alat gratis ditaruh paling depan supaya tidak perlu
-     di-swipe dulu untuk ketemu. */
-  .masthead-nav-link--tool {
-    order: -1;
   }
 
   .hero-facts {

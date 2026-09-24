@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listActiveProducts } from "@/lib/products";
 import { getAuthContext } from "@/lib/authz";
 import { ProductCard } from "@/components/ProductCard";
+import { DOWNLOADER_HUB_PATH, DOWNLOADERS } from "@/lib/downloaders";
 
 const HOW_IT_WORKS = [
   { n: "01", t: "Pilih berita utama", d: "Buka katalog, baca detailnya, lalu pilih produk yang paling cocok." },
@@ -70,29 +71,30 @@ export default async function HomePage() {
         </aside>
       </section>
 
-      {/* Pintu masuk alat gratis: tombol besar di beranda supaya pengunjung
-          tidak perlu mengetik alamat halaman /tiktok sendiri. */}
-      <section className="tool-teaser" aria-labelledby="tiktok-tool-title">
+      {/* Pintu masuk alat gratis: SATU tombol ke halaman pemilih downloader —
+          pengunjung baru memilih TikTok / YouTube / Instagram di sana. Chip
+          platform hanya keterangan (bukan tautan). */}
+      <section className="tool-teaser" aria-labelledby="downloader-tool-title">
         <div>
           <p className="section-kicker">Alat gratis · Tanpa login</p>
-          <h2 id="tiktok-tool-title" className="tool-teaser-title">
-            TikTok Downloader
+          <h2 id="downloader-tool-title" className="tool-teaser-title">
+            Downloader
           </h2>
           <p className="tool-teaser-text">
-            Punya video TikTok yang ingin disimpan? Tempel tautannya di alat kami, lalu unduh videonya
-            tanpa watermark, dengan watermark, atau ambil audionya saja — gratis dan tidak perlu akun.
+            Mau menyimpan video dari media sosial? Buka halaman downloader, pilih platformnya, lalu tempel
+            tautannya — gratis dan tidak perlu akun.
           </p>
-          <ul className="tool-teaser-list">
-            <li>Tanpa watermark</li>
-            <li>Dengan watermark</li>
-            <li>Audio saja</li>
+          <ul className="tool-teaser-list" aria-label="Platform yang didukung">
+            {DOWNLOADERS.map((tool) => (
+              <li key={tool.slug}>{tool.platform}</li>
+            ))}
           </ul>
         </div>
         <div className="tool-teaser-action">
-          <Link href="/tiktok" className="btn-primary">
-            Buka TikTok Downloader →
+          <Link href={DOWNLOADER_HUB_PATH} className="btn-primary">
+            Buka Downloader →
           </Link>
-          <span className="tool-teaser-note">Batas 10 tautan per menit.</span>
+          <span className="tool-teaser-note">{DOWNLOADERS.length} platform · pilih di halaman berikutnya</span>
         </div>
       </section>
 

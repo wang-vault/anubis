@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getAuthContext, isAdmin } from "@/lib/authz";
+import { DOWNLOADER_HUB_PATH } from "@/lib/downloaders";
 
 /** Footer publik (server component). Link akun menyesuaikan status login:
  *  tamu melihat masuk/daftar, user login melihat pesanan/dashboard — bukan
@@ -29,8 +30,9 @@ export async function Footer() {
             <Link href="/testimoni" className="site-footer-link">
               Testimoni pembeli
             </Link>
-            <Link href="/tiktok" className="site-footer-link">
-              TikTok downloader
+            {/* Satu tautan untuk semua downloader → halaman pemilih. */}
+            <Link href={DOWNLOADER_HUB_PATH} className="site-footer-link">
+              Downloader
             </Link>
             <Link href="/orders" className="site-footer-link">
               Pesanan saya
