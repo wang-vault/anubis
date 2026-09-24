@@ -37,11 +37,16 @@ Produk → **Edit** → ganti harga → Simpan.
 Harga baru hanya berlaku untuk **order berikutnya**. Order lama tetap memakai
 harga snapshot — jadi Anda bebas koreksi harga kapan pun tanpa merusak histori.
 
-## D. Menonaktifkan produk
+## D. Menonaktifkan atau menghapus produk
 Tombol **Nonaktifkan** di daftar produk = `is_active=false`:
 hilang dari katalog, tidak bisa di-checkout, order/produk tetap aman.
-**Aktifkan** mengembalikannya. (Hapus produk permanen tidak disediakan dari UI —
-sengaja, agar histori FK tidak rusak.)
+**Aktifkan** mengembalikannya.
+
+Hapus permanen: **Produk → Edit → Hapus Produk**. Browser meminta konfirmasi
+("Yakin hapus produk ini? Tindakan tidak bisa dibatalkan."). Berhasil → kembali
+ke daftar dengan pesan produk terhapus. Ditolak bila masih ada pesanan aktif
+(status bukan cancelled/refunded) — order lama menyimpan snapshot harga, tetapi
+baris order tetap mereferensi produk (`on delete restrict`).
 
 ## E. Melihat order
 Menu **Order**. Tab filter (Semua/**Verifikasi Manual**/Belum Bayar/Perlu

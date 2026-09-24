@@ -11,7 +11,7 @@ import { HighlightText } from "@/components/HighlightText";
 export const metadata: Metadata = { title: "Produk — Admin" };
 
 interface Props {
-  searchParams: Promise<{ created?: string; saved?: string; q?: string }>;
+  searchParams: Promise<{ created?: string; saved?: string; deleted?: string; q?: string }>;
 }
 
 export default async function AdminProductsPage({ searchParams }: Props) {
@@ -59,6 +59,7 @@ export default async function AdminProductsPage({ searchParams }: Props) {
 
       {sp.created === "1" && <p className="alert-info">✅ Produk berhasil dibuat.</p>}
       {sp.saved === "1" && <p className="alert-info">✅ Perubahan produk tersimpan.</p>}
+      {sp.deleted === "1" && <p className="alert-info">🗑️ Produk berhasil dihapus.</p>}
 
       {products.length === 0 ? (
         // Katalog masih kosong → ajakan menambah produk (bukan pesan pencarian).

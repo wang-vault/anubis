@@ -92,6 +92,16 @@ Validasi: name 2–120, price 1.000–100.000.000 int, image https-opsional.
 → `201 {ok, product}`.
 ### PATCH /api/admin/products/{id}
 Subset field yang sama (parsial). Nonaktifkan produk: `{"is_active":false}`.
+### DELETE /api/admin/products/{id}
+Hapus produk. `200 {ok, deleted:true}`.
+- ID bukan UUID → 400.
+- Produk tidak ada → 404.
+- Masih ada pesanan dengan `order_status` selain `cancelled`/`refunded`
+  (tidak peka huruf) → 409
+  `"Produk tidak bisa dihapus karena masih ada pesanan aktif."`
+- FK `orders.product_id … on delete restrict` tetap menolak bila ada baris
+  order yang mereferensi produk (termasuk balapan setelah pengecekan) — API
+  memetakan pelanggaran itu ke 409 yang sama, bukan 500.
 
 ### GET /api/admin/orders?status=PAID&q=ORD-...
 `{ok, count, orders:[OrderRow…]}` (maks 200 terbaru). `status=CLAIM` → antrian
