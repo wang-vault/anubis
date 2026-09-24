@@ -37,12 +37,23 @@ penjual `/admin/products`. Bentuknya form GET (`?q=…`) — tanpa JS klien, has
 bisa di-bookmark, dan filter dikerjakan di memori atas daftar produk yang sudah
 dibaca server (nama + deskripsi + harga, min 2 huruf, hasil disorot).
 
-**TikTok Downloader** (`/tiktok`) adalah alat gratis terpisah dari toko: tempel
-tautan TikTok → unduh video tanpa watermark, dengan watermark, atau audionya.
-Tanpa login dan tanpa menyentuh database; satu-satunya jalur data adalah
-`GET /api/tiktok` (rate limit 10/menit/IP). Pintu masuknya ada di tiga tempat —
-navigasi utama header, daftar "Jelajahi" di footer, dan tombol besar di beranda —
-supaya pengunjung tidak perlu mengetik URL-nya.
+**Downloader** adalah alat gratis terpisah dari toko (tanpa login, tanpa
+menyentuh database), dengan **satu pintu masuk**: tombol **↓ Downloader** di
+navigasi header (tampil di semua halaman, termasuk dashboard penjual), tautan
+**Downloader** di footer, dan tombol **Buka Downloader** di beranda — ketiganya
+menuju halaman pemilih **`/downloader`**. Di sana pengunjung baru memilih
+platformnya; setiap downloader punya kartu + tombolnya sendiri:
+
+| Downloader | Halaman | API (rate limit 10/menit/IP) | Isi unduhan |
+|---|---|---|---|
+| TikTok | `/tiktok` | `GET /api/tiktok` (tikwm.com) | video tanpa/dengan watermark, audio |
+| YouTube | `/youtube` | `GET /api/youtube` (Cobalt, `COBALT_API_URL`) | video & Shorts MP4 H.264 |
+| Instagram | `/instagram` | `GET /api/instagram` (Cobalt, `COBALT_API_URL`) | video reel & post |
+
+Daftar kartunya dibaca dari satu file, `src/lib/downloaders.ts`. Menambah
+downloader baru = buat halamannya di `src/app/<slug>/page.tsx` + tambah satu
+entri di sana; header, footer, dan beranda tidak perlu disentuh. Setiap halaman
+downloader punya tautan **← Pilih downloader lain** kembali ke `/downloader`.
 
 ## Arsitektur (satu halaman)
 
@@ -107,7 +118,8 @@ supaya pengunjung tidak perlu mengetik URL-nya.
 ```
 src/
 ├── app/
-│   ├── (halaman publik)     page.tsx, products/, testimoni/, tiktok/, checkout/, pay/, orders/, auth/
+│   ├── (halaman publik)     page.tsx, products/, testimoni/, checkout/, pay/, orders/, auth/
+│   ├── (alat gratis)        downloader/ (halaman pemilih) → tiktok/, youtube/, instagram/
 │   ├── admin/               login + (panel)/ dashboard, orders, products, settings
 │   │   └── (panel)/*        guard role admin di layout + ulang di setiap aksi
 │   └── api/
@@ -115,6 +127,7 @@ src/
 │       ├── orders/[code]/   GET detail + /status (polling ringan)
 │       ├── payments/status/ GET status order untuk polling halaman /pay (tanpa provider)
 │       ├── tiktok/          alat gratis: ambil media video TikTok (publik, tanpa DB)
+│       ├── youtube/ instagram/  alat gratis via Cobalt (publik, tanpa DB)
 │       └── admin/           CRUD produk & transisi order (hanya role admin)
 ├── lib/
 │   ├── env.ts               validasi env (fail-fast) — satu-satunya tempat baca process.env
@@ -128,6 +141,7 @@ src/
 │   ├── auth-redirects.ts    aturan routing halaman auth (tamu/login/belum-verifikasi/baru-daftar) — murni, dipakai middleware + guard
 │   ├── auth-guards.ts       guardAuthPage: pengulangan aturan itu di Server Component (defense-in-depth)
 │   ├── testimonials.ts      testimoni otomatis dari order DONE (publik, maks 20, kolom non-sensitif saja)
+│   ├── downloaders.ts       daftar downloader untuk halaman pemilih /downloader (satu sumber data)
 │   ├── supabase/            klien server (anon, service-role) — dijamin tak masuk bundle browser
 │   ├── integrations/        telegram.ts (satu-satunya integrasi eksternal)
 │   ├── api.ts               HttpError + handler terpusat (pesan user aman, detail ke log)

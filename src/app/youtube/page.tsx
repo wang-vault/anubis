@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { DownloaderBackLink } from "@/components/DownloaderBackLink";
 
 /**
  * Halaman YouTube Downloader — fitur PUBLIK terpisah dari toko (tanpa login,
@@ -68,6 +69,7 @@ export default function YouTubeDownloaderPage() {
 
   return (
     <div className="container-x max-w-3xl">
+      <DownloaderBackLink />
       <div className="paper-heading">
         <p className="section-kicker">Alat gratis · Tanpa login</p>
         <h1 className="paper-heading-title">YouTube Downloader</h1>
