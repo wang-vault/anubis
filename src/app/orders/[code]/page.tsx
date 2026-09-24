@@ -93,6 +93,13 @@ export default async function OrderDetailPage({ params }: Props) {
         {order.order_status === "DONE" && (
           <p className="alert-info mt-3">Pesanan selesai. Terima kasih sudah belanja! 🎉</p>
         )}
+        {order.payment_status === "PAID" && (
+          <div className="mt-4 border-t border-dotted border-slate-300 pt-4">
+            <Link href={`/orders/${order.order_code}/receipt`} className="btn-secondary btn-sm">
+              🧾 Download Struk
+            </Link>
+          </div>
+        )}
       </div>
 
       <OrderTimeline order={order} />
