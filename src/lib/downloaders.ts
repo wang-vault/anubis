@@ -73,4 +73,15 @@ export const DOWNLOADERS: readonly DownloaderTool[] = [
     features: ["Reel", "Post video"],
     accepts: ["instagram.com/reel", "instagram.com/p"],
   },
+  {
+    slug: "audio",
+    platform: "YouTube",
+    name: "Audio Extractor",
+    href: "/audio",
+    mark: "MP",
+    tone: "mustard",
+    description: "Ekstrak audio dari video YouTube dan unduh sebagai MP3. Gratis dan tanpa login.",
+    features: ["MP3", "Tanpa login", "YouTube & Shorts"],
+    accepts: ["youtube.com/watch", "youtu.be", "youtube.com/shorts"],
+  },
 ];
