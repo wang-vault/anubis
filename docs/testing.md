@@ -64,6 +64,14 @@ Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 - [ ] [MANUAL] Tautan bukan dari platformnya / kosong → pesan error jelas; spam 11x dalam semenit → 429 dengan sisa waktu tunggu
 - [ ] [AUTO] Tepat satu tautan `/downloader` (tanpa tautan langsung ke downloader) di Header — tamu & penjual — Footer, dan beranda; `/downloader` menampilkan tombol untuk setiap entri `src/lib/downloaders.ts` yang halamannya benar-benar ada; halaman publik (tidak di-gate middleware); setiap halaman downloader punya tautan kembali + form (`test/downloader-navigation.test.tsx`)
 
+## 3d. HALAMAN TENTANG (publik /about)
+- [ ] [MANUAL] Buka `/about` TANPA login → tampil (tidak diarahkan ke login); link ada di header ("Tentang") & footer ("Tentang kami")
+- [ ] [MANUAL] FAQ bisa dibuka-tutup tanpa JavaScript (elemen `<details>`), dan halaman tetap rapi di layar HP
+- [ ] [MANUAL] Ubah **masa berlaku pesanan** di `/admin/settings` → angka "… menit" di `/about` (fakta hero + FAQ) ikut berubah tanpa deploy
+- [ ] [MANUAL] Nomor WhatsApp penjual terisi → tombol **Chat Penjual di WhatsApp** membuka chat ke nomor itu; nomor dikosongkan → tombol diganti penjelasan (tidak ada tombol mati)
+- [ ] [MANUAL] Tamu melihat CTA **Buat Akun Gratis**; setelah login CTA-nya **Lihat Pesanan Saya** (tidak ada tautan yang memantul balik)
+- [ ] [AUTO] Halaman publik (tidak di-gate middleware); masa bayar mengikuti pengaturan penjual; tombol WA hanya saat nomor ada; tepat satu tautan `/downloader` tanpa tautan langsung ke downloader; Header & Footer menautkan `/about` tepat sekali (`test/about-page.test.tsx`)
+
 ## 4. PEMBAYARAN MANUAL VIA WHATSAPP
 
 ### Setup & status

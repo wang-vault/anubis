@@ -119,6 +119,19 @@ butuh akun dan tidak mengubah data pesananmu.
 
 ⚠️ Unduh hanya konten milikmu sendiri atau yang kamu punya izinnya.
 
+## 14. Tentang kami (profil toko, tanpa login)
+Menu **Tentang** di navigasi atas (atau **Tentang kami** di footer) membuka
+halaman `/about`. Isinya: penjelasan singkat toko ini, alur belanja dalam 4
+langkah, prinsip yang dipegang penjual (harga dihitung server, klaim transfer
+bukan berarti lunas, kode unik nominal, detail bayar selalu dikirim di chat),
+daftar pertanyaan yang sering masuk, dan tombol **Chat Penjual di WhatsApp**
+untuk bertanya **sebelum** memesan.
+
+Bedanya dengan tombol WhatsApp di halaman pembayaran: tombol di `/about` untuk
+pertanyaan umum (stok, varian, ongkir), sedangkan tombol di halaman pembayaran
+sudah membawa **kode pesanan + nominal** — pakai yang itu untuk urusan pesanan
+yang sudah dibuat.
+
 ## FAQ buyer
 | Tanya | Jawab |
 |---|---|

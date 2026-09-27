@@ -63,6 +63,9 @@ export async function Header() {
           <Link href="/testimoni" className="masthead-nav-link">
             Testimoni
           </Link>
+          <Link href="/about" className="masthead-nav-link">
+            Tentang
+          </Link>
           {ctx && (
             <Link href="/orders" className="masthead-nav-link">
               Pesanan Saya

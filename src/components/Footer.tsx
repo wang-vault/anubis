@@ -30,6 +30,9 @@ export async function Footer() {
             <Link href="/testimoni" className="site-footer-link">
               Testimoni pembeli
             </Link>
+            <Link href="/about" className="site-footer-link">
+              Tentang kami
+            </Link>
             {/* Satu tautan untuk semua downloader → halaman pemilih. */}
             <Link href={DOWNLOADER_HUB_PATH} className="site-footer-link">
               Downloader

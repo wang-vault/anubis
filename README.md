@@ -37,6 +37,15 @@ penjual `/admin/products`. Bentuknya form GET (`?q=…`) — tanpa JS klien, has
 bisa di-bookmark, dan filter dikerjakan di memori atas daftar produk yang sudah
 dibaca server (nama + deskripsi + harga, min 2 huruf, hasil disorot).
 
+**Halaman Tentang** (`/about`) adalah profil toko yang bisa dibaca **tanpa
+akun**: apa toko ini, alur belanja 4 langkah, prinsip yang memang ditegakkan
+kode (harga server-side, klaim ≠ lunas, kode unik nominal), FAQ `<details>`
+tanpa JS klien, dan tombol chat penjual. Angka yang disebut di halaman itu
+dibaca dari pengaturan penjual (`/admin/settings`) — masa berlaku pesanan,
+nomor & nama penjual — jadi tidak ada nilai yang ditulis keras. Bila nomor
+WhatsApp belum diisi, tombol chat diganti penjelasan (bukan tombol mati).
+Tautannya ada di header (**Tentang**) dan footer (**Tentang kami**).
+
 **Downloader** adalah alat gratis terpisah dari toko (tanpa login, tanpa
 menyentuh database), dengan **satu pintu masuk**: tombol **↓ Downloader** di
 navigasi header (tampil di semua halaman, termasuk dashboard penjual), tautan
@@ -118,7 +127,7 @@ downloader punya tautan **← Pilih downloader lain** kembali ke `/downloader`.
 ```
 src/
 ├── app/
-│   ├── (halaman publik)     page.tsx, products/, testimoni/, checkout/, pay/, orders/, auth/
+│   ├── (halaman publik)     page.tsx, products/, testimoni/, about/, checkout/, pay/, orders/, auth/
 │   ├── (alat gratis)        downloader/ (halaman pemilih) → tiktok/, youtube/, instagram/
 │   ├── admin/               login + (panel)/ dashboard, orders, products, settings
 │   │   └── (panel)/*        guard role admin di layout + ulang di setiap aksi

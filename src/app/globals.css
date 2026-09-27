@@ -1105,6 +1105,123 @@
 }
 
 /* -------------------------------------------------------------------------- */
+/* About page                                                                 */
+/* -------------------------------------------------------------------------- */
+/* Empat langkah alur belanja: 1 kolom di HP, 2 di tablet, sebaris di desktop. */
+.about-steps {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.about-values {
+  display: grid;
+  gap: 0.8rem;
+}
+
+@media (min-width: 640px) {
+  .about-steps,
+  .about-values {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .about-steps {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .about-values {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.about-value-mark {
+  display: grid;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--rule-strong);
+  color: var(--ink);
+  background: var(--paper-deep);
+  font-family: var(--font-serif);
+  font-size: 0.85rem;
+  font-weight: 900;
+  box-shadow: 2px 2px 0 rgb(33 31 27 / 0.12);
+}
+
+/* FAQ memakai <details> asli: buka-tutup tanpa satu baris JS pun. */
+.about-faq {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.about-faq-item {
+  border: 1px solid var(--rule);
+  background: var(--paper-light);
+}
+
+.about-faq-item[open] {
+  border-color: var(--rule-strong);
+  box-shadow: 3px 3px 0 rgb(33 31 27 / 0.1);
+}
+
+.about-faq-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.95rem;
+  cursor: pointer;
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  font-weight: 900;
+  list-style: none;
+}
+
+.about-faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.about-faq-item summary::after {
+  flex: 0 0 auto;
+  content: "+";
+  color: var(--accent-dark);
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.about-faq-item[open] summary::after {
+  content: "–";
+}
+
+.about-faq-answer {
+  border-top: 1px dotted var(--rule);
+  padding: 0.75rem 0.95rem;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+
+.about-contact {
+  display: grid;
+  gap: 1.1rem;
+  border: 1px solid var(--rule-strong);
+  border-top: 5px solid var(--accent);
+  padding: clamp(1.1rem, 3vw, 1.75rem);
+  background: var(--paper-light);
+  box-shadow: 4px 4px 0 rgb(33 31 27 / 0.11);
+}
+
+@media (min-width: 768px) {
+  .about-contact {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr);
+    align-items: center;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Shared editorial surfaces                                                  */
 /* -------------------------------------------------------------------------- */
 .paper-inset {
