@@ -154,19 +154,20 @@ function parseYouTubeUrl(raw: string): string {
         "URL YouTube tidak lengkap — tambahkan ID videonya, mis. https://youtu.be/dQw4w9WgXcQ",
       );
     }
-    return parsed.toString();
+    return `https://youtu.be/${id}`;
   }
 
   // youtube.com/watch?v=<id>
   if (parsed.pathname === "/watch") {
-    if (!parsed.searchParams.get("v")) {
+    const v = parsed.searchParams.get("v");
+    if (!v) {
       throw new HttpError(
         400,
         ErrorCodes.validation,
         "URL YouTube tidak lengkap — link /watch butuh parameter ?v=<ID video>.",
       );
     }
-    return parsed.toString();
+    return `https://www.youtube.com/watch?v=${v}`;
   }
 
   // youtube.com/shorts/<id>
@@ -179,13 +180,26 @@ function parseYouTubeUrl(raw: string): string {
         "URL YouTube tidak lengkap — tambahkan ID short-nya, mis. https://www.youtube.com/shorts/…",
       );
     }
-    return parsed.toString();
+    return `https://www.youtube.com/shorts/${id}`;
+  }
+
+  // youtube.com/live/<id>
+  if (path.startsWith("/live/")) {
+    const id = path.slice("/live/".length).split("/")[0];
+    if (!id) {
+      throw new HttpError(
+        400,
+        ErrorCodes.validation,
+        "URL YouTube tidak lengkap — tambahkan ID live-nya, mis. https://www.youtube.com/live/…",
+      );
+    }
+    return `https://www.youtube.com/live/${id}`;
   }
 
   throw new HttpError(
     400,
     ErrorCodes.validation,
-    "Hanya link video YouTube yang didukung — youtube.com/watch?v=…, youtu.be/…, atau youtube.com/shorts/…",
+    "Hanya link video YouTube yang didukung — youtube.com/watch?v=…, youtu.be/…, youtube.com/shorts/…, atau youtube.com/live/…",
   );
 }
 
