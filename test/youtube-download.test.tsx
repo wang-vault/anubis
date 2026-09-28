@@ -50,25 +50,74 @@ describe("GET /api/youtube/download", () => {
     expect(body.error).toBe("Parameter url wajib diisi.");
   });
 
-  it("menolak request bila url bukan dari domain Cobalt yang diset di COBALT_API_URL (403)", async () => {
+  it("meneruskan tunnel dari origin/subdomain lain — Cobalt tidak selalu memakai origin COBALT_API_URL (200)", async () => {
+    // Regresi bug "file 0B": dulu URL dikunci ke origin COBALT_API_URL,
+    // sehingga tunnel dari subdomain lain ditolak 403 dan stream jadi kosong.
     const { GET } = await import("@/app/api/youtube/download/route");
+    mockFetchOk();
+
+    const res = await GET(
+      makeReq(
+        `url=${encodeURIComponent("https://tunnel-eu-3.up.railway.app/tunnel?id=abc")}&filename=test.mp4`,
+        "10.0.0.2",
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(FAKE_STREAM_DATA);
+  });
+
+  it("menolak URL non-HTTPS (403)", async () => {
+    const { GET } = await import("@/app/api/youtube/download/route");
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
 
     const badUrls = [
-      "https://google.com/video.mp4",
-      "https://youtube.com/watch?v=123",
-      "https://attacker-cobalt.up.railway.app/video.mp4",
-      "https://cobalt.up.railway.app.attacker.com/video.mp4",
+      "http://cobalt.up.railway.app/video.mp4",
       "javascript:alert(1)",
+      "data:text/plain,halo",
+      "file:///etc/passwd",
     ];
 
+    let ip = 20;
     for (const badUrl of badUrls) {
       const res = await GET(
-        makeReq(`url=${encodeURIComponent(badUrl)}&filename=test.mp4`, "10.0.0.2"),
+        makeReq(`url=${encodeURIComponent(badUrl)}&filename=test.mp4`, `10.0.1.${ip++}`),
+      );
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toContain("URL tidak diizinkan.");
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("menolak URL yang menunjuk ke host lokal/privat — anti-SSRF (403)", async () => {
+    const { GET } = await import("@/app/api/youtube/download/route");
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const badUrls = [
+      "https://localhost/video.mp4",
+      "https://127.0.0.1/video.mp4",
+      "https://0.0.0.0/video.mp4",
+      "https://10.1.2.3/video.mp4",
+      "https://192.168.1.10/video.mp4",
+      "https://172.16.5.4/video.mp4",
+      "https://172.31.255.255/video.mp4",
+      "https://169.254.169.254/latest/meta-data/",
+      "https://2130706433/video.mp4", // 127.0.0.1 bentuk desimal
+      "https://[::1]/video.mp4",
+      "https://[fd00::1]/video.mp4",
+    ];
+
+    let ip = 50;
+    for (const badUrl of badUrls) {
+      const res = await GET(
+        makeReq(`url=${encodeURIComponent(badUrl)}&filename=test.mp4`, `10.0.2.${ip++}`),
       );
       expect(res.status).toBe(403);
       const body = await res.json();
       expect(body.error).toBe("URL tidak diizinkan.");
     }
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("menolak string URL yang tidak bisa di-parse (400)", async () => {
@@ -82,7 +131,7 @@ describe("GET /api/youtube/download", () => {
     expect(body.error).toBe("URL tidak valid.");
   });
 
-  it("mengizinkan URL apa pun bila COBALT_API_URL tidak diset (perhatian: open proxy)", async () => {
+  it("mengizinkan URL HTTPS publik lain tanpa bergantung pada COBALT_API_URL", async () => {
     delete process.env.COBALT_API_URL;
     const { GET } = await import("@/app/api/youtube/download/route");
     mockFetchOk();
