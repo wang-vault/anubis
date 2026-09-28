@@ -317,8 +317,7 @@ export default async function AboutPage() {
             gratis, tanpa akun, dan terpisah dari data toko.
           </p>
           <ul className="tool-teaser-list" aria-label="Platform yang didukung">
-            {/* Satu chip per platform: beberapa alat berbagi platform yang sama
-                (mis. YouTube punya downloader video & pengekstrak audio). */}
+            {/* Satu chip per platform: beberapa alat bisa berbagi platform yang sama. */}
             {platforms.map((platform) => (
               <li key={platform}>{platform}</li>
             ))}

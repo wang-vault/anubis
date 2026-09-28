@@ -79,7 +79,7 @@ export async function Header() {
           <span className="ml-auto hidden pr-1 text-[10px] font-bold tracking-[0.16em] text-slate-400 sm:inline">
             Edisi No. 01
           </span>
-          {/* SATU tombol untuk semua downloader (TikTok, YouTube, Instagram) →
+          {/* SATU tombol untuk semua downloader (TikTok, Instagram) →
               halaman pemilih; pengunjung memilih platformnya di sana. Tampil di
               semua halaman (termasuk dashboard penjual). Layar ≥1024 px: ujung
               kanan; di bawahnya: paling depan dari strip navigasi yang bisa

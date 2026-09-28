@@ -3,7 +3,7 @@
  *
  * Alurnya sengaja satu pintu:
  *   tombol "Downloader" (header · footer · beranda) → halaman pemilih
- *   /downloader → pengunjung memilih TikTok / YouTube / Instagram.
+ *   /downloader → pengunjung memilih TikTok / Instagram.
  *
  * Halaman lain TIDAK menautkan tiap downloader satu per satu — cukup ke
  * DOWNLOADER_HUB_PATH. Menambah downloader baru = buat halamannya di
@@ -52,17 +52,6 @@ export const DOWNLOADERS: readonly DownloaderTool[] = [
     accepts: ["tiktok.com", "vm.tiktok.com", "vt.tiktok.com"],
   },
   {
-    slug: "youtube",
-    platform: "YouTube",
-    name: "YouTube Downloader",
-    href: "/youtube",
-    mark: "YT",
-    tone: "accent",
-    description: "Unduh video atau Shorts YouTube sebagai MP4 (H.264) yang bisa diputar di hampir semua perangkat.",
-    features: ["Video", "Shorts", "MP4 H.264"],
-    accepts: ["youtube.com/watch", "youtu.be", "youtube.com/shorts"],
-  },
-  {
     slug: "instagram",
     platform: "Instagram",
     name: "Instagram Downloader",
@@ -72,16 +61,5 @@ export const DOWNLOADERS: readonly DownloaderTool[] = [
     description: "Unduh video dari reel atau post Instagram cukup dengan menempel tautannya.",
     features: ["Reel", "Post video"],
     accepts: ["instagram.com/reel", "instagram.com/p"],
-  },
-  {
-    slug: "audio",
-    platform: "YouTube",
-    name: "Audio Extractor",
-    href: "/audio",
-    mark: "MP",
-    tone: "mustard",
-    description: "Ekstrak audio dari video YouTube dan unduh sebagai MP3. Gratis dan tanpa login.",
-    features: ["MP3", "Tanpa login", "YouTube & Shorts"],
-    accepts: ["youtube.com/watch", "youtu.be", "youtube.com/shorts"],
   },
 ];

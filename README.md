@@ -56,7 +56,6 @@ platformnya; setiap downloader punya kartu + tombolnya sendiri:
 | Downloader | Halaman | API (rate limit 10/menit/IP) | Isi unduhan |
 |---|---|---|---|
 | TikTok | `/tiktok` | `GET /api/tiktok` (tikwm.com) | video tanpa/dengan watermark, audio |
-| YouTube | `/youtube` | `GET /api/youtube` (Cobalt, `COBALT_API_URL`) | video & Shorts MP4 H.264 |
 | Instagram | `/instagram` | `GET /api/instagram` (Cobalt, `COBALT_API_URL`) | video reel & post |
 
 Daftar kartunya dibaca dari satu file, `src/lib/downloaders.ts`. Menambah
@@ -128,7 +127,7 @@ downloader punya tautan **← Pilih downloader lain** kembali ke `/downloader`.
 src/
 ├── app/
 │   ├── (halaman publik)     page.tsx, products/, testimoni/, about/, checkout/, pay/, orders/, auth/
-│   ├── (alat gratis)        downloader/ (halaman pemilih) → tiktok/, youtube/, instagram/
+│   ├── (alat gratis)        downloader/ (halaman pemilih) → tiktok/, instagram/
 │   ├── admin/               login + (panel)/ dashboard, orders, products, settings
 │   │   └── (panel)/*        guard role admin di layout + ulang di setiap aksi
 │   └── api/
@@ -136,7 +135,7 @@ src/
 │       ├── orders/[code]/   GET detail + /status (polling ringan)
 │       ├── payments/status/ GET status order untuk polling halaman /pay (tanpa provider)
 │       ├── tiktok/          alat gratis: ambil media video TikTok (publik, tanpa DB)
-│       ├── youtube/ instagram/  alat gratis via Cobalt (publik, tanpa DB)
+│       ├── instagram/            alat gratis via Cobalt (publik, tanpa DB)
 │       └── admin/           CRUD produk & transisi order (hanya role admin)
 ├── lib/
 │   ├── env.ts               validasi env (fail-fast) — satu-satunya tempat baca process.env

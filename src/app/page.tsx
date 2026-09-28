@@ -72,7 +72,7 @@ export default async function HomePage() {
       </section>
 
       {/* Pintu masuk alat gratis: SATU tombol ke halaman pemilih downloader —
-          pengunjung baru memilih TikTok / YouTube / Instagram di sana. Chip
+          pengunjung baru memilih TikTok / Instagram di sana. Chip
           platform hanya keterangan (bukan tautan). */}
       <section className="tool-teaser" aria-labelledby="downloader-tool-title">
         <div>
