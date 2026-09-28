@@ -95,20 +95,19 @@ pesanan, nominal) yang ditampilkan.
 
 ## 13. Alat gratis: Downloader (tanpa login)
 Selain berbelanja, toko ini punya alat gratis untuk menyimpan video dari
-**TikTok**, **YouTube**, dan **Instagram**. Semuanya dibuka dari satu tempat:
+**TikTok** dan **Instagram**. Semuanya dibuka dari satu tempat:
 
 1. Tekan tombol **↓ Downloader** di navigasi atas (ada di semua halaman), tautan
    **Downloader** di footer, atau tombol **Buka Downloader** di beranda.
 2. Halaman **Pilih downloader** muncul. Tekan tombol platform asal videonya:
-   **Buka TikTok Downloader**, **Buka YouTube Downloader**, atau **Buka
+   **Buka TikTok Downloader** atau **Buka
    Instagram Downloader**.
 3. Tempel tautan videonya, lalu tekan **Proses →**:
 
    | Downloader | Tautan yang diterima | Hasil |
    |---|---|---|
    | TikTok | `tiktok.com/@user/video/…`, `vm.tiktok.com/…`, `vt.tiktok.com/…` | **Video Tanpa Watermark**, **Video + Watermark**, atau **Audio Saja** |
-   | YouTube | `youtube.com/watch?v=…`, `youtu.be/…`, `youtube.com/shorts/…` | **Download Video** (MP4) |
-   | Instagram | `instagram.com/reel/…`, `instagram.com/p/…` | **Download Video** |
+      | Instagram | `instagram.com/reel/…`, `instagram.com/p/…` | **Download Video** |
 
 4. Bila unduhan tidak mulai otomatis, tekan lama (HP) atau klik kanan
    (komputer) → *Simpan tautannya*.

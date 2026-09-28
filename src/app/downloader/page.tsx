@@ -5,7 +5,7 @@ import { DOWNLOADERS } from "@/lib/downloaders";
 export const metadata: Metadata = {
   title: "Downloader",
   description:
-    "Pilih downloader gratis tanpa login: TikTok (tanpa watermark / audio), YouTube (video & Shorts), atau Instagram (reel & post).",
+    "Pilih downloader gratis tanpa login: TikTok (tanpa watermark / audio) atau Instagram (reel & post).",
 };
 
 /**

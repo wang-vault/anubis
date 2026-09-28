@@ -3,7 +3,7 @@
  *
  * Aturannya: halaman lain (header, footer, beranda) cukup punya SATU tombol
  * "Downloader" menuju halaman pemilih /downloader. Di sana pengunjung baru
- * memilih TikTok / YouTube / Instagram — masing-masing dengan tombolnya
+ * memilih TikTok / Instagram — masing-masing dengan tombolnya
  * sendiri. File ini mengunci janji itu:
  *  - Header (tamu & penjual yang sedang di dashboard), Footer, beranda:
  *    tepat satu tautan ke /downloader dan TIDAK ada tautan langsung ke
@@ -104,8 +104,8 @@ describe("halaman lain: cukup satu tombol Downloader → /downloader", () => {
 });
 
 describe("halaman pemilih /downloader", () => {
-  it("memuat TikTok, YouTube, dan Instagram", () => {
-    expect(DOWNLOADERS.map((t) => t.slug)).toEqual(expect.arrayContaining(["tiktok", "youtube", "instagram"]));
+  it("memuat TikTok dan Instagram", () => {
+    expect(DOWNLOADERS.map((t) => t.slug)).toEqual(expect.arrayContaining(["tiktok", "instagram"]));
   });
 
   it("setiap downloader punya kartu + tombolnya sendiri", () => {
