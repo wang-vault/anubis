@@ -1,22 +1,13 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { clientIp, rateLimit } from "@/lib/ratelimit";
+import { checkDownloadUrl } from "@/lib/safe-url";
 
 export const dynamic = "force-dynamic";
 
 const RATE_LIMIT_MAX = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const FETCH_TIMEOUT_MS = 60_000;
-
-function cobaltOrigin(): string {
-  const raw = process.env.COBALT_API_URL?.trim() ?? "";
-  if (!raw) return "";
-  try {
-    return new URL(raw).origin;
-  } catch {
-    return "";
-  }
-}
 
 export async function GET(request: NextRequest) {
   const rl = rateLimit(
@@ -39,18 +30,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Parameter url wajib diisi." }, { status: 400 });
   }
 
-  const allowedOrigin = cobaltOrigin();
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(rawUrl);
-  } catch {
-    return NextResponse.json({ error: "URL tidak valid." }, { status: 400 });
-  }
-
-  if (allowedOrigin && parsedUrl.origin !== allowedOrigin) {
+  // Tunnel Cobalt bisa datang dari origin/subdomain lain, jadi URL tidak
+  // dikunci ke COBALT_API_URL — cukup dipastikan HTTPS & bukan alamat internal.
+  const checked = checkDownloadUrl(rawUrl);
+  if (!checked.ok) {
     return NextResponse.json(
-      { error: "URL tidak diizinkan." },
-      { status: 403 },
+      { error: checked.error },
+      { status: checked.status },
     );
   }
 
