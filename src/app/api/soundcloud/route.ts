@@ -26,6 +26,7 @@ export const dynamic = "force-dynamic";
 const SERVICE = "soundcloud";
 const RATE_LIMIT_MAX = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
+const SHORT_URL_TIMEOUT_MS = 10_000;
 
 const INVALID_URL_MESSAGE =
   "URL tidak valid. Tempelkan link lagu SoundCloud yang lengkap, mis. https://soundcloud.com/artis/judul-lagu";
@@ -62,8 +63,79 @@ function isSoundCloudHost(hostname: string): boolean {
   return hostname === "soundcloud.com" || hostname.endsWith(".soundcloud.com");
 }
 
-/** Validasi URL lagu + ambil slug-nya (dipakai untuk nama file cadangan). */
-function parseSoundCloudUrl(raw: string): { url: string; id: string } {
+/** Resolve tautan pendek SoundCloud sampai URL aslinya. */
+async function resolveShortSoundCloudUrl(shortUrl: string): Promise<URL> {
+  let response: Response;
+  try {
+    response = await fetch(shortUrl, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: AbortSignal.timeout(SHORT_URL_TIMEOUT_MS),
+    });
+  } catch {
+    throw new HttpError(
+      400,
+      ErrorCodes.validation,
+      `Tautan pendek SoundCloud tidak dapat dibuka. ${TRACK_HINT}`,
+    );
+  }
+
+  try {
+    return new URL(response.url);
+  } catch {
+    throw new HttpError(
+      400,
+      ErrorCodes.validation,
+      `Tautan pendek SoundCloud tidak mengarah ke URL yang valid. ${TRACK_HINT}`,
+    );
+  }
+}
+
+/** Validasi URL lagu/playlist + ambil slug-nya (dipakai untuk nama file cadangan). */
+function parseResolvedSoundCloudUrl(parsed: URL): { url: string; id: string } {
+  const host = parsed.hostname.toLowerCase();
+
+  if (!isSoundCloudHost(host) || host === "on.soundcloud.com") {
+    throw new HttpError(
+      400,
+      ErrorCodes.validation,
+      "Hanya URL SoundCloud yang didukung (soundcloud.com/artis/judul-lagu).",
+    );
+  }
+
+  parsed.search = "";
+
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  const user = segments[0] ?? "";
+  const trackOrSets = segments[1] ?? "";
+  const playlist = segments[2] ?? "";
+
+  if (!user || RESERVED_SEGMENTS.has(user.toLowerCase())) {
+    throw new HttpError(400, ErrorCodes.validation, `Hanya tautan lagu yang didukung. ${TRACK_HINT}`);
+  }
+  if (!trackOrSets) {
+    throw new HttpError(
+      400,
+      ErrorCodes.validation,
+      `Tautan itu mengarah ke profil artis, bukan satu lagu. ${TRACK_HINT}`,
+    );
+  }
+  if (trackOrSets.toLowerCase() === "sets") {
+    if (!playlist) {
+      throw new HttpError(
+        400,
+        ErrorCodes.validation,
+        `Tautan playlist belum lengkap. ${TRACK_HINT}`,
+      );
+    }
+    return { url: parsed.toString(), id: `${user}-sets-${playlist}` };
+  }
+
+  return { url: parsed.toString(), id: `${user}-${trackOrSets}` };
+}
+
+/** Validasi URL lagu/playlist + ambil slug-nya (dipakai untuk nama file cadangan). */
+async function parseSoundCloudUrl(raw: string): Promise<{ url: string; id: string }> {
   const parsed = parseUserUrl(raw, INVALID_URL_MESSAGE);
   const host = parsed.hostname.toLowerCase();
 
@@ -75,10 +147,12 @@ function parseSoundCloudUrl(raw: string): { url: string; id: string } {
     );
   }
 
+  parsed.search = "";
+
   const segments = parsed.pathname.split("/").filter(Boolean);
 
   // Tautan pendek dari tombol Bagikan: on.soundcloud.com/<kode>.
-  // Isinya belum bisa dibaca dari URL — biar Cobalt yang mengikuti redirect.
+  // Cobalt butuh URL asli, jadi ikuti redirect dulu lalu validasi hasilnya.
   if (host === "on.soundcloud.com") {
     const code = segments[0] ?? "";
     if (!code) {
@@ -88,31 +162,12 @@ function parseSoundCloudUrl(raw: string): { url: string; id: string } {
         `Tautan on.soundcloud.com belum lengkap. ${TRACK_HINT}`,
       );
     }
-    return { url: parsed.toString(), id: code };
+
+    const resolved = await resolveShortSoundCloudUrl(parsed.toString());
+    return parseResolvedSoundCloudUrl(resolved);
   }
 
-  const user = segments[0] ?? "";
-  const track = segments[1] ?? "";
-
-  if (!user || RESERVED_SEGMENTS.has(user.toLowerCase())) {
-    throw new HttpError(400, ErrorCodes.validation, `Hanya tautan lagu yang didukung. ${TRACK_HINT}`);
-  }
-  if (!track) {
-    throw new HttpError(
-      400,
-      ErrorCodes.validation,
-      `Tautan itu mengarah ke profil artis, bukan satu lagu. ${TRACK_HINT}`,
-    );
-  }
-  if (track.toLowerCase() === "sets") {
-    throw new HttpError(
-      400,
-      ErrorCodes.validation,
-      "Tautan playlist/album belum didukung — unduh satu per satu. Buka salah satu lagunya, lalu salin tautan lagu itu.",
-    );
-  }
-
-  return { url: parsed.toString(), id: `${user}-${track}` };
+  return parseResolvedSoundCloudUrl(parsed);
 }
 
 export async function GET(request: NextRequest) {
@@ -132,7 +187,7 @@ export async function GET(request: NextRequest) {
       throw new HttpError(400, ErrorCodes.validation, "Parameter `url` wajib diisi dengan link lagu SoundCloud.");
     }
 
-    const { url, id } = parseSoundCloudUrl(raw);
+    const { url, id } = await parseSoundCloudUrl(raw);
 
     const body = await fetchFromCobalt({
       sourceUrl: url,
