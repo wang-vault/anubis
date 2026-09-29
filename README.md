@@ -56,7 +56,9 @@ platformnya; setiap downloader punya kartu + tombolnya sendiri:
 | Downloader | Halaman | API (rate limit 10/menit/IP) | Isi unduhan |
 |---|---|---|---|
 | TikTok | `/tiktok` | `GET /api/tiktok` (tikwm.com) | video tanpa/dengan watermark, audio |
-| Instagram | `/instagram` | `GET /api/instagram` (Cobalt, `COBALT_API_URL`) | video reel & post |
+| Instagram | `/instagram` | `GET /api/instagram` (Cobalt #1, `COBALT_API_URL`) | video reel & post |
+| Pinterest | `/pinterest` | `GET /api/pinterest` (Cobalt #2, `COBALT_API_URL_2`) | gambar & video pin |
+| SoundCloud | `/soundcloud` | `GET /api/soundcloud` (Cobalt #2, `COBALT_API_URL_2`) | audio lagu (MP3) |
 
 Daftar kartunya dibaca dari satu file, `src/lib/downloaders.ts`. Menambah
 downloader baru = buat halamannya di `src/app/<slug>/page.tsx` + tambah satu

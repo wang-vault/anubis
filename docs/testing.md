@@ -61,6 +61,9 @@ Tandai centang di copy-mu. Semua harus ✅ sebelum produksi.
 - [ ] [MANUAL] Setiap halaman downloader punya tautan **← Pilih downloader lain** kembali ke `/downloader`
 - [ ] [MANUAL] Buka `/tiktok` tanpa login → tempel tautan TikTok → muncul sampul, judul, author, + 3 tombol unduh
 - [ ] [MANUAL] `/instagram` (butuh env `COBALT_API_URL`) → tempel tautan → tombol **↓ Download Video**; env kosong → pesan "Layanan downloader sedang tidak tersedia" (bukan crash)
+- [ ] [MANUAL] `/pinterest` (butuh env `COBALT_API_URL_2`) → tempel tautan pin → tombol **↓ Download Gambar/Video**; tautan papan/profil → pesan "Hanya tautan pin yang didukung"
+- [ ] [MANUAL] `/soundcloud` (butuh env `COBALT_API_URL_2`) → tempel tautan lagu → tombol **↓ Download MP3**; tautan playlist (`/sets/`) → pesan "Tautan playlist/album belum didukung"
+- [ ] [MANUAL] Tombol unduh Pinterest/SoundCloud mengarah LANGSUNG ke domain Cobalt (cek lewat klik kanan → salin alamat tautan), bukan ke `/api/…`
 - [ ] [MANUAL] Tautan bukan dari platformnya / kosong → pesan error jelas; spam 11x dalam semenit → 429 dengan sisa waktu tunggu
 - [ ] [AUTO] Tepat satu tautan `/downloader` (tanpa tautan langsung ke downloader) di Header — tamu & penjual — Footer, dan beranda; `/downloader` menampilkan tombol untuk setiap entri `src/lib/downloaders.ts` yang halamannya benar-benar ada; halaman publik (tidak di-gate middleware); setiap halaman downloader punya tautan kembali + form (`test/downloader-navigation.test.tsx`)
 
