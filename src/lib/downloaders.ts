@@ -3,7 +3,8 @@
  *
  * Alurnya sengaja satu pintu:
  *   tombol "Downloader" (header · footer · beranda) → halaman pemilih
- *   /downloader → pengunjung memilih TikTok / Instagram.
+ *   /downloader → pengunjung memilih platformnya (TikTok, Instagram,
+ *   Pinterest, SoundCloud).
  *
  * Halaman lain TIDAK menautkan tiap downloader satu per satu — cukup ke
  * DOWNLOADER_HUB_PATH. Menambah downloader baru = buat halamannya di
@@ -61,5 +62,27 @@ export const DOWNLOADERS: readonly DownloaderTool[] = [
     description: "Unduh video dari reel atau post Instagram cukup dengan menempel tautannya.",
     features: ["Reel", "Post video"],
     accepts: ["instagram.com/reel", "instagram.com/p"],
+  },
+  {
+    slug: "pinterest",
+    platform: "Pinterest",
+    name: "Pinterest Downloader",
+    href: "/pinterest",
+    mark: "PN",
+    tone: "accent",
+    description: "Unduh gambar atau video dari sebuah pin Pinterest dalam kualitas aslinya.",
+    features: ["Gambar pin", "Video pin", "Tautan pin.it"],
+    accepts: ["pinterest.com/pin", "pin.it"],
+  },
+  {
+    slug: "soundcloud",
+    platform: "SoundCloud",
+    name: "SoundCloud Downloader",
+    href: "/soundcloud",
+    mark: "SC",
+    tone: "ink",
+    description: "Simpan audio sebuah lagu SoundCloud sebagai berkas MP3 siap putar.",
+    features: ["Audio MP3", "Satu lagu per proses"],
+    accepts: ["soundcloud.com/artis/judul-lagu"],
   },
 ];

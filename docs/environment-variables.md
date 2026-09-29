@@ -35,6 +35,29 @@ Klasifikasi:
 | `WHATSAPP_SELLER_NUMBER` | 🖥 | — (opsional) | **Cadangan** nomor WhatsApp penjual. Dipakai hanya bila kolom `manual_payment_settings.whatsapp_number` masih kosong; nomor di `/admin/settings` selalu menang. Nilai tidak valid ditolak saat dipakai (bukan saat dibaca) | `6281234567890` |
 | `TELEGRAM_BOT_TOKEN` | 🔒🖥 | — (kosong = notifikasi skip) | Dari @BotFather (`/newbot`) | `123456789:AAExampleTokenFormatNotReal123` |
 | `TELEGRAM_CHAT_ID` | 🖥 | — (berpasangan dengan token) | Chat ID penjual (lihat `docs/telegram.md`) | `987654321` atau `-1001234567890` (grup) |
+| `COBALT_API_URL` | 🖥 | — (kosong = `/instagram` balas 503) | Instance Cobalt **#1** self-hosted, dipakai `/api/instagram`. Wajib `https` | `https://cobalt-instance1.railway.app` |
+| `COBALT_API_KEY` | 🔒🖥 | — (bila instance #1 mewajibkan auth) | API key instance #1 | UUID `aaaaaaaa-bbbb-…` |
+| `COBALT_API_URL_2` | 🖥 | — (kosong = `/pinterest` & `/soundcloud` balas 503) | Instance Cobalt **#2** self-hosted, dipakai `/api/pinterest` & `/api/soundcloud`. Wajib `https` | `https://cobalt-instance2.railway.app` |
+| `COBALT_API_KEY_2` | 🔒🖥 | — (bila instance #2 mewajibkan auth) | API key instance #2 | UUID `aaaaaaaa-bbbb-…` |
+
+> **Kenapa var Cobalt tidak ada di `src/lib/env.ts`.** Sengaja dibaca langsung
+> dari `process.env` di route-nya, jadi **tidak fail-fast**. Downloader adalah
+> alat sampingan: kalau env-nya kosong/salah, yang rusak cukup halaman
+> downloader itu (balas **503** "Layanan downloader sedang tidak tersedia"),
+> bukan seluruh toko. URL wajib `https` — `http` ditolak dan ikut jadi 503.
+>
+> **Dua instance, dua pasang var.** `COBALT_API_URL`/`COBALT_API_KEY` (instance
+> #1) hanya melayani Instagram; `COBALT_API_URL_2`/`COBALT_API_KEY_2` (instance
+> #2) melayani Pinterest & SoundCloud. Keduanya berdiri sendiri — mematikan
+> salah satu tidak memengaruhi yang lain.
+>
+> **Autentikasi.** Cobalt resmi membaca `Authorization: Api-Key <key>`; skema
+> `Bearer` ditolak, dan tanpa header instance membalas
+> `400 error.api.auth.key.missing`. Route `/api/pinterest` & `/api/soundcloud`
+> mengirim header itu **dan** header `Api-Key: <key>` sekaligus, agar
+> instance/proxy yang mengharapkan bentuk polos tetap lolos. Key tidak pernah
+> di-log dan tidak pernah ikut ke respons. **Jangan** memberi prefix
+> `NEXT_PUBLIC_` pada key mana pun.
 
 > **Hanya satu metode pembayaran.** Toko ini tidak punya payment gateway:
 > semua order baru dibuat sebagai transfer manual via WhatsApp. Metode dianggap

@@ -153,6 +153,42 @@ info & tautan media sebuah video TikTok lewat API pihak ketiga (tikwm.com).
   502/504 bila server TikTok tidak merespons (timeout 15 detik).
 - Endpoint ini **tidak menyentuh** order, pembayaran, maupun Supabase.
 
+## Alat publik: Pinterest & SoundCloud Downloader
+
+Keduanya **tanpa login, tanpa database**, dan memakai **Cobalt instance #2**
+(`COBALT_API_URL_2` + `COBALT_API_KEY_2`) — terpisah dari instance Instagram.
+Klien Cobalt-nya dipakai bersama di `src/lib/cobalt.ts`.
+
+### GET /api/pinterest?url=https://www.pinterest.com/pin/1234567890/
+### GET /api/soundcloud?url=https://soundcloud.com/artis/judul-lagu
+```jsonc
+{ "ok": true,
+  "url": "https://…",        // tautan unduh LANGSUNG dari Cobalt
+  "filename": "lagu.mp3" }   // nama file aman (ASCII) untuk atribut download
+```
+- Ke Cobalt: `POST ${COBALT_API_URL_2}` body `{ url, downloadMode }` —
+  `"auto"` untuk Pinterest, `"audio"` untuk SoundCloud. Timeout **20 detik**.
+- Autentikasi Cobalt dikirim dua bentuk sekaligus:
+  `Authorization: Api-Key <key>` (yang resmi dibaca Cobalt) **dan**
+  `Api-Key: <key>`. Key tidak pernah di-log maupun ikut ke respons.
+- **Tidak ada endpoint proxy `/download`.** Browser mengunduh langsung dari
+  tautan Cobalt (`target="_blank"`), jadi berkasnya tidak melewati Vercel.
+  Tautan tunnel Cobalt bersifat sementara & sekali pakai — halaman sengaja
+  tidak mem-preview medianya supaya tombol unduh tidak keburu hangus.
+- URL divalidasi ketat sebelum keluar jaringan:
+  - Pinterest: `pinterest.com/pin/<id>` (termasuk subdomain negara, ccTLD
+    `pinterest.co.uk`, varian `/amp/pin/`) dan tautan pendek `pin.it/<kode>`.
+    Papan/profil → 400.
+  - SoundCloud: `soundcloud.com/<artis>/<lagu>` dan `on.soundcloud.com/<kode>`.
+    Profil saja, halaman internal (`/discover`, …), dan playlist (`/sets/`)
+    → 400 dengan pesan yang menjelaskan cara benarnya.
+- Rate limit 10 request / 60 detik / IP (429 bila lewat).
+- 422 bila tautannya tidak berisi satu media siap unduh (mis. pin yang hanya
+  menaut ke situs lain, atau respons `picker` berisi banyak media).
+- 502/504 bila Cobalt tidak merespons / balasannya tidak terbaca;
+  **503** bila env belum diisi, bukan https, key ditolak, atau Cobalt sibuk.
+- Endpoint ini **tidak menyentuh** order, pembayaran, maupun Supabase.
+
 ## Konvensi yang berlaku di semua endpoint
 1. Input divalidasi zod (400 rapi, pesan pertama).
 2. Otorisasi sebelum query (requireUser / requireVerifiedUser / requireAdmin).
