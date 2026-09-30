@@ -26,6 +26,7 @@ export const dynamic = "force-dynamic";
 const SERVICE = "pinterest";
 const RATE_LIMIT_MAX = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
+const SHORT_URL_TIMEOUT_MS = 10_000;
 
 const INVALID_URL_MESSAGE =
   "URL tidak valid. Tempelkan link pin Pinterest yang lengkap, mis. https://www.pinterest.com/pin/1234567890/ atau https://pin.it/AbCdEfG";
@@ -36,26 +37,54 @@ function isShortLinkHost(hostname: string): boolean {
 }
 
 /**
- * Host Pinterest, termasuk subdomain negara (id., www., …) dan domain ccTLD
- * (pinterest.co.uk, pinterest.com.au, …).
- *
- * Caranya: label "pinterest" harus berada tepat sebelum suffix-nya — posisi
- * kedua dari belakang (pinterest.com) atau ketiga (pinterest.co.uk). Dengan
- * begitu "notpinterest.com" dan "pinterest.com.evil.net" ikut tertolak.
+ * Host Pinterest, termasuk subdomain negara (id., uk., au., www., …) dan domain ccTLD
+ * (pinterest.co.uk, pinterest.com.au, pinterest.de, …).
  */
 function isPinterestHost(hostname: string): boolean {
-  const labels = hostname.split(".");
-  const index = labels.lastIndexOf("pinterest");
-  return index !== -1 && (index === labels.length - 2 || index === labels.length - 3);
+  const host = hostname.toLowerCase();
+  if (host === "pinterest.com" || host.endsWith(".pinterest.com")) {
+    return true;
+  }
+  return /^(?:[a-z0-9-]+\.)*pinterest\.(?:(?:co|com|org|net)\.[a-z]{2}|[a-z]{2,})$/.test(host);
 }
 
-/** Validasi URL pin + ambil ID-nya (dipakai untuk nama file cadangan). */
-function parsePinterestUrl(raw: string): { url: string; id: string } {
+/** Ekstrak ID pin dari pathname (/pin/<id>/ atau /amp/pin/<id>/). */
+function extractPinId(pathname: string): string {
+  const segments = pathname.split("/").filter(Boolean);
+  const offset = segments[0] === "amp" ? 1 : 0;
+  const pinKeyword = segments[offset];
+  const pinId = segments[offset + 1];
+  if (pinKeyword === "pin" && pinId) {
+    return pinId;
+  }
+  return "";
+}
+
+/** Resolve tautan pendek pin.it ke URL aslinya. */
+async function resolveShortPinterestUrl(shortUrl: string): Promise<string> {
+  try {
+    const resolved = await fetch(shortUrl, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: AbortSignal.timeout(SHORT_URL_TIMEOUT_MS),
+    });
+    return resolved.url ?? "";
+  } catch {
+    throw new HttpError(
+      400,
+      ErrorCodes.validation,
+      "Tautan pin.it tidak dapat dibuka atau tidak valid. Salin ulang tautannya dari aplikasi Pinterest.",
+    );
+  }
+}
+
+/** Validasi URL pin + ambil ID-nya (dipakai untuk nama file cadangan) dan normalisasi ke https://www.pinterest.com/pin/<id>/. */
+async function parsePinterestUrl(raw: string): Promise<{ url: string; id: string }> {
   const parsed = parseUserUrl(raw, INVALID_URL_MESSAGE);
   const host = parsed.hostname.toLowerCase();
-  const segments = parsed.pathname.split("/").filter(Boolean);
 
   if (isShortLinkHost(host)) {
+    const segments = parsed.pathname.split("/").filter(Boolean);
     const code = segments[0] ?? "";
     if (!code) {
       throw new HttpError(
@@ -64,7 +93,35 @@ function parsePinterestUrl(raw: string): { url: string; id: string } {
         "Tautan pin.it belum lengkap. Salin ulang tautannya dari tombol Bagikan di aplikasi Pinterest.",
       );
     }
-    return { url: parsed.toString(), id: code };
+
+    const shortUrl = parsed.toString();
+    const realUrl = await resolveShortPinterestUrl(shortUrl);
+
+    if (realUrl && realUrl !== shortUrl) {
+      const resolvedParsed = parseUserUrl(realUrl, INVALID_URL_MESSAGE);
+      const resolvedHost = resolvedParsed.hostname.toLowerCase();
+
+      if (!isPinterestHost(resolvedHost)) {
+        throw new HttpError(
+          400,
+          ErrorCodes.validation,
+          "Hanya URL Pinterest yang didukung (pinterest.com/pin/… atau pin.it/…).",
+        );
+      }
+
+      const id = extractPinId(resolvedParsed.pathname);
+      if (!id) {
+        throw new HttpError(
+          400,
+          ErrorCodes.validation,
+          "Hanya tautan pin yang didukung — mis. https://www.pinterest.com/pin/1234567890/. Tautan papan (board) atau profil tidak bisa diunduh.",
+        );
+      }
+
+      return { url: `https://www.pinterest.com/pin/${id}/`, id };
+    }
+
+    return { url: `https://www.pinterest.com/pin/${code}/`, id: code };
   }
 
   if (!isPinterestHost(host)) {
@@ -75,9 +132,7 @@ function parsePinterestUrl(raw: string): { url: string; id: string } {
     );
   }
 
-  // Bentuk yang diterima: /pin/<id>/… dan varian AMP /amp/pin/<id>/…
-  const offset = segments[0] === "amp" ? 1 : 0;
-  const id = segments[offset] === "pin" ? (segments[offset + 1] ?? "") : "";
+  const id = extractPinId(parsed.pathname);
   if (!id) {
     throw new HttpError(
       400,
@@ -86,7 +141,7 @@ function parsePinterestUrl(raw: string): { url: string; id: string } {
     );
   }
 
-  return { url: parsed.toString(), id };
+  return { url: `https://www.pinterest.com/pin/${id}/`, id };
 }
 
 export async function GET(request: NextRequest) {
@@ -106,7 +161,7 @@ export async function GET(request: NextRequest) {
       throw new HttpError(400, ErrorCodes.validation, "Parameter `url` wajib diisi dengan link pin Pinterest.");
     }
 
-    const { url, id } = parsePinterestUrl(raw);
+    const { url, id } = await parsePinterestUrl(raw);
 
     const body = await fetchFromCobalt({
       sourceUrl: url,
