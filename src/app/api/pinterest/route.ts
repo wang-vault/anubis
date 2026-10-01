@@ -144,6 +144,15 @@ async function parsePinterestUrl(raw: string): Promise<{ url: string; id: string
   return { url: `https://www.pinterest.com/pin/${id}/`, id };
 }
 
+function upgradeToOriginal(url: string): string {
+  // Pinterest CDN: https://i.pinimg.com/736x/xx/xx/xx.jpg
+  // → https://i.pinimg.com/originals/xx/xx/xx.jpg
+  return url.replace(
+    /\/(236x|474x|736x|564x|600x|1200x|75x75_RS)\//,
+    "/originals/"
+  );
+}
+
 export async function GET(request: NextRequest) {
   return handleApi(async () => {
     // Rate limit dulu — endpoint publik, jangan kerjakan apa pun untuk spammer.
@@ -171,12 +180,18 @@ export async function GET(request: NextRequest) {
         "Pin tidak dapat diproses. Pastikan tautannya benar, pin-nya masih ada, dan papan/akunnya publik.",
     });
 
-    return resolveCobaltMedia(body, SERVICE, {
+    const result = resolveCobaltMedia(body, SERVICE, {
       fallbackBaseName: `pinterest-${id}`,
       noMediaMessage:
         "Pin ini tidak punya media yang bisa diunduh — kemungkinan isinya hanya tautan ke situs lain.",
       pickerMessage:
         "Pin ini berisi beberapa media sekaligus. Buka pin aslinya, lalu salin tautan satu media saja.",
     });
+
+    if (result.url.includes("pinimg.com")) {
+      result.url = upgradeToOriginal(result.url);
+    }
+
+    return result;
   }, (data) => ok(data));
 }
