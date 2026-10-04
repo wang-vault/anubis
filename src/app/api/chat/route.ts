@@ -8,10 +8,26 @@ import { log } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
+/** Maksimal pesan history yang ikut dikirim ke LiteLLM. */
+const MAX_HISTORY_MESSAGES = 10;
+/** Maksimal karakter per pesan history yang ikut dikirim ke LiteLLM. */
+const MAX_HISTORY_CONTENT_CHARS = 1000;
+
+/**
+ * History dari client sengaja diterima longgar (role `system` dan konten panjang
+ * tetap lolos validasi) karena sanitasinya dilakukan di server sebelum dikirim
+ * ke LiteLLM: pesan `system` dibuang, sisanya dipotong & dibatasi jumlahnya.
+ */
 const chatMessageSchema = z.object({
-  role: z.enum(["user", "assistant"]),
-  content: z.string().max(4000),
+  role: z.enum(["system", "user", "assistant"]),
+  content: z.string(),
 });
+
+/** Bentuk pesan OpenAI-compatible yang dikirim ke LiteLLM. */
+interface ChatCompletionMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
 
 const chatRequestSchema = z.object({
   message: z
@@ -176,13 +192,23 @@ ${productsContext}
 DATA PESANAN SAYA (Customer):
 ${ordersContext}`;
 
-    // 7. Siapkan riwayat percakapan (maksimal 20 pesan terakhir)
-    const sanitizedHistory = (history ?? []).slice(-20).map((h) => ({
-      role: h.role,
-      content: h.content,
-    }));
+    // 7. Siapkan riwayat percakapan yang dikirim ke LiteLLM.
+    //    System prompt (berisi context produk/pesanan yang panjang) TIDAK pernah
+    //    ikut ke dalam history — hanya dikirim sekali sebagai messages[0].
+    //    History: hanya pesan user/assistant, maksimal 10 pesan terakhir,
+    //    dan tiap pesan dipotong maksimal 1000 karakter agar payload tetap kecil.
+    const sanitizedHistory: ChatCompletionMessage[] = (history ?? [])
+      .filter(
+        (h): h is { role: "user" | "assistant"; content: string } =>
+          h.role === "user" || h.role === "assistant",
+      )
+      .slice(-MAX_HISTORY_MESSAGES)
+      .map((h) => ({
+        role: h.role,
+        content: h.content.slice(0, MAX_HISTORY_CONTENT_CHARS),
+      }));
 
-    const messages = [
+    const messages: ChatCompletionMessage[] = [
       { role: "system", content: systemPrompt },
       ...sanitizedHistory,
       { role: "user", content: message },
