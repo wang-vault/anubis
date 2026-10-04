@@ -335,6 +335,99 @@ describe("AI Chat API Route (POST /api/chat)", () => {
     expect(systemPrompt).toContain("User Two");
   });
 
+  it("history: pesan role system dari client dibuang, context hanya ada di messages[0]", async () => {
+    const { POST } = await import("@/app/api/chat/route");
+    mockState.currentUser = { id: "user-123" };
+    mockState.currentProfile = { role: "buyer", name: "Budi" };
+
+    const req = createRequest(
+      {
+        message: "Lanjut ya",
+        history: [
+          { role: "user", content: "Produk apa saja yang ada?" },
+          // Client keliru menyertakan system prompt berisi context produk ke history
+          { role: "system", content: `DATA KATALOG PRODUK AKTIF:\n${"x".repeat(6000)}` },
+          { role: "assistant", content: "Ada beberapa produk hosting." },
+        ],
+      },
+      "192.168.1.4",
+    );
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    const call = mockState.capturedFetchCalls[0]!;
+    const parsedBody = JSON.parse(call.options?.body as string);
+    const messages = parsedBody.messages as { role: string; content: string }[];
+
+    // Hanya satu pesan system, yaitu messages[0] buatan server
+    expect(messages.filter((m) => m.role === "system")).toHaveLength(1);
+    expect(messages[0]!.role).toBe("system");
+    expect(messages[0]!.content).toContain("Kamu adalah asisten toko Wang Hosting");
+
+    // History hanya berisi user/assistant, pesan baru tetap di posisi terakhir
+    expect(messages.slice(1, -1).map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(messages.at(-1)).toEqual({ role: "user", content: "Lanjut ya" });
+    expect(messages.slice(1).every((m) => !m.content.includes("x".repeat(100)))).toBe(true);
+  });
+
+  it("history: pesan panjang dipotong maksimal 1000 karakter (bukan ditolak 400)", async () => {
+    const { POST } = await import("@/app/api/chat/route");
+    mockState.currentUser = { id: "user-123" };
+    mockState.currentProfile = { role: "buyer", name: "Budi" };
+
+    const longContent = "a".repeat(5000);
+    const req = createRequest(
+      {
+        message: "Ringkas dong",
+        history: [
+          { role: "user", content: "Halo" },
+          { role: "assistant", content: longContent },
+        ],
+      },
+      "192.168.1.5",
+    );
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    const call = mockState.capturedFetchCalls[0]!;
+    const parsedBody = JSON.parse(call.options?.body as string);
+    const messages = parsedBody.messages as { role: string; content: string }[];
+
+    const historyMessages = messages.slice(1, -1);
+    expect(historyMessages).toHaveLength(2);
+    expect(historyMessages[1]!.content).toHaveLength(1000);
+    expect(historyMessages[1]!.content).toBe("a".repeat(1000));
+    expect(historyMessages.every((m) => m.content.length <= 1000)).toBe(true);
+  });
+
+  it("history: hanya 10 pesan terakhir yang dikirim ke LiteLLM", async () => {
+    const { POST } = await import("@/app/api/chat/route");
+    mockState.currentUser = { id: "user-123" };
+    mockState.currentProfile = { role: "buyer", name: "Budi" };
+
+    const history = Array.from({ length: 25 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: `Pesan ke-${i}`,
+    }));
+
+    const req = createRequest({ message: "Pesan baru", history }, "192.168.1.6");
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    const call = mockState.capturedFetchCalls[0]!;
+    const parsedBody = JSON.parse(call.options?.body as string);
+    const messages = parsedBody.messages as { role: string; content: string }[];
+
+    // 1 system + 10 history + 1 pesan baru
+    expect(messages).toHaveLength(12);
+    const historyMessages = messages.slice(1, -1);
+    expect(historyMessages[0]!.content).toBe("Pesan ke-15");
+    expect(historyMessages.at(-1)!.content).toBe("Pesan ke-24");
+    expect(messages.at(-1)).toEqual({ role: "user", content: "Pesan baru" });
+  });
+
   it("menangani error LiteLLM jika upstream mengembalikan 500", async () => {
     const { POST } = await import("@/app/api/chat/route");
     mockState.currentUser = { id: "user-123" };
