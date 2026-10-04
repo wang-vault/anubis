@@ -113,7 +113,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     }
 
     const [spendRaw, logsRaw] = await Promise.all([
-      litellmGet("/spend"),
+      litellmGet("/global/spend"),
       litellmGet(`/spend/logs?limit=${LOG_LIMIT}`),
     ]);
 
