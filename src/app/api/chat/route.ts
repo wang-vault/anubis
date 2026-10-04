@@ -218,17 +218,17 @@ ${ordersContext}`;
     const { baseUrl, apiKey } = litellmConfig();
     let res: Response;
     try {
-      res = await fetch(`${baseUrl}/chat/completions`, {
+      res = await fetch(`${baseUrl}/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "nvidia-llama",
-          messages,
-          max_tokens: 1024,
-          temperature: 0.3,
+          message,
+          history: sanitizedHistory,
+          accountId: ctx.user.id,
+          isAdmin,
         }),
         signal: AbortSignal.timeout(30_000),
       });
@@ -264,19 +264,15 @@ ${ordersContext}`;
       );
     }
 
-    let jsonResponse: {
-      choices?: { message?: { content?: string } }[];
-    };
+    let jsonResponse: { reply?: string };
     try {
-      jsonResponse = (await res.json()) as {
-        choices?: { message?: { content?: string } }[];
-      };
+      jsonResponse = (await res.json()) as { reply?: string };
     } catch (err) {
       log.errorFrom("litellm_invalid_json", err);
       throw new HttpError(502, ErrorCodes.internal, "Respons LiteLLM tidak valid.");
     }
 
-    const reply = jsonResponse.choices?.[0]?.message?.content ?? "";
+    const reply = jsonResponse.reply ?? "";
     return { reply };
   }, (data) => ok(data));
 }
