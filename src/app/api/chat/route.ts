@@ -8,22 +8,27 @@ import { log } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
-/** Maksimal pesan history yang ikut dikirim ke LiteLLM. */
+/** Endpoint OpenAI-compatible milik Groq. */
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+/** Model Groq yang dipakai untuk chat. */
+const GROQ_MODEL = "qwen/qwen3.8-27b";
+
+/** Maksimal pesan history yang ikut dikirim ke Groq. */
 const MAX_HISTORY_MESSAGES = 10;
-/** Maksimal karakter per pesan history yang ikut dikirim ke LiteLLM. */
+/** Maksimal karakter per pesan history yang ikut dikirim ke Groq. */
 const MAX_HISTORY_CONTENT_CHARS = 1000;
 
 /**
  * History dari client sengaja diterima longgar (role `system` dan konten panjang
  * tetap lolos validasi) karena sanitasinya dilakukan di server sebelum dikirim
- * ke LiteLLM: pesan `system` dibuang, sisanya dipotong & dibatasi jumlahnya.
+ * ke Groq: pesan `system` dibuang, sisanya dipotong & dibatasi jumlahnya.
  */
 const chatMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
   content: z.string(),
 });
 
-/** Bentuk pesan OpenAI-compatible yang dikirim ke LiteLLM. */
+/** Bentuk pesan OpenAI-compatible yang dikirim ke Groq. */
 interface ChatCompletionMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -55,23 +60,51 @@ interface ChatOrderData {
   created_at: string;
 }
 
-/** Ambil konfigurasi LiteLLM dari env server. */
-function litellmConfig(): { baseUrl: string; apiKey: string } {
-  const baseUrl = (process.env.LITELLM_API_URL ?? "").trim().replace(/\/+$/, "");
-  const apiKey = (process.env.LITELLM_API_KEY ?? "").trim();
-  if (!baseUrl || !apiKey) {
+/** Bentuk respons chat/completions Groq (OpenAI-compatible). */
+interface GroqChatResponse {
+  choices?: { message?: { content?: string } }[];
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
+}
+
+/** Ambil API key Groq dari env server. */
+function groqApiKey(): string {
+  const apiKey = (process.env.GROQ_API_KEY ?? "").trim();
+  if (!apiKey) {
     throw new HttpError(
       503,
       ErrorCodes.internal,
-      "Layanan AI belum dikonfigurasi (LITELLM_API_URL / LITELLM_API_KEY).",
+      "Layanan AI belum dikonfigurasi (GROQ_API_KEY).",
     );
   }
-  return { baseUrl, apiKey };
+  return apiKey;
+}
+
+/**
+ * Catat pemakaian token ke tabel `ai_usage` (Supabase Store, service role).
+ * Error insert sengaja diabaikan — tracking tidak boleh menggagalkan chat.
+ */
+async function trackUsage(
+  db: Awaited<ReturnType<typeof storeDb>>,
+  usage: GroqChatResponse["usage"],
+): Promise<void> {
+  try {
+    const { error } = await db.from("ai_usage").insert({
+      provider: "groq",
+      model: GROQ_MODEL,
+      input_tokens: usage?.prompt_tokens ?? 0,
+      output_tokens: usage?.completion_tokens ?? 0,
+    });
+    if (error) {
+      log.error("ai_usage_insert_failed", { message: error.message });
+    }
+  } catch (err) {
+    log.errorFrom("ai_usage_insert_failed", err);
+  }
 }
 
 /**
  * POST /api/chat
- * Endpoint AI Chat OpenAI-compatible via LiteLLM.
+ * Endpoint AI Chat OpenAI-compatible via Groq API.
  * Didukung context injection produk aktif dan pesanan sesuai role user (customer/admin).
  */
 export async function POST(request: NextRequest): Promise<Response> {
@@ -192,7 +225,7 @@ ${productsContext}
 DATA PESANAN SAYA (Customer):
 ${ordersContext}`;
 
-    // 7. Siapkan riwayat percakapan yang dikirim ke LiteLLM.
+    // 7. Siapkan riwayat percakapan yang dikirim ke Groq.
     //    System prompt (berisi context produk/pesanan yang panjang) TIDAK pernah
     //    ikut ke dalam history — hanya dikirim sekali sebagai messages[0].
     //    History: hanya pesan user/assistant, maksimal 10 pesan terakhir,
@@ -214,18 +247,18 @@ ${ordersContext}`;
       { role: "user", content: message },
     ];
 
-    // 8. Kirim request ke LiteLLM
-    const { baseUrl, apiKey } = litellmConfig();
+    // 8. Kirim request ke Groq API (OpenAI-compatible)
+    const apiKey = groqApiKey();
     let res: Response;
     try {
-      res = await fetch(`${baseUrl}/chat/completions`, {
+      res = await fetch(GROQ_API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "nvidia-llama",
+          model: GROQ_MODEL,
           messages,
           max_tokens: 1024,
           temperature: 0.3,
@@ -233,7 +266,7 @@ ${ordersContext}`;
         signal: AbortSignal.timeout(30_000),
       });
     } catch (err: unknown) {
-      log.errorFrom("litellm_fetch_failed", err);
+      log.errorFrom("groq_fetch_failed", err);
       if (err instanceof Error && err.name === "TimeoutError") {
         throw new HttpError(504, ErrorCodes.internal, "AI gateway timeout. Silakan coba lagi.");
       }
@@ -247,34 +280,33 @@ ${ordersContext}`;
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
       log.errorFrom(
-        "litellm_bad_status",
+        "groq_bad_status",
         new Error(`chat/completions → ${res.status} ${errText.slice(0, 500)}`),
       );
       if (res.status === 401 || res.status === 403) {
         throw new HttpError(
           502,
           ErrorCodes.internal,
-          "Kredensial LiteLLM ditolak. Periksa konfigurasi server.",
+          "Kredensial Groq ditolak. Periksa konfigurasi server.",
         );
       }
       throw new HttpError(
         502,
         ErrorCodes.internal,
-        "Server LiteLLM mengembalikan error. Coba lagi beberapa saat.",
+        "Server Groq mengembalikan error. Coba lagi beberapa saat.",
       );
     }
 
-    let jsonResponse: {
-      choices?: { message?: { content?: string } }[];
-    };
+    let jsonResponse: GroqChatResponse;
     try {
-      jsonResponse = (await res.json()) as {
-        choices?: { message?: { content?: string } }[];
-      };
+      jsonResponse = (await res.json()) as GroqChatResponse;
     } catch (err) {
-      log.errorFrom("litellm_invalid_json", err);
-      throw new HttpError(502, ErrorCodes.internal, "Respons LiteLLM tidak valid.");
+      log.errorFrom("groq_invalid_json", err);
+      throw new HttpError(502, ErrorCodes.internal, "Respons Groq tidak valid.");
     }
+
+    // 9. Usage tracking ke tabel ai_usage (best-effort, error diabaikan)
+    await trackUsage(db, jsonResponse.usage);
 
     const reply = jsonResponse.choices?.[0]?.message?.content ?? "";
     return { reply };
